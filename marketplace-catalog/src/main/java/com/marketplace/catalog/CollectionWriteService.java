@@ -158,7 +158,22 @@ public class CollectionWriteService implements CollectionWriteSpi {
         boolean published = Boolean.TRUE.equals(command.published());
         Collection created = collectionRepository.save(
                 Collection.create(slug, name, null, published));
-        appendMembership(created.getId(), productIds);
+        List<UUID> vanished = appendMembership(created.getId(), productIds);
+        if (!vanished.isEmpty()) {
+            // The 2026-11-08 #808 round-24 review (Minor · Data Integrity
+            // & Integration): an initial member died between the precheck
+            // and the locked liveness read — the SAME classified NOT_FOUND
+            // vocabulary the precheck itself answers, and the created
+            // collection row must NOT survive a request whose membership
+            // premise broke: the rollback is marked first (the attribute
+            // bulk paths' own setRollbackOnly + classified-return law) so
+            // nothing half-created commits.
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+            return CollectionMutationResult.failure(List.of(new CollectionMutationError(
+                    "products", CollectionMutationErrorCode.NOT_FOUND,
+                    "No product found for the given ids", vanished)));
+        }
         return CollectionMutationResult.success(toView(created));
     }
 
@@ -364,7 +379,18 @@ public class CollectionWriteService implements CollectionWriteSpi {
         if (!errors.isEmpty()) {
             return CollectionMutationResult.failure(errors);
         }
-        appendMembership(collectionId, productIds);
+        List<UUID> vanished = appendMembership(collectionId, productIds);
+        if (!vanished.isEmpty()) {
+            // The 2026-11-08 #808 round-24 review (Minor · Data Integrity
+            // & Integration): the member died between the precheck and
+            // the locked liveness read — the SAME classified NOT_FOUND
+            // vocabulary the precheck itself answers (the ids ride the
+            // error), never the raw exception the old shape threw. No
+            // membership was written yet, so nothing rolls back.
+            return CollectionMutationResult.failure(List.of(new CollectionMutationError(
+                    "products", CollectionMutationErrorCode.NOT_FOUND,
+                    "No product found for the given ids", vanished)));
+        }
         return CollectionMutationResult.success(toView(addressed.get()));
     }
 
@@ -571,8 +597,18 @@ public class CollectionWriteService implements CollectionWriteSpi {
      * ({@code uq_collection_products_position_live}) answers any path
      * that still slips through with the honest constraint failure — the
      * backstop, never the user-visible answer.</p>
+     *
+     * <p>The 2026-11-08 #808 round-24 review (Minor · Data Integrity &amp;
+     * Integration): the vanished-under-the-lock verdict is the SERVICE'S
+     * OWN contract shape (the scope-validation NOT_FOUND the prechecks
+     * answer), never the raw ResourceNotFoundException the previous
+     * shape threw — the method returns the vanished product ids and the
+     * caller answers them with its own classified CollectionMutationResult
+     * verdict (the REST/GraphQL boundary would classify the raw exception
+     * as a bare 404 without the payload the add's own precheck vocabulary
+     * promises).</p>
      */
-    private void appendMembership(UUID collectionId, List<UUID> productIds) {
+    private List<UUID> appendMembership(UUID collectionId, List<UUID> productIds) {
         // The 2026-11-08 #808 round-21 review (Minor · Functional
         // Correctness, additional comment): an EMPTY distinct batch is
         // the honest no-op — it allocates no position, so the exhaustion
@@ -580,7 +616,7 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // ceiling-exhausted collection answered ConflictException for a
         // request that writes nothing).
         if (distinct(productIds).isEmpty()) {
-            return;
+            return List.of();
         }
         // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
         // Integration): the membership-CREATING read takes the product
@@ -588,17 +624,21 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // registration paths own) — the product delete's FOR-UPDATE row
         // lock plus its membership cascade serialize against this
         // insert: either the delete committed first (the share read
-        // answers the soft-deleted row's absence and the honest
-        // NOT_FOUND verdict below) or THIS insert commits its membership
-        // first and the delete's cascade carries it away with the
-        // product. The previous unlocked existence probe let the delete
-        // slip between the probe and the insert, stranding a live
+        // answers the soft-deleted row's absence and the vanished id
+        // rides this method's return) or THIS insert commits its
+        // membership first and the delete's cascade carries it away with
+        // the product. The previous unlocked existence probe let the
+        // delete slip between the probe and the insert, stranding a live
         // membership on a deleted product (the read join hid it, the
         // reorder still walked it).
+        List<UUID> vanished = new ArrayList<>();
         for (UUID productId : distinct(productIds)) {
             if (productRepository.findByIdForShare(productId).isEmpty()) {
-                throw new com.marketplace.shared.api.ResourceNotFoundException("Product", productId);
+                vanished.add(productId);
             }
+        }
+        if (!vanished.isEmpty()) {
+            return vanished;
         }
         collectionProductRepository.lockCollectionPositionAllocation(collectionId.toString());
         // The 2026-11-07 #808 round-19 review (the overflow family): the
@@ -625,6 +665,7 @@ public class CollectionWriteService implements CollectionWriteSpi {
         for (UUID productId : distinct(productIds)) {
             collectionProductRepository.save(CollectionProduct.create(collectionId, productId, next++));
         }
+        return List.of();
     }
 
     /** The request's own duplicate ids (the pinned DUPLICATED_INPUT_ITEM law's own input). */

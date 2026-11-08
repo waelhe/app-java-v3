@@ -142,6 +142,18 @@ public class CollectionReadService implements CollectionReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("A collection sort is required");
         }
+        // The 2026-11-08 #808 round-24 review (the body's unverified
+        // finding, verified against the code — the scrollCollectionProducts
+        // and scrollVariants guards' own law): a BOUNDED non-positive page
+        // size is refused up front — a zero limit with visible rows cut an
+        // EMPTY window that still advertised hasNext=true with no element
+        // from which to obtain a continuation cursor (the client either
+        // stopped prematurely or repeated the same empty page forever).
+        // The null/unlimited case stays the caller's own whole-registry
+        // read (this in-memory scroll loads the registry either way).
+        if (limit != null && limit.isLimited() && limit.max() <= 0) {
+            throw new IllegalArgumentException("A positive page size is required");
+        }
         List<CollectionView> visible = new ArrayList<>();
         for (Collection row : collectionRepository.findAll()) {
             if (visibleTo(row, authentication)) {

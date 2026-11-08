@@ -485,6 +485,72 @@ class CollectionWriteServiceTest {
     }
 
     @Test
+    void addProductsAnswersTheNotFoundDomainErrorWhenAMemberDiesUnderTheLock() {
+        // The 2026-11-08 #808 round-24 review (Minor · Data Integrity &
+        // Integration): the member passed the plain-findById precheck but
+        // died before the locked liveness read — the verdict is the SAME
+        // classified NOT_FOUND vocabulary the precheck itself answers
+        // (the ids ride the error), never the raw
+        // ResourceNotFoundException the previous shape threw (the
+        // boundary would classify that as a bare 404 without the
+        // CollectionMutationResult payload).
+        UUID collectionId = UUID.randomUUID();
+        Product member = product();
+        when(collectionRepository.findById(collectionId))
+                .thenReturn(Optional.of(row("slug", "Old", true)));
+        when(productRepository.findById(member.getId())).thenReturn(Optional.of(member));
+        when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(member.getId())))
+                .thenReturn(List.of());
+        when(productRepository.findByIdForShare(member.getId())).thenReturn(Optional.empty());
+
+        CollectionMutationResult result = service.addProducts(collectionId, List.of(member.getId()));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CollectionMutationError::code, CollectionMutationError::products)
+                .containsExactly(CollectionMutationErrorCode.NOT_FOUND, List.of(member.getId()));
+        verify(membershipRepository, never()).save(any());
+    }
+
+    @Test
+    void createCollectionRollsBackWhenAnInitialMemberDiesUnderTheLock() {
+        // The same round-24 finding's creation half: an initial member
+        // that dies between the precheck and the locked liveness read
+        // must NOT leave a half-created collection behind — the rollback
+        // is marked first (the attribute bulk paths' own
+        // setRollbackOnly + classified-return law) and the answer is the
+        // classified NOT_FOUND with the vanished id.
+        Product member = product();
+        when(productRepository.findById(member.getId())).thenReturn(Optional.of(member));
+        when(productRepository.findByIdForShare(member.getId())).thenReturn(Optional.empty());
+        when(collectionRepository.save(any(com.marketplace.catalog.Collection.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        org.springframework.transaction.TransactionStatus status =
+                mock(org.springframework.transaction.TransactionStatus.class);
+
+        com.marketplace.catalog.spi.CollectionMutationResult result;
+        try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(
+                             org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(status);
+
+            result = service.createCollection(
+                    new com.marketplace.catalog.spi.CollectionCreateCommand(
+                            "Member Died", "member-died", true, List.of(member.getId())));
+        }
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(com.marketplace.catalog.spi.CollectionMutationError::code,
+                        com.marketplace.catalog.spi.CollectionMutationError::products)
+                .containsExactly(com.marketplace.catalog.spi.CollectionMutationErrorCode.NOT_FOUND,
+                        List.of(member.getId()));
+        org.mockito.Mockito.verify(status).setRollbackOnly();
+        verify(membershipRepository, never()).save(any());
+    }
+
+    @Test
     void happyAddProductsAppendsTheMembershipAfterTheCurrentTail() {
         UUID collectionId = UUID.randomUUID();
         UUID newProductId = UUID.randomUUID();

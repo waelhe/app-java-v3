@@ -484,6 +484,49 @@ class ProductVariantReadServiceTest {
     }
 
     @Test
+    void publicScrollDropsARowWhoseParentSuspendedAfterThePageQuery() {
+        // The 2026-11-08 #808 round-24 review (Minor · Data Integrity &
+        // Integration): the parent projection is a FRESH read AFTER the
+        // page query — an owner who suspended the product between the
+        // two statements would otherwise render the UPDATED title and
+        // status, breaking the population predicate's own ACTIVE-parent
+        // condition on the wire. The row drops from the page (the same
+        // safe-absence skip the null-parent window owns).
+        Product suspended = suspendedProduct("b5a Just-Suspended Parent");
+        ProductVariant variant = activeVariant(suspended, "b5a-sku-15");
+        when(variantRepository.scrollPublicByIdAsc(null, 3)).thenReturn(List.of(variant));
+        when(variantRepository.countPublicPopulation()).thenReturn(1L);
+        when(productRepository.findAllById(any())).thenReturn(List.of(suspended));
+
+        ProductVariantPage page = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        assertThat(page.window().getContent()).isEmpty();
+    }
+
+    @Test
+    void theMaxIntegerPageSizeDoesNotOverflowTheFetchCount() {
+        // The 2026-11-08 #808 round-24 review (the body's unverified
+        // finding, verified against the code): the guard accepts every
+        // positive limited value, and Integer.MAX_VALUE + 1 wraps
+        // NEGATIVE — the native scroll would receive an invalid negative
+        // LIMIT (the raw 500). The ceiling asks for exactly
+        // Integer.MAX_VALUE rows and the hasNext verdict stays honest
+        // (a fetched list can never exceed the ceiling).
+        when(variantRepository.scrollPublicByIdAsc(null, Integer.MAX_VALUE))
+                .thenReturn(List.of());
+        when(variantRepository.countPublicPopulation()).thenReturn(0L);
+
+        ProductVariantPage page = service.scrollVariants(publicCaller,
+                ProductVariantSort.of(ProductVariantSort.Field.ID, true),
+                ScrollPosition.keyset(), Limit.of(Integer.MAX_VALUE));
+
+        verify(variantRepository).scrollPublicByIdAsc(null, Integer.MAX_VALUE);
+        assertThat(page.window().hasNext()).isFalse();
+    }
+
+    @Test
     void publicScrollBatchesTheParentProjections() {
         Product parent = activeProduct("b5a Shared Parent");
         ProductVariant first = activeVariant(parent, "b5a-sku-13");

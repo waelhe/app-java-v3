@@ -173,6 +173,12 @@ class CatalogAttributeServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.removeOption(victim.getId()))
                 .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
         org.mockito.Mockito.verify(options, org.mockito.Mockito.never()).delete(any());
+        // The 2026-11-08 #808 round-24 review (nitpick): the dead-option
+        // verdict answers BEFORE the refresh — if the existsById check
+        // ever moved AFTER it, the mocked no-op refresh would let this
+        // test pass while the real refresh throws on the dead row. No
+        // entityManager interaction happens on this path.
+        org.mockito.Mockito.verifyNoInteractions(entityManager);
     }
 
 }

@@ -579,6 +579,66 @@ class ProductTypeAttributeWriteServiceTest {
     }
 
     @Test
+    void reorderLocksTheBucketDefinitionsForShareInSortedOrderBeforeTheRewrite() {
+        // The 2026-11-08 #808 round-24 review (Minor · Functional
+        // Correctness): the attribute delete holds the DEFINITION row FOR
+        // UPDATE while its children cascade soft-deletes the very
+        // assignments the reorder loads (the type lock never serialized
+        // the pair — the unassign path's round-20 F11 race class). The
+        // reorder now takes each addressed bucket member's definition FOR
+        // SHARE in ONE sorted pass (the updateAssignments round-21 law)
+        // BEFORE the bucket re-read and the rewrite.
+        CatalogAttributeDefinition first = definition("attr-one", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition second = definition("attr-two", CatalogAttributeType.TEXT);
+        ProductTypeAttributeAssignment one = assigned(first, ProductTypeAttributeScope.PRODUCT, 1);
+        ProductTypeAttributeAssignment two = assigned(second, ProductTypeAttributeScope.PRODUCT, 2);
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(one, two));
+
+        service.reorderAttributes(type.getId(), "PRODUCT",
+                List.of(new AttributeReorderMove(second.getId(), -1)));
+
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(first.getId(), second.getId())
+                .sorted().toList();
+        org.mockito.ArgumentCaptor<UUID> locked = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(attributeDefinitionRepository, times(2)).findByIdForShare(locked.capture());
+        assertThat(locked.getAllValues()).containsExactly(sorted.get(0), sorted.get(1));
+        // The lock pass comes BEFORE the rewrite's own writes.
+        org.mockito.InOrder order = inOrder(attributeDefinitionRepository, assignmentRepository);
+        order.verify(attributeDefinitionRepository, times(2)).findByIdForShare(any(UUID.class));
+        order.verify(assignmentRepository).saveAll(any());
+    }
+
+    @Test
+    void reorderAnswersThePerItemNotFoundWhenAMembersDefinitionDiedUnderTheLock() {
+        // The 2026-11-08 #808 round-24 review (the same finding's liveness
+        // half): a delete that commits between the bucket load and the
+        // FOR-SHARE pass surfaces in the bucket RE-READ as the member's
+        // absence — a move that addressed the dead member answers the
+        // per-item NOT_FOUND, and the rewrite never writes the dead
+        // assignment's row (never a fabricated success over a
+        // soft-deleted member).
+        CatalogAttributeDefinition first = definition("attr-one", CatalogAttributeType.TEXT);
+        CatalogAttributeDefinition second = definition("attr-two", CatalogAttributeType.TEXT);
+        ProductTypeAttributeAssignment one = assigned(first, ProductTypeAttributeScope.PRODUCT, 1);
+        ProductTypeAttributeAssignment two = assigned(second, ProductTypeAttributeScope.PRODUCT, 2);
+        // The first load sees BOTH members; the re-read under the locks
+        // sees the delete that committed in between — the dead member's
+        // assignment is gone.
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(List.of(one, two))
+                .thenReturn(List.of(two));
+
+        ProductTypeMutationResult result = service.reorderAttributes(type.getId(), "PRODUCT",
+                List.of(new AttributeReorderMove(first.getId(), 0)));
+
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.NOT_FOUND, "id");
+        verify(assignmentRepository, never()).saveAll(any());
+    }
+
+    @Test
     void anUnknownBucketTypeAnswersTheInvalidDomainError() {
         ProductTypeMutationResult result = service.reorderAttributes(type.getId(), "OTHER",
                 List.of(new AttributeReorderMove(UUID.randomUUID(), 1)));

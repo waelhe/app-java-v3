@@ -713,6 +713,37 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // compared a scope-major list against dense 1..n positions it
         // never carried. The (position, scope, id) sort pins ONE order
         // the read path shares and the dense rewrite preserves.
+        //
+        // The 2026-11-08 #808 round-24 review (Minor · Functional
+        // Correctness): the definition locks pair the rewrite with the
+        // attribute-delete wall — the delete holds the DEFINITION row
+        // FOR UPDATE while its children cascade soft-deletes the very
+        // assignments this bucket loads, and the type lock never
+        // serialized the pair (the unassign path's own round-20 F11
+        // race class, applied to the reorder). Each bucket member's
+        // definition locks FOR SHARE in ONE sorted pass (the
+        // updateAssignments round-21 law — the reorder writes
+        // assignment rows, never definition rows), and the bucket
+        // RE-READS fresh under the locks: a delete that already
+        // committed surfaces as the member's absence (a move that
+        // addressed it answers the per-item NOT_FOUND below), and an
+        // in-flight delete waits — its cascade re-runs its guard
+        // against the committed rewrite. The lock footprint stays on
+        // the ADDRESSED bucket's members alone (the other bucket's
+        // rows never race this rewrite).
+        List<ProductTypeAttributeAssignment> loaded = assignmentRepository
+                .findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
+                .filter(assignment -> "PRODUCT".equals(attributeType)
+                        ? assignment.getScope() == ProductTypeAttributeScope.PRODUCT
+                        : assignment.getScope() != ProductTypeAttributeScope.PRODUCT)
+                .toList();
+        for (UUID definitionId : loaded.stream()
+                .map(ProductTypeAttributeAssignment::getAttributeDefinitionId)
+                .distinct()
+                .sorted()
+                .toList()) {
+            attributeDefinitionRepository.findByIdForShare(definitionId);
+        }
         List<ProductTypeAttributeAssignment> bucket = assignmentRepository
                 .findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId).stream()
                 .filter(assignment -> "PRODUCT".equals(attributeType)

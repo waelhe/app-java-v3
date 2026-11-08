@@ -171,6 +171,24 @@ class ProductWriteServiceTest {
     }
 
     @Test
+    void wellFormedNonIsoCurrencyAnswersTheInvalidDomainError() {
+        // The 2026-11-08 #808 round-24 review (Minor · Data Integrity &
+        // Integration): the SHAPE alone is not ISO-4217 membership — a
+        // well-formed "ZZZ" passed the shape check and the database
+        // CHECK constraint (form only) and was SAVED, although no such
+        // currency exists. The shared Currencies helper's membership
+        // authority (the JDK Currency instance) answers the same INVALID
+        // the malformed shape owns; the REQUIRED verdict stays the
+        // absent-field family's own.
+        ProductMutationResult result = service.createProduct(
+                create("Widget", null, "widgets", 1000L, "ZZZ", null), caller);
+
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductMutationError::code, ProductMutationError::field)
+                .containsExactly(ProductMutationErrorCode.INVALID, "currency");
+    }
+
+    @Test
     void missingStoreCategoryCodeAnswersTheRequiredDomainError() {
         ProductMutationResult result = service.createProduct(
                 create("Widget", null, null, 1000L, "SAR", null), caller);

@@ -487,6 +487,23 @@ class CollectionReadServiceTest {
                 .hasMessageContaining("positive page size");
     }
 
+    @Test
+    void theCollectionsScrollRejectsANonPositiveBoundedPageSize() {
+        // The 2026-11-08 #808 round-24 review (the body's unverified
+        // finding, verified against the code — the member scroll and
+        // scrollVariants guards' own law): a BOUNDED zero page size cut
+        // an EMPTY window that still advertised hasNext=true with no
+        // element from which to obtain a continuation cursor (the
+        // client either stopped prematurely or repeated the same empty
+        // page forever). The registry scroll now refuses it up front
+        // with the same classified error.
+        assertThatThrownBy(() -> service.scrollCollections(admin,
+                CollectionSort.of(CollectionSort.Field.NAME, true),
+                ScrollPosition.keyset(), Limit.of(0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+    }
+
     // ------------------------------------------------------------------
     // the bounded projection's own rendering law
     // ------------------------------------------------------------------

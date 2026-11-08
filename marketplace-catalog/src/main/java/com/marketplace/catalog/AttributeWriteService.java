@@ -467,74 +467,60 @@ public class AttributeWriteService implements AttributeWriteSpi {
     @Transactional
     public List<AttributeBulkOutcome> bulkCreateAttributes(List<AttributeCreateCommand> commands,
                                                            String errorPolicy) {
-        List<AttributeBulkOutcome> outcomes = new ArrayList<>(commands.size());
+        List<AttributeBulkOutcome> outcomes;
         // The wave-19 #808 review (Minor): an unknown policy name is the
         // classified INVALID refusal for every item — never the silent
         // non-atomic persistence path the old atomic() predicate implied.
         AttributeMutationError policyError = unknownPolicyError(errorPolicy);
         if (policyError != null) {
+            outcomes = new ArrayList<>(commands.size());
             for (AttributeCreateCommand command : commands) {
                 outcomes.add(new AttributeBulkOutcome(null, List.of(policyError)));
             }
             return outcomes;
         }
+        // The 2026-11-08 #808 round-24 review (Minor · Stability &
+        // Availability): the VALIDATION pass and the INSERT pass are
+        // separated, and the claims ride ONE unified order — the
+        // normalized slug's own sorted order. The previous shape saved
+        // inside the per-item loop in the CALLER's list order, so two
+        // concurrent batches creating overlapping slugs in opposite
+        // orders could meet the database's deadlock detector on the
+        // unique index claims (each transaction holding one claim and
+        // waiting for the other's — the TLA+ shape the review modeled:
+        // the claim is taken at flush, and a LATER item's findByCode
+        // precheck auto-flushes the EARLIER item's pending insert, so
+        // the claims interleave with the prechecks in the caller's
+        // order). The unified claim order means a rival only ever WAITS.
+        // The validation pass owns pure reads (no pending insert exists
+        // while it runs, so no precheck auto-flushes anything), the
+        // saves are bare persists (no query between them), and ONE
+        // flush at the boundary lands the claims in the sorted order.
+        // The outcomes still answer in the CALLER's own order.
+        List<NewAttribute> candidates = new ArrayList<>(commands.size());
         for (AttributeCreateCommand command : commands) {
-            // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
-            // Integration): the batch stays in ONE transaction — the item
-            // ladder is the SHARED validation (the single path's own law)
-            // and the save rides THIS batch's own transaction (never the
-            // single path's executor, whose REQUIRES_NEW would escape the
-            // batch's own atomicity).
-            try {
-            NewAttribute candidate = validateNewAttribute(command);
-            if (!candidate.valid()) {
-                outcomes.add(new AttributeBulkOutcome(null, candidate.errors()));
-                continue;
+            candidates.add(validateNewAttribute(command));
+        }
+        List<Integer> claims = new ArrayList<>();
+        for (int i = 0; i < commands.size(); i++) {
+            if (candidates.get(i).valid()) {
+                claims.add(i);
             }
-            CatalogAttributeDefinition created = attributeDefinitionRepository.save(
+        }
+        claims.sort(java.util.Comparator.comparing(position -> candidates.get(position).code()));
+        CatalogAttributeDefinition[] created = new CatalogAttributeDefinition[commands.size()];
+        for (int position : claims) {
+            NewAttribute candidate = candidates.get(position);
+            created[position] = attributeDefinitionRepository.save(
                     CatalogAttributeDefinition.create(candidate.code(), candidate.name(), null,
                             candidate.valueType(), null));
-            outcomes.add(new AttributeBulkOutcome(toView(created), List.of()));
-            } catch (DataIntegrityViolationException violation) {
-                // The 2026-11-08 #808 round-22 review (the variant loop's
-                // auto-flush twin, proven on this loop by the same
-                // mechanism): the violation can surface INSIDE the loop —
-                // an earlier item's pending insert is auto-flushed by a
-                // LATER item's findByCode precheck (FlushMode.AUTO
-                // flushes before any query over the same table), so a
-                // code claim committed after the earlier item's precheck
-                // aborts the batch here, past the guarded flush()'s
-                // every catch, with the raw constraint error. The same
-                // discrimination and whole-batch rewrite the flush catch
-                // owns: the statement failure already aborted the
-                // transaction (PostgreSQL's own law — no per-item
-                // isolation inside it to assume), so the rollback is
-                // marked first and EVERY item answers the collision
-                // honestly, the ones past the failure included.
-                if (!isAttributeCodeConflict(violation)) {
-                    throw violation;
-                }
-                org.springframework.transaction.interceptor.TransactionAspectSupport
-                        .currentTransactionStatus().setRollbackOnly();
-                AttributeMutationError collision = new AttributeMutationError(
-                        "slug", AttributeMutationErrorCode.ALREADY_EXISTS,
-                        "An attribute with the slug was committed concurrently — the batch rolled back whole");
-                List<AttributeBulkOutcome> rewritten = new ArrayList<>(commands.size());
-                for (AttributeBulkOutcome outcome : outcomes) {
-                    rewritten.add(outcome.success()
-                            ? new AttributeBulkOutcome(null, List.of(collision))
-                            : new AttributeBulkOutcome(null, appendError(outcome.errors(), collision)));
-                }
-                while (rewritten.size() < commands.size()) {
-                    rewritten.add(new AttributeBulkOutcome(null, List.of(collision)));
-                }
-                return rewritten;
-            }
         }
         try {
             // The flush lands the pending inserts INSIDE the boundary — a
             // concurrent rival's committed code surfaces its violation
-            // HERE (never at the interceptor's commit, past the catch).
+            // HERE (never at the interceptor's commit, past the catch),
+            // and a WITHIN-batch duplicate slug surfaces here too (the
+            // second claim hits the first's own uncommitted index entry).
             attributeDefinitionRepository.flush();
         } catch (DataIntegrityViolationException violation) {
             // The 2026-11-07 #808 round-19 review (Minor · Data Integrity
@@ -545,7 +531,10 @@ public class AttributeWriteService implements AttributeWriteSpi {
             // not a design choice): every outcome answers the collision
             // honestly, the batch rolls back whole (the same
             // setRollbackOnly + rewrite discipline the atomic policy
-            // owns).
+            // owns). The 2026-11-08 #808 round-22 review's in-loop twin
+            // is subsumed here: with validation and inserts separated no
+            // precheck query runs after a save, so the flush is the ONE
+            // point where a claim can fail.
             if (!isAttributeCodeConflict(violation)) {
                 throw violation;
             }
@@ -554,13 +543,19 @@ public class AttributeWriteService implements AttributeWriteSpi {
             AttributeMutationError collision = new AttributeMutationError(
                     "slug", AttributeMutationErrorCode.ALREADY_EXISTS,
                     "An attribute with the slug was committed concurrently — the batch rolled back whole");
-            List<AttributeBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
-            for (AttributeBulkOutcome outcome : outcomes) {
-                rewritten.add(outcome.success()
+            List<AttributeBulkOutcome> rewritten = new ArrayList<>(candidates.size());
+            for (NewAttribute candidate : candidates) {
+                rewritten.add(candidate.valid()
                         ? new AttributeBulkOutcome(null, List.of(collision))
-                        : new AttributeBulkOutcome(null, appendError(outcome.errors(), collision)));
+                        : new AttributeBulkOutcome(null, appendError(candidate.errors(), collision)));
             }
             return rewritten;
+        }
+        outcomes = new ArrayList<>(commands.size());
+        for (int i = 0; i < commands.size(); i++) {
+            outcomes.add(candidates.get(i).valid()
+                    ? new AttributeBulkOutcome(toView(created[i]), List.of())
+                    : new AttributeBulkOutcome(null, candidates.get(i).errors()));
         }
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             // The pinned default policy: one refused item refuses the

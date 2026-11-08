@@ -113,6 +113,23 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
      * with the soft-delete policy and the parent-resolution requirement
      * — a variant whose row or parent no longer resolves is ABSENT from
      * the map (never a null {@code Product!} on the wire).
+     *
+     * <p><b>The 2026-11-08 #808 round-24 review (the body's unverified
+     * finding, verified against the callers): the authorization
+     * invariant is CALLER-SIDE.</b> This capability is deliberately
+     * authentication-free and lifecycle-unrestricted — it exists to
+     * render a checkout's OWN persisted lines (whose variants may be
+     * unpublished or suspended mid-checkout), so EVERY caller must pass
+     * only the variant ids of checkout lines the AUTHENTICATED OWNER
+     * already owns (loaded from the checkout entity, never forwarded
+     * from client input). The one production caller
+     * ({@code CheckoutGraphQlMapper.render}) builds its id set from the
+     * owner-gated {@code CheckoutView.lines()} — the owner/ADMIN gate
+     * runs before that mapper is reached — so an attacker-chosen variant
+     * UUID never reaches this read. A future caller that forwards
+     * client-supplied ids would leak an unpublished variant's SKU/name
+     * and its parent's projection past the ADMIN gate the normal reads
+     * carry; such a caller must not be written.</p>
      */
     @Override
     @Transactional(readOnly = true)
@@ -190,7 +207,11 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
                                                      Limit limit) {
         OffsetDateTime lastUpdatedAt = lastUpdatedAt(sort, position);
         UUID lastId = lastId(sort, position);
-        int fetchCount = limit.max() + 1;
+        // The 2026-11-08 #808 round-24 review (the overflow guard the
+        // public branch owns — the ADMIN branch's own twin): a positive
+        // limited value at the Integer.MAX_VALUE ceiling must not wrap
+        // the fetch count negative (the raw invalid-LIMIT 500).
+        int fetchCount = limit.max() == Integer.MAX_VALUE ? Integer.MAX_VALUE : limit.max() + 1;
         List<ProductVariant> rows = switch (sort.field()) {
             case LAST_MODIFIED_AT -> sort.ascending()
                     ? variantRepository.scrollAdminByUpdatedAtAsc(lastUpdatedAt, lastId, fetchCount)
@@ -234,7 +255,15 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
                                                       Limit limit) {
         OffsetDateTime lastUpdatedAt = lastUpdatedAt(sort, position);
         UUID lastId = lastId(sort, position);
-        int fetchCount = limit.max() + 1;
+        // The 2026-11-08 #808 round-24 review (Minor · Data Integrity &
+        // Integration, the body's unverified finding — verified against
+        // the code): the fetch count must not overflow — the public guard
+        // accepts every positive limited value, and Integer.MAX_VALUE + 1
+        // wraps negative, handing the native scroll an invalid negative
+        // LIMIT (the raw 500). A caller asking for everything gets
+        // everything: rows.size() can never exceed Integer.MAX_VALUE, so
+        // hasNext is honestly false at the ceiling.
+        int fetchCount = limit.max() == Integer.MAX_VALUE ? Integer.MAX_VALUE : limit.max() + 1;
         List<ProductVariant> rows = switch (sort.field()) {
             case LAST_MODIFIED_AT -> sort.ascending()
                     ? variantRepository.scrollPublicByUpdatedAtAsc(lastUpdatedAt, lastId, fetchCount)
@@ -251,10 +280,22 @@ public class ProductVariantReadService implements ProductVariantReadSpi {
         List<ScrollPosition> positions = new ArrayList<>(content.size());
         for (ProductVariant row : content) {
             ProductView parent = parents.get(row.getProductId());
-            if (parent == null) {
+            if (parent == null || !"ACTIVE".equals(parent.status())) {
                 // Cannot happen behind the native EXISTS gate (the live
                 // ACTIVE parent is part of the population predicate itself)
                 // — the belt-and-braces stance the ADMIN path documents.
+                //
+                // The 2026-11-08 #808 round-24 review (Minor · Data
+                // Integrity & Integration): the parent projection is a
+                // FRESH read AFTER the page query, so an owner who
+                // suspended the product (and renamed it) between the two
+                // statements would otherwise render the UPDATED title and
+                // status — the population predicate's own ACTIVE-parent
+                // condition broken on the wire. The same safe-absence skip
+                // the null-parent window owns: the row drops from the
+                // page, the keyset cursor keeps advancing from the last
+                // EMITTED row, and the next page reflects the suspended
+                // truth.
                 continue;
             }
             views.add(toView(row, parent));

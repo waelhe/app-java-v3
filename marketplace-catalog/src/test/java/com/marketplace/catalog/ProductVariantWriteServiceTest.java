@@ -891,6 +891,53 @@ class ProductVariantWriteServiceTest {
     }
 
     @Test
+    void bulkUpdateClassifiesAConcurrentSkuCollisionAsTheWholeBatchRollback() {
+        // The 2026-11-08 #808 round-24 review (Minor · Data Integrity &
+        // Integration): the bulkCreate root's own twin — the LAST item's
+        // pending UPDATE has no later SKU precheck to auto-flush it, so
+        // a concurrent SKU claim committed after that item's precheck
+        // surfaces its violation at the interceptor's commit (past every
+        // catch) unless the flush lands INSIDE the boundary. The guarded
+        // flush owns the same discrimination (this index only) and the
+        // same whole-batch rewrite: every item answers the collision
+        // honestly, the ones already answered included.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        ProductVariant row = variantUnder(parent, "SKU-1");
+        when(variantRepository.existsByIdAndProductId(row.getId(), parent.getId())).thenReturn(true);
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(row));
+        when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
+                ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(0L);
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "uq_product_variants_provider_sku")).when(variantRepository).flush();
+        org.springframework.transaction.TransactionStatus status =
+                org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class);
+
+        java.util.List<com.marketplace.catalog.spi.ProductVariantBulkOutcome> outcomes;
+        try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(
+                             org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(status);
+
+            outcomes = service.bulkUpdateVariants(parent.getId(), List.of(
+                    new com.marketplace.catalog.spi.ProductVariantBulkUpdateItem(row.getId(),
+                            new com.marketplace.catalog.spi.ProductVariantUpdateCommand("SKU-2", "Renamed", 500L))),
+                    caller, "IGNORE_FAILED");
+        }
+
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).success()).isFalse();
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(com.marketplace.catalog.spi.ProductVariantMutationError::code)
+                .isEqualTo(com.marketplace.catalog.spi.ProductVariantMutationErrorCode.ALREADY_EXISTS);
+        org.mockito.Mockito.verify(status).setRollbackOnly();
+    }
+
+    @Test
     void bulkDeleteLocksTheRowsInTheDatabaseUuidOrder() {
         // The 2026-11-08 #808 round-22 review (Minor · Stability &
         // Availability): the same law on the bulk DELETE pass — the

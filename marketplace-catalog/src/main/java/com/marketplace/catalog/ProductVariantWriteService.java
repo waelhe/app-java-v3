@@ -612,8 +612,82 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                                 "No product variant found for the id"))));
                 continue;
             }
-            ProductVariantMutationResult result = updateVariant(item.id(), item.fields(), authentication);
+            ProductVariantMutationResult result;
+            try {
+                result = updateVariant(item.id(), item.fields(), authentication);
+            } catch (org.springframework.dao.DataIntegrityViolationException violation) {
+                // The 2026-11-08 #808 round-24 review (Minor · Data
+                // Integrity & Integration): the bulkCreate loop's own
+                // twin — the violation can surface INSIDE the loop,
+                // BEFORE any guarded flush — an earlier item's pending
+                // UPDATE is auto-flushed by a LATER item's SKU precheck
+                // (FlushMode.AUTO flushes before any query over
+                // product_variants, and
+                // countSkuReservationsIncludingDeletedExcluding reads
+                // it), so a SKU claim committed after the earlier item's
+                // precheck aborted the batch here with the raw
+                // constraint error. The same discrimination the create
+                // loop owns (this index only; every other violation
+                // keeps its own propagation) and the same whole-batch
+                // rewrite: the statement failure already aborted the
+                // transaction (PostgreSQL's own law — no per-item
+                // isolation inside it exists to assume), so the rollback
+                // is marked first and EVERY item answers the collision
+                // honestly, the ones past the failure included.
+                if (violation.getMessage() == null
+                        || !violation.getMessage().contains("uq_product_variants_provider_sku")) {
+                    throw violation;
+                }
+                org.springframework.transaction.interceptor.TransactionAspectSupport
+                        .currentTransactionStatus().setRollbackOnly();
+                ProductVariantMutationError collision = new ProductVariantMutationError(
+                        "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                        "The SKU was committed concurrently in this seller's namespace — the batch"
+                                + " rolled back whole");
+                List<ProductVariantBulkOutcome> rewritten = new ArrayList<>(items.size());
+                for (ProductVariantBulkOutcome outcome : outcomes) {
+                    rewritten.add(outcome.success()
+                            ? new ProductVariantBulkOutcome(null, List.of(collision))
+                            : new ProductVariantBulkOutcome(null,
+                                    appendError(outcome.errors(), collision)));
+                }
+                while (rewritten.size() < items.size()) {
+                    rewritten.add(new ProductVariantBulkOutcome(null, List.of(collision)));
+                }
+                return rewritten;
+            }
             outcomes.add(new ProductVariantBulkOutcome(result.variant(), result.errors()));
+        }
+        try {
+            // The 2026-11-08 #808 round-24 review (the bulkCreate root's
+            // own law): the flush lands the pending UPDATEs INSIDE the
+            // boundary — the SKU precheck is honest but not atomic, and
+            // the LAST item's pending update has no later precheck to
+            // auto-flush it, so without this flush a concurrent SKU
+            // claim committed after that item's precheck surfaces its
+            // violation at the interceptor's commit (past every catch),
+            // aborting the whole batch with the raw constraint error
+            // instead of the classified outcome.
+            variantRepository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException violation) {
+            if (violation.getMessage() == null
+                    || !violation.getMessage().contains("uq_product_variants_provider_sku")) {
+                throw violation;
+            }
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+            ProductVariantMutationError collision = new ProductVariantMutationError(
+                    "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                    "The SKU was committed concurrently in this seller's namespace — the batch"
+                            + " rolled back whole");
+            List<ProductVariantBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
+            for (ProductVariantBulkOutcome outcome : outcomes) {
+                rewritten.add(outcome.success()
+                        ? new ProductVariantBulkOutcome(null, List.of(collision))
+                        : new ProductVariantBulkOutcome(null,
+                                appendError(outcome.errors(), collision)));
+            }
+            return rewritten;
         }
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             org.springframework.transaction.interceptor.TransactionAspectSupport

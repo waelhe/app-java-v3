@@ -64,11 +64,16 @@ class ProductServiceTest {
                 productTypeRepository, assignments, definitions, options, attributeValues,
                 variantAttributeValues, currentUserProvider);
         // The 2026-11-07 #808 round-19: the publish/replace pair's locked
-        // owned read — every test's findById stub answers the FOR-UPDATE
-        // twin too (the lock discipline is the production change; the
-        // ownership filter is the same value).
-        lenient().when(productRepository.findByIdForUpdate(any(UUID.class)))
-                .thenAnswer(invocation -> productRepository.findById(invocation.getArgument(0)));
+        // owned read — every test's findById stub answers the scoped
+        // FOR-UPDATE twin too (the 2026-11-08 #808 round-24 review moved
+        // the provider predicate INSIDE the locking query — the
+        // ProductWriteService round-21 law — so the bridge filters by
+        // the caller exactly as the production query does; the ownership
+        // verdict is the same value).
+        lenient().when(productRepository.findByIdAndProviderIdForUpdate(any(UUID.class), any(UUID.class)))
+                .thenAnswer(invocation -> productRepository
+                        .findById(invocation.getArgument(0))
+                        .filter(row -> row.getProviderId().equals(invocation.getArgument(1))));
     }
 
     private ProductService.RegisterProductCommand command(String categoryCode) {
@@ -463,7 +468,9 @@ class ProductServiceTest {
         // paths, BEFORE the status read that drives enforceRequired.
         // A typed draft with one covering variant — the publish's own
         // happy path (the existing test's stub set) answers the save, and
-        // the verification below pins the LOCKED read itself.
+        // the verification below pins the SCOPED locked read itself
+        // (the 2026-11-08 #808 round-24 review: the provider predicate
+        // rides inside the locking query).
         UUID productTypeId = UUID.randomUUID();
         Product draft = Product.register("home-appliances", "Typed draft", null, 100L, "SAR", caller, productTypeId);
         when(productRepository.findById(draft.getId())).thenReturn(Optional.of(draft));
@@ -476,7 +483,27 @@ class ProductServiceTest {
 
         service.publishOwnedProduct(productId, authentication);
 
-        verify(productRepository).findByIdForUpdate(productId);
+        verify(productRepository).findByIdAndProviderIdForUpdate(productId, caller);
+    }
+
+    @Test
+    void aStrangersRowAnswersTheHonest404WithoutEverLockingTheForeignRow() {
+        // The 2026-11-08 #808 round-24 review (Minor · Stability &
+        // Availability, Quick win): the provider predicate rides INSIDE
+        // the locking query — a provider naming another provider's
+        // product must answer the honest 404 WITHOUT waiting on the
+        // foreign row's lock (the previous lock-then-filter shape held
+        // the stranger's WRITE lock until the ownership check). The
+        // scoped query answers empty for the stranger's row and the
+        // unscoped FOR-UPDATE read is NEVER issued.
+        Product strangers = Product.register("home-appliances", "Stranger's draft", null, 100L,
+                "SAR", UUID.randomUUID(), null);
+        when(productRepository.findById(strangers.getId())).thenReturn(Optional.of(strangers));
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(caller);
+
+        assertThatThrownBy(() -> service.publishOwnedProduct(strangers.getId(), authentication))
+                .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
+        verify(productRepository, never()).findByIdForUpdate(any(UUID.class));
     }
 
 }

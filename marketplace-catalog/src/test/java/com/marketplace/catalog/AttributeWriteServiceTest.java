@@ -740,23 +740,22 @@ class AttributeWriteServiceTest {
     }
 
     @Test
-    void bulkCreateClassifiesAnInLoopCollisionAsTheWholeBatchRollback() {
-        // The 2026-11-08 #808 round-22 review (the variant loop's
-        // auto-flush twin, proven on this loop by the same mechanism):
-        // an earlier item's pending insert is auto-flushed by a LATER
-        // item's findByCode precheck (FlushMode.AUTO over the same
-        // table), so the concurrent code collision surfaces INSIDE the
-        // loop — past the guarded flush()'s every catch — and the raw
-        // exception aborted the batch. The in-loop catch owns the same
-        // discrimination (this index only) and the same whole-batch
-        // rewrite: every item answers the collision honestly, the ones
-        // past the failure included.
+    void bulkCreateClassifiesAConcurrentCodeClaimAsTheWholeBatchRollback() {
+        // The 2026-11-08 #808 round-24 review (Minor · Stability &
+        // Availability) restructured this loop: the VALIDATION pass and
+        // the INSERT pass are separated (the claims ride ONE
+        // sorted-by-slug order), so a rival's concurrently-committed code
+        // can no longer surface at a later item's findByCode precheck —
+        // the prechecks run before ANY insert exists. The ONE point
+        // where a claim can fail is the guarded flush at the boundary
+        // (the round-22 in-loop catch's scenario is subsumed here — the
+        // same discrimination, the same whole-batch rewrite).
         when(repository.findByCode("bulk-one")).thenReturn(java.util.Optional.empty());
-        when(repository.findByCode("collide")).thenThrow(
-                new org.springframework.dao.DataIntegrityViolationException(
-                        "uq_catalog_attribute_definitions_code_live"));
+        when(repository.findByCode("collide")).thenReturn(java.util.Optional.empty());
         when(repository.save(any(CatalogAttributeDefinition.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "uq_catalog_attribute_definitions_code_live")).when(repository).flush();
 
         java.util.List<com.marketplace.catalog.spi.AttributeBulkOutcome> outcomes;
         try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
@@ -766,18 +765,58 @@ class AttributeWriteServiceTest {
 
             outcomes = service.bulkCreateAttributes(List.of(
                     new AttributeCreateCommand("Bulk One", "bulk-one", CatalogAttributeType.TEXT),
-                    new AttributeCreateCommand("Colliding", "collide", CatalogAttributeType.TEXT),
-                    new AttributeCreateCommand("Never Reached", "never", CatalogAttributeType.TEXT)),
+                    new AttributeCreateCommand("Colliding", "collide", CatalogAttributeType.TEXT)),
                     "IGNORE_FAILED");
         }
 
-        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes).hasSize(2);
         assertThat(outcomes).allSatisfy(outcome -> {
             assertThat(outcome.success()).isFalse();
             assertThat(outcome.errors()).singleElement()
                     .extracting(AttributeMutationError::code)
                     .isEqualTo(AttributeMutationErrorCode.ALREADY_EXISTS);
         });
+    }
+
+    @Test
+    void bulkCreateSavesTheValidClaimsInSortedSlugOrderAndAnswersInInputOrder() {
+        // The 2026-11-08 #808 round-24 review (Minor · Stability &
+        // Availability): two concurrent batches creating overlapping
+        // slugs in OPPOSITE caller orders could meet the database's
+        // deadlock detector on the unique index claims — the claims now
+        // ride ONE unified order (the normalized slug's own sorted
+        // order), so a rival only ever WAITS, while the outcomes still
+        // answer in the caller's own order.
+        when(repository.findByCode("zulu")).thenReturn(java.util.Optional.empty());
+        when(repository.findByCode("alpha")).thenReturn(java.util.Optional.empty());
+        when(repository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var outcomes = service.bulkCreateAttributes(List.of(
+                new AttributeCreateCommand("Zulu First", "zulu", CatalogAttributeType.TEXT),
+                new AttributeCreateCommand("Alpha Second", "alpha", CatalogAttributeType.TEXT),
+                new AttributeCreateCommand("Bad Shape", "Bad Shape!", CatalogAttributeType.TEXT)),
+                "IGNORE_FAILED");
+
+        // The claims landed in the SORTED slug order (alpha before zulu),
+        // never the caller's order.
+        org.mockito.ArgumentCaptor<CatalogAttributeDefinition> saved =
+                org.mockito.ArgumentCaptor.forClass(CatalogAttributeDefinition.class);
+        verify(repository, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(CatalogAttributeDefinition::getCode)
+                .containsExactly("alpha", "zulu");
+        // The outcomes answer in the INPUT order — position 0 is zulu's
+        // own success, position 1 is alpha's, position 2 the invalid item.
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(0).attribute().slug()).isEqualTo("zulu");
+        assertThat(outcomes.get(1).success()).isTrue();
+        assertThat(outcomes.get(1).attribute().slug()).isEqualTo("alpha");
+        assertThat(outcomes.get(2).success()).isFalse();
+        assertThat(outcomes.get(2).errors()).singleElement()
+                .extracting(AttributeMutationError::code)
+                .isEqualTo(AttributeMutationErrorCode.INVALID);
     }
 
     @Test

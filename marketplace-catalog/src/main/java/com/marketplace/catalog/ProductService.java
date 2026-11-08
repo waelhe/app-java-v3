@@ -507,11 +507,21 @@ public class ProductService {
      * publish/replace pair's serialization seam (the delete path's
      * ownedRowForUpdate precedent; the stranger's row and the missing
      * row answer the same safe absence).
+     *
+     * <p>The 2026-11-08 #808 round-24 review (Minor · Stability &amp;
+     * Availability, Quick win): the provider predicate rides INSIDE the
+     * locking query (the {@code ProductWriteService.ownedRowForUpdate}
+     * round-21 precedent verbatim) — the previous lock-then-filter shape
+     * took the WRITE lock on the addressed row BEFORE the ownership
+     * check, so a provider naming another provider's product WAITED on
+     * that foreign row's lock (a concurrent publish, replace or delete
+     * of the stranger's row) before answering the honest 404. The
+     * scoped query skips a foreign row without ever locking it, while
+     * the caller's OWN rows keep the full FOR-UPDATE serialization.</p>
      */
     private Product getOwnedProductForUpdate(UUID productId, Authentication authentication) {
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
-        return productRepository.findByIdForUpdate(productId)
-                .filter(row -> row.getProviderId().equals(caller))
+        return productRepository.findByIdAndProviderIdForUpdate(productId, caller)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
     }
 

@@ -122,6 +122,22 @@ public class ProductWriteService implements ProductWriteSpi {
         } else if (!currency.matches("[A-Z]{3}")) {
             errors.add(new ProductMutationError("currency", ProductMutationErrorCode.INVALID,
                     "A product's currency is a 3-letter ISO-4217 code"));
+        } else {
+            // The 2026-11-08 #808 round-24 review (Minor · Data Integrity
+            // & Integration): the SHAPE alone is not membership — a
+            // well-formed "ZZZ" passed the shape check and the database
+            // CHECK constraint (which validates the form only) and was
+            // SAVED, although no such ISO-4217 currency exists. The
+            // shared helper's own authority (the JDK Currency instance —
+            // the same membership check every money-carrying component
+            // rides) answers the same INVALID the malformed shape owns;
+            // the REQUIRED verdict stays the absent-field family's own.
+            try {
+                com.marketplace.shared.api.Currencies.normalize(currency);
+            } catch (IllegalArgumentException unknown) {
+                errors.add(new ProductMutationError("currency", ProductMutationErrorCode.INVALID,
+                        "A product's currency is a 3-letter ISO-4217 code"));
+            }
         }
         String storeCategoryCode = command.storeCategoryCode() == null
                 ? null
