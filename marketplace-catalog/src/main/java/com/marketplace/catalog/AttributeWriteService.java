@@ -190,9 +190,19 @@ public class AttributeWriteService implements AttributeWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public AttributeMutationResult updateAttribute(UUID id, AttributeUpdateCommand command) {
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the lifecycle's locked load — the edit serializes
+        // with the delete (and every other definition writer) on the row
+        // itself. An unlocked read let a concurrent deleteAttribute
+        // commit between the load and the save, and the update then
+        // wrote over the soft-deleted row and answered a fabricated
+        // SUCCESS for an attribute no read could resolve (the soft
+        // delete never bumps the version, and Hibernate's plain UPDATE
+        // carries no is_deleted=false guard), or the stale @Version
+        // answered the raw OptimisticLockException.
         Optional<CatalogAttributeDefinition> addressed = id == null
                 ? Optional.empty()
-                : attributeDefinitionRepository.findById(id);
+                : attributeDefinitionRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return AttributeMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute found for the id")));

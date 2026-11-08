@@ -50,6 +50,9 @@ class AttributeValueWriteServiceTest {
     private CatalogAttributeDefinitionRepository definitions;
     private ProductVariantAttributeValueRepository variantValues;
     private ProductAttributeValueRepository productValues;
+    // The 2026-11-08 #808 round-21: the refresh-under-lock contract's own
+    // mock (the OrdersService precedent — a no-op refresh).
+    private jakarta.persistence.EntityManager entityManager;
     private AttributeValueWriteSpi service;
 
     @BeforeEach
@@ -68,7 +71,9 @@ class AttributeValueWriteServiceTest {
         // ALIVE by default (the existing delete ladder keeps its
         // verdicts; the dead-row tests override their own absence).
         lenient().when(options.existsById(any())).thenReturn(true);
-        service = new AttributeValueWriteService(options, definitions, variantValues, productValues);
+        entityManager = mock(jakarta.persistence.EntityManager.class);
+        service = new AttributeValueWriteService(options, definitions, variantValues, productValues,
+                entityManager);
     }
 
     private static CatalogAttributeDefinition choiceParent() {
@@ -228,7 +233,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
         when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand(null, null));
@@ -246,7 +251,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
         when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(options.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
@@ -268,7 +273,7 @@ class AttributeValueWriteServiceTest {
         // classified NOT_FOUND when the parent attribute is gone — these
         // validation verdicts need the parent PRESENT to reach their own
         // error branch.
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand("   ", null));
@@ -289,7 +294,7 @@ class AttributeValueWriteServiceTest {
         // classified NOT_FOUND when the parent attribute is gone — these
         // validation verdicts need the parent PRESENT to reach their own
         // error branch.
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand(null, "fresh-name"));
@@ -314,7 +319,7 @@ class AttributeValueWriteServiceTest {
         when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
         when(options.findByAttributeDefinitionIdAndCode(parent.getId(), "keep-val"))
                 .thenReturn(Optional.of(existing));
-        when(definitions.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
         when(options.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),

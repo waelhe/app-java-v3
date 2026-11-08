@@ -121,6 +121,45 @@ class CollectionWriteServiceTest {
     }
 
     @Test
+    void aLeadingDashSlugMatchesTheDatabaseChecksOwnShapeClass() {
+        // The 2026-11-08 #808 round-21 review (Minor · Functional
+        // Correctness): the service's shape mirror is the V253 CHECK's
+        // OWN class [a-z0-9-]+ exactly — a leading-dash slug like "-sale"
+        // passes the database constraint and must pass the boundary too
+        // (the previous [a-z0-9][a-z0-9-]* front anchor was stricter than
+        // the pinned constraint it claimed to mirror).
+        when(collectionRepository.findBySlug("-sale")).thenReturn(Optional.empty());
+        when(collectionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CollectionMutationResult result = service.createCollection(
+                new CollectionCreateCommand("Sale", "-sale", null, null));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.collection().slug()).isEqualTo("-sale");
+    }
+
+    @Test
+    void anEmptyAddOnAnExhaustedCollectionIsTheHonestNoOpSuccess() {
+        // The 2026-11-08 #808 round-21 review (Minor · Functional
+        // Correctness, additional comment): an empty product list
+        // allocates NO position — the exhausted-collection refusal
+        // (the ceiling-high live member) must not answer a request
+        // that writes nothing. The no-op success carries the
+        // collection's own projection.
+        UUID collectionId = UUID.randomUUID();
+        when(collectionRepository.findById(collectionId))
+                .thenReturn(Optional.of(row("slug", "Full", true)));
+        when(membershipRepository.findByCollectionIdOrderByPositionAscIdAsc(collectionId))
+                .thenReturn(List.of(CollectionProduct.create(
+                        collectionId, UUID.randomUUID(), Integer.MAX_VALUE)));
+
+        CollectionMutationResult result = service.addProducts(collectionId, List.of());
+
+        assertThat(result.success()).isTrue();
+        verify(membershipRepository, never()).save(any());
+    }
+
+    @Test
     void duplicateLiveSlugAnswersTheUniqueDomainError() {
         when(collectionRepository.findBySlug("taken")).thenReturn(
                 Optional.of(row("taken", "Taken", true)));

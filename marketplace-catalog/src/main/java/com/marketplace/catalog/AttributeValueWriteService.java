@@ -79,15 +79,23 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
     private final ProductVariantAttributeValueRepository variantAttributeValues;
     /** The live-PRODUCT references the option-delete guard reads (the #808 round-3). */
     private final ProductAttributeValueRepository productAttributeValues;
+    // The 2026-11-08 #808 round-21 review (Minor · Stability &
+    // Availability): constructor injection (not @PersistenceContext) so
+    // the unit tests can mock the refresh contract — Spring injects the
+    // shared transactional EntityManager either way (the OrdersService
+    // confirmFromPayment precedent).
+    private final jakarta.persistence.EntityManager entityManager;
 
     public AttributeValueWriteService(CatalogAttributeOptionRepository attributeOptionRepository,
                                       CatalogAttributeDefinitionRepository attributeDefinitionRepository,
                                       ProductVariantAttributeValueRepository variantAttributeValues,
-                                      ProductAttributeValueRepository productAttributeValues) {
+                                      ProductAttributeValueRepository productAttributeValues,
+                                      jakarta.persistence.EntityManager entityManager) {
         this.attributeOptionRepository = attributeOptionRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.variantAttributeValues = variantAttributeValues;
         this.productAttributeValues = productAttributeValues;
+        this.entityManager = entityManager;
     }
 
     @Override
@@ -182,8 +190,21 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
         }
         CatalogAttributeOption row = addressed.get();
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability): the definition lock comes BEFORE the parent
+        // projection and the save — the update path rode an UNLOCKED
+        // definition read, so a concurrent reorder (the locked writer
+        // that repositions every option) committed between this load
+        // and the save and the amendment answered the stale @Version's
+        // raw OptimisticLockException. The lock serializes the pair,
+        // and the option re-reads under it: refresh(entity,
+        // PESSIMISTIC_WRITE) — the JPA-documented re-read-under-lock (the
+        // OrdersService confirmFromPayment precedent verbatim) — reloads
+        // the row's authoritative state (position, names, version)
+        // before the amendment decides on it.
         Optional<CatalogAttributeDefinition> parent =
-                attributeDefinitionRepository.findById(row.getAttributeDefinitionId());
+                attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId());
+        entityManager.refresh(row, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         if (parent.isEmpty()) {
             // The 2026-11-06 #808 round review (Minor · Functional
             // Correctness): a concurrently soft-deleted parent attribute
@@ -301,6 +322,16 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
                     "id", AttributeMutationErrorCode.NOT_FOUND,
                     "No attribute value found for the id")));
         }
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability): the option RE-READS under the lock before the
+        // delete — the row was loaded BEFORE the definition lock, so a
+        // concurrent translation or reorder that committed while THIS
+        // transaction waited leaves the managed row's @Version stale and
+        // the soft-delete UPDATE matches zero rows (the raw
+        // OptimisticLockException). refresh(entity, PESSIMISTIC_WRITE)
+        // reloads the authoritative row first (the OrdersService
+        // confirmFromPayment precedent).
+        entityManager.refresh(row, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         AttributeView parent = toAttributeView(parentRow.get());
         // The 2026-11-06 #808 round review (Major · Data Integrity &
         // Integration): a variant value referencing the option blocks the
@@ -389,6 +420,15 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
             if (!attributeOptionRepository.existsById(option.getId())) {
                 continue;
             }
+            // The 2026-11-08 #808 round-21 review (Minor · Stability &
+            // Availability): the bulk leg's own refresh-under-lock — the
+            // same stale-@Version window the single delete just closed:
+            // a translation or reorder that committed while this batch
+            // waited on the definition locks leaves the pre-lock resolved
+            // row stale, and the soft delete then matches zero rows (the
+            // raw OptimisticLockException). The honest count keeps
+            // counting only rows the authoritative state still carries.
+            entityManager.refresh(option, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
             // Options referenced by live variants OR live products are
             // skipped for the same honest-count reason — the single-item
             // leg's own classified refusals, in bulk form (the 2026-11-06

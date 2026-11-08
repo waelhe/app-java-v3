@@ -60,6 +60,10 @@ class TranslationWriteServiceTest {
     private CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private CatalogAttributeOptionRepository attributeOptionRepository;
     private CollectionRepository collectionRepository;
+    // The 2026-11-08 #808 round-21: the advisory-lock port and the
+    // refresh-under-lock contract's own mocks.
+    private CollectionProductRepository collectionProductRepository;
+    private jakarta.persistence.EntityManager entityManager;
     private TranslationWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("admin-subject", "n/a", "ROLE_ADMIN");
 
@@ -74,8 +78,15 @@ class TranslationWriteServiceTest {
         lenient().when(attributeDefinitionRepository.findByIdForUpdate(any(UUID.class)))
                 .thenAnswer(invocation -> attributeDefinitionRepository.findById(invocation.getArgument(0)));
         lenient().when(attributeOptionRepository.existsById(any(UUID.class))).thenReturn(true);
+        // The 2026-11-08 #808 round-21: the collection translation rides the
+        // collection advisory lock (the locked-first law) and the value
+        // translation re-reads its option under the definition lock — the
+        // EntityManager mock is the OrdersService no-op-refresh precedent.
+        collectionProductRepository = mock(CollectionProductRepository.class);
+        entityManager = mock(jakarta.persistence.EntityManager.class);
         service = new TranslationWriteService(categoryRepository, attributeDefinitionRepository,
-                attributeOptionRepository, collectionRepository);
+                attributeOptionRepository, collectionRepository, collectionProductRepository,
+                entityManager);
     }
 
     // ------------------------------------------------------------------
@@ -85,7 +96,7 @@ class TranslationWriteServiceTest {
     @Test
     void anUnknownCategoryAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(categoryRepository.findById(unknown)).thenReturn(Optional.empty());
+        when(categoryRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         CategoryMutationResult result = service.translateCategory(
                 unknown, new TranslationAmendCommand("ترجمة", "AR"));
@@ -99,7 +110,7 @@ class TranslationWriteServiceTest {
     @Test
     void anUnknownLanguageDimensionAnswersTheInvalidDomainError() {
         Category row = Category.create("widgets", "Widgets", null, 1);
-        when(categoryRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(categoryRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
 
         CategoryMutationResult result = service.translateCategory(
                 row.getId(), new TranslationAmendCommand("اسم", "FR"));
@@ -113,7 +124,7 @@ class TranslationWriteServiceTest {
     @Test
     void aBlankNameAnswersTheInvalidDomainErrorNeverTheNamelessRow() {
         Category row = Category.create("widgets", "Widgets", "ودجات", 1);
-        when(categoryRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(categoryRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
 
         CategoryMutationResult result = service.translateCategory(
                 row.getId(), new TranslationAmendCommand("   ", "AR"));
@@ -127,7 +138,7 @@ class TranslationWriteServiceTest {
     @Test
     void anOversizedNameAnswersTheInvalidDomainError() {
         Category row = Category.create("widgets", "Widgets", null, 1);
-        when(categoryRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(categoryRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
 
         CategoryMutationResult result = service.translateCategory(
                 row.getId(), new TranslationAmendCommand("ا".repeat(101), "AR"));
@@ -140,7 +151,7 @@ class TranslationWriteServiceTest {
     @Test
     void aNullNameAnswersTheCurrentProjectionWithoutAWrite() {
         Category row = Category.create("widgets", "Widgets", "ودجات", 1);
-        when(categoryRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(categoryRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
 
         CategoryMutationResult result = service.translateCategory(
                 row.getId(), new TranslationAmendCommand(null, "AR"));
@@ -154,7 +165,7 @@ class TranslationWriteServiceTest {
     @Test
     void theArabicDimensionAmendmentMovesOnlyTheArColumn() {
         Category row = Category.create("widgets", "Widgets", null, 3);
-        when(categoryRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(categoryRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(categoryRepository.save(any(Category.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -175,7 +186,7 @@ class TranslationWriteServiceTest {
     @Test
     void theEnglishDimensionAmendmentMovesOnlyTheEnColumn() {
         Category row = Category.create("widgets", "Widgets", "ودجات", 1);
-        when(categoryRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(categoryRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(categoryRepository.save(any(Category.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 

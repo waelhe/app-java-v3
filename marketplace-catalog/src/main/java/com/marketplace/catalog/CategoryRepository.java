@@ -45,4 +45,23 @@ public interface CategoryRepository extends JpaRepository<Category, java.util.UU
      * deterministic (never an unstable interleave of equal positions).
      */
     List<Category> findAllByOrderByPositionAscIdAsc();
+
+    /**
+     * The 2026-11-08 #808 round-21 review (Minor · Data Integrity &amp;
+     * Integration): the category lifecycle's own row lock — every
+     * lifecycle writer (update, translate, single delete, bulk delete)
+     * rides the LOCKED load so the edit/delete pair serializes on the
+     * row itself (the CatalogAttributeDefinitionRepository
+     * .findByIdForUpdate precedent verbatim). An unlocked load let a
+     * concurrent delete commit between the read and the save: the edit
+     * then wrote over the soft-deleted row and answered a fabricated
+     * SUCCESS for a category no read could resolve (the soft delete
+     * never bumps the version, and Hibernate's plain UPDATE carries no
+     * is_deleted=false guard), or a stale @Version answered the raw
+     * OptimisticLockException.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select c from Category c where c.id = :id")
+    Optional<Category> findByIdForUpdate(
+            @org.springframework.data.repository.query.Param("id") java.util.UUID id);
 }

@@ -76,8 +76,18 @@ public class CollectionWriteService implements CollectionWriteSpi {
      * digits and dashes (the {@code V253} CHECK, mirrored at the boundary
      * so an invalid shape answers the classified INVALID domain error,
      * never a DB CHECK failure.
+     *
+     * <p>The 2026-11-08 #808 round-21 review (Minor · Functional
+     * Correctness): the mirror is the CHECK's own class EXACTLY — the
+     * previous {@code [a-z0-9][a-z0-9-]*} front anchor was stricter than
+     * the {@code V253} {@code slug ~ '^[a-z0-9-]+$'} constraint (a
+     * leading-dash slug like {@code -sale} passed the database and was
+     * refused by the service), and every stored slug satisfied the CHECK,
+     * so an unchanged re-send could fail the service's own shape gate.
+     * One class, both sides — the mirror never contradicts the pinned
+     * constraint.</p>
      */
-    static final Pattern SLUG_SHAPE = Pattern.compile("[a-z0-9][a-z0-9-]*");
+    static final Pattern SLUG_SHAPE = Pattern.compile("[a-z0-9-]+");
 
     /** The registry's own column ceilings (the entity's own length contracts). */
     private static final int SLUG_MAX_LENGTH = 255;
@@ -563,6 +573,15 @@ public class CollectionWriteService implements CollectionWriteSpi {
      * backstop, never the user-visible answer.</p>
      */
     private void appendMembership(UUID collectionId, List<UUID> productIds) {
+        // The 2026-11-08 #808 round-21 review (Minor · Functional
+        // Correctness, additional comment): an EMPTY distinct batch is
+        // the honest no-op — it allocates no position, so the exhaustion
+        // check below must not refuse it (an empty add on a
+        // ceiling-exhausted collection answered ConflictException for a
+        // request that writes nothing).
+        if (distinct(productIds).isEmpty()) {
+            return;
+        }
         // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
         // Integration): the membership-CREATING read takes the product
         // rows FOR SHARE (the reference-creating discipline the

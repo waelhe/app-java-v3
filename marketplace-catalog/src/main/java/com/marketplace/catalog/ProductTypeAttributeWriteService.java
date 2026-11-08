@@ -121,6 +121,27 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // would otherwise answer with an unclassified constraint throw).
         Map<ProductTypeAttributeScope, Integer> pendingNextPosition = new HashMap<>();
         Set<UUID> pendingAttributeIds = new HashSet<>();
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability, the lock-order law): the batch's definition
+        // SHARE locks come in ONE sorted pass BEFORE the operations
+        // loop — the previous per-operation read took them in the
+        // CALLER'S list order, so this transaction and a concurrent
+        // unassignAttributes / bulk delete (the sorted FOR-UPDATE
+        // writers on the same definition rows) could each hold one row
+        // and wait for the other's (the database's own deadlock abort —
+        // the raw error, never the classified result). Every definition
+        // lock this module takes now rides the same deterministic UUID
+        // order (the unassignAttributes/deletes law, adopted by the
+        // reference-creating reads too).
+        Map<UUID, Optional<CatalogAttributeDefinition>> resolvedDefinitions = new HashMap<>();
+        for (UUID attributeId : operations.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(ProductTypeAttributeAssignOperation::attributeId)
+                .filter(java.util.Objects::nonNull)
+                .distinct().sorted().toList()) {
+            resolvedDefinitions.put(attributeId,
+                    attributeDefinitionRepository.findByIdForShare(attributeId));
+        }
         for (ProductTypeAttributeAssignOperation operation : operations) {
             // The 2026-11-07 #808 round-20 review (Minor · Functional
             // Correctness): a null element answers the per-item REQUIRED
@@ -151,8 +172,10 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                     // attribute-delete wall's FOR-UPDATE read of the same
                     // row serializes against the assignment this method
                     // is about to save (the ProductTypeAttributeService
-                    // .assign pairing verbatim).
-                    ? Optional.empty() : attributeDefinitionRepository.findByIdForShare(operation.attributeId());
+                    // .assign pairing verbatim). The row itself comes
+                    // from the batch's ONE sorted pre-pass above (the
+                    // round-21 lock-order law).
+                    ? Optional.empty() : resolvedDefinitions.get(operation.attributeId());
             if (definition.isEmpty()) {
                 errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.NOT_FOUND,
                         "No attribute found for the id"));
@@ -280,7 +303,38 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // index (product_type_id, scope, position) stays behind the
         // classified INVALID vocabulary, never a constraint throw.
         Map<ProductTypeAttributeScope, Integer> pendingNextPosition = new HashMap<>();
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability, the lock-order law): the batch's definition
+        // SHARE locks come in ONE sorted pass BEFORE the operations
+        // loop — the previous per-operation gate read took them in the
+        // CALLER'S list order, so this transaction and a concurrent
+        // unassignAttributes / bulk delete (the sorted FOR-UPDATE
+        // writers on the same definition rows) could each hold one row
+        // and wait for the other's (the database's own deadlock abort).
+        // The map covers every id the loop's CHOICE gate could ask for;
+        // the sorted pre-pass IS the deterministic order the module's
+        // bulk writers own.
+        Map<UUID, Optional<CatalogAttributeDefinition>> resolvedDefinitions = new HashMap<>();
+        for (UUID attributeId : operations.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(ProductTypeAttributeAssignmentUpdateOperation::attributeId)
+                .filter(java.util.Objects::nonNull)
+                .distinct().sorted().toList()) {
+            resolvedDefinitions.put(attributeId,
+                    attributeDefinitionRepository.findByIdForShare(attributeId));
+        }
         for (ProductTypeAttributeAssignmentUpdateOperation operation : operations) {
+            // The 2026-11-08 #808 round-21 review (Minor · Functional
+            // Correctness, additional comment): a null element answers
+            // the per-item REQUIRED error (the assignAttributes /
+            // bulk-create paths' own law) — never the NullPointerException
+            // that aborts the whole batch.
+            if (operation == null) {
+                errors.add(new ProductTypeMutationError("operation",
+                        ProductTypeMutationErrorCode.REQUIRED,
+                        "An assignment update operation requires its command"));
+                continue;
+            }
             if (!seenAttributeIds.add(operation.attributeId())) {
                 errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
                         "One operation per attribute — the attribute id is repeated"));
@@ -309,11 +363,12 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
             if (target == ProductTypeAttributeScope.VARIANT_SELECTION
                     && assignment.getScope() != ProductTypeAttributeScope.VARIANT_SELECTION) {
                 Optional<CatalogAttributeDefinition> definition =
-                        // The same round: the CHOICE-gate read rides the
-                        // FOR-SHARE row lock (the move stages a reference-
-                        // carrying assignment; the delete wall serializes
-                        // against it).
-                        attributeDefinitionRepository.findByIdForShare(operation.attributeId());
+                        // The CHOICE-gate read rides the FOR-SHARE row
+                        // lock (the move stages a reference-carrying
+                        // assignment; the delete wall serializes against
+                        // it) — from the batch's ONE sorted pre-pass (the
+                        // round-21 lock-order law).
+                        resolvedDefinitions.get(operation.attributeId());
                 if (definition.isEmpty()
                         || definition.get().getValueType() != CatalogAttributeType.CHOICE) {
                     errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.INVALID,
@@ -674,6 +729,17 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         }
         List<ProductTypeAttributeAssignment> ordered = new ArrayList<>(bucket);
         for (AttributeReorderMove move : moves) {
+            // The 2026-11-08 #808 round-21 review (Minor · Functional
+            // Correctness, additional comment): a null element answers
+            // the per-item REQUIRED error (the assignAttributes /
+            // bulk-create paths' own law) — never the NullPointerException
+            // that aborts the whole batch.
+            if (move == null) {
+                errors.add(new ProductTypeMutationError("move",
+                        ProductTypeMutationErrorCode.REQUIRED,
+                        "A reorder move requires its command"));
+                continue;
+            }
             if (move.itemId() == null || !byAttribute.containsKey(move.itemId())) {
                 errors.add(new ProductTypeMutationError("id", ProductTypeMutationErrorCode.NOT_FOUND,
                         "No assigned attribute found for the id in the addressed bucket"));

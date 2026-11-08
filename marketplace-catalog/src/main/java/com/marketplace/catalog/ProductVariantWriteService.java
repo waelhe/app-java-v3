@@ -395,6 +395,42 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                     authentication);
             outcomes.add(new ProductVariantBulkOutcome(result.variant(), result.errors()));
         }
+        try {
+            // The 2026-11-08 #808 round-21 review (Minor · Data Integrity
+            // & Integration, additional comment): the flush lands the
+            // pending inserts INSIDE the boundary — the SKU precheck is
+            // honest but not atomic, and under a non-atomic policy a
+            // concurrent SKU claim committed after this item's precheck
+            // surfaces its violation at the interceptor's commit (past
+            // every catch), aborting the whole batch with the raw
+            // constraint error instead of the classified outcome (the
+            // PostgreSQL engine law: a transaction aborted on a
+            // statement error accepts no per-item isolation inside it —
+            // the bulkCreateAttributes precedent verbatim). The flush
+            // moves the collision HERE; the discrimination names THIS
+            // index only, every other violation keeps its own
+            // propagation.
+            variantRepository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException violation) {
+            if (violation.getMessage() == null
+                    || !violation.getMessage().contains("uq_product_variants_provider_sku")) {
+                throw violation;
+            }
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+            ProductVariantMutationError collision = new ProductVariantMutationError(
+                    "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                    "The SKU was committed concurrently in this seller's namespace — the batch"
+                            + " rolled back whole");
+            List<ProductVariantBulkOutcome> rewritten = new ArrayList<>(outcomes.size());
+            for (ProductVariantBulkOutcome outcome : outcomes) {
+                rewritten.add(outcome.success()
+                        ? new ProductVariantBulkOutcome(null, List.of(collision))
+                        : new ProductVariantBulkOutcome(null,
+                                appendError(outcome.errors(), collision)));
+            }
+            return rewritten;
+        }
         if (atomic(errorPolicy) && outcomes.stream().anyMatch(outcome -> !outcome.success())) {
             org.springframework.transaction.interceptor.TransactionAspectSupport
                     .currentTransactionStatus().setRollbackOnly();
@@ -490,6 +526,14 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         return errorPolicy == null || POLICY_REJECT_EVERYTHING.equals(errorPolicy);
     }
 
+    /** The collision rewrite's own combiner (the bulkCreateAttributes precedent verbatim). */
+    private static List<ProductVariantMutationError> appendError(List<ProductVariantMutationError> errors,
+                                                                 ProductVariantMutationError collision) {
+        List<ProductVariantMutationError> combined = new ArrayList<>(errors);
+        combined.add(collision);
+        return List.copyOf(combined);
+    }
+
     /** The unknown-policy refusal — the classified INVALID entry, null for a known member. */
     private static ProductVariantMutationError unknownPolicyError(String errorPolicy) {
         if (errorPolicy == null || POLICY_REJECT_EVERYTHING.equals(errorPolicy)
@@ -539,11 +583,15 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
 
     /** The batch's own shape — the caller's identity resolved once, reused per row. */
     private Optional<ProductVariant> ownedRowForUpdate(UUID id, UUID caller) {
-        if (id == null) {
+        if (id == null || caller == null) {
             return Optional.empty();
         }
-        return variantRepository.findByIdForUpdate(id)
-                .filter(row -> row.getProviderId().equals(caller));
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability, additional comment): the provider predicate rides
+        // INSIDE the locking query (the ProductRepository
+        // .findByIdAndProviderIdForUpdate precedent verbatim) — a skipped
+        // foreign row never locks.
+        return variantRepository.findByIdAndProviderIdForUpdate(id, caller);
     }
 
     /**

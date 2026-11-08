@@ -274,7 +274,7 @@ class ProductWriteServiceTest {
     @Test
     void unknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(productRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndProviderIdForUpdate(unknown, ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         ProductMutationResult result = service.updateProduct(unknown,
                 new ProductUpdateCommand("New", null, null), caller);
@@ -287,7 +287,9 @@ class ProductWriteServiceTest {
     @Test
     void aStrangersRowAnswersTheSameSafeAbsence() {
         Product strangers = rowOwnedBy(ProviderIds.STRANGER);
-        when(productRepository.findByIdForUpdate(strangers.getId())).thenReturn(Optional.of(strangers));
+        // The scoped locked load answers EMPTY for a stranger's row (the provider
+        // predicate rides INSIDE the query — the round-21 law).
+        when(productRepository.findByIdAndProviderIdForUpdate(strangers.getId(), ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         ProductMutationResult result = service.updateProduct(strangers.getId(),
                 new ProductUpdateCommand("New", null, null), caller);
@@ -301,7 +303,7 @@ class ProductWriteServiceTest {
     @Test
     void emptyCommandAnswersTheCurrentProjectionWithoutASave() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
                 new ProductUpdateCommand(null, null, null), caller);
@@ -314,7 +316,7 @@ class ProductWriteServiceTest {
     @Test
     void providedFieldsReplaceAndNullsPreserve() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
         when(productRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
@@ -330,7 +332,7 @@ class ProductWriteServiceTest {
     @Test
     void blankNameAnswersTheInvalidDomainError() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
                 new ProductUpdateCommand("   ", null, null), caller);
@@ -344,7 +346,7 @@ class ProductWriteServiceTest {
     @Test
     void negativeMergedPriceAnswersTheInvalidDomainError() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.updateProduct(owned.getId(),
                 new ProductUpdateCommand(null, null, -5L), caller);
@@ -359,7 +361,7 @@ class ProductWriteServiceTest {
     void anArchivedRowIsTerminalAndAnswersTheInvalidDomainError() {
         Product archived = rowOwnedBy(ProviderIds.CALLER);
         archived.archive();
-        when(productRepository.findByIdForUpdate(archived.getId())).thenReturn(Optional.of(archived));
+        when(productRepository.findByIdAndProviderIdForUpdate(archived.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(archived));
 
         ProductMutationResult result = service.updateProduct(archived.getId(),
                 new ProductUpdateCommand("New", null, null), caller);
@@ -380,7 +382,9 @@ class ProductWriteServiceTest {
         // The delete path's locked read (the voucher fixtures' own
         // findByIdForUpdate stub shape) — the stranger row still answers
         // the same safe absence through it.
-        when(productRepository.findByIdForUpdate(strangers.getId())).thenReturn(Optional.of(strangers));
+        // The scoped locked load answers EMPTY for a stranger's row (the provider
+        // predicate rides INSIDE the query — the round-21 law).
+        when(productRepository.findByIdAndProviderIdForUpdate(strangers.getId(), ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         ProductMutationResult result = service.deleteProduct(strangers.getId(), caller);
 
@@ -393,7 +397,7 @@ class ProductWriteServiceTest {
     @Test
     void deleteAnswersTheLastKnownProjection() {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
 
         ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
 
@@ -410,8 +414,8 @@ class ProductWriteServiceTest {
         // owned orphan shelf the write side still reaches.
         Product owned = rowOwnedBy(ProviderIds.CALLER);
         ProductVariant variant = ProductVariant.register(owned, "orphan-sku", "Orphan", 100L);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
-        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(owned.getId()))
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
+        when(variantRepository.findByProductIdOrderByIdAscForUpdate(owned.getId()))
                 .thenReturn(List.of(variant));
 
         ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
@@ -431,7 +435,7 @@ class ProductWriteServiceTest {
         when(reserved.getId()).thenReturn(UUID.randomUUID());
         when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(reserved.getReservedQuantity()).thenReturn(5);
-        when(productRepository.findByIdForUpdate(reserved.getId())).thenReturn(Optional.of(reserved));
+        when(productRepository.findByIdAndProviderIdForUpdate(reserved.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(reserved));
 
         ProductMutationResult result = service.deleteProduct(reserved.getId(), caller);
 
@@ -451,8 +455,8 @@ class ProductWriteServiceTest {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
         ProductVariant reservedVariant = mock(ProductVariant.class);
         when(reservedVariant.getReservedQuantity()).thenReturn(2);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
-        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(owned.getId()))
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
+        when(variantRepository.findByProductIdOrderByIdAscForUpdate(owned.getId()))
                 .thenReturn(List.of(reservedVariant));
 
         ProductMutationResult result = service.deleteProduct(owned.getId(), caller);
@@ -500,12 +504,13 @@ class ProductWriteServiceTest {
         // restores the raced two-read shape the test exists to prove.
         when(productRepository.findById(raceId)).thenReturn(Optional.of(staleRead));
         // The locked read the delete path now rides.
-        when(productRepository.findByIdForUpdate(raceId)).thenReturn(Optional.of(lockedRow));
+        when(productRepository.findByIdAndProviderIdForUpdate(raceId, ProviderIds.CALLER)).thenReturn(Optional.of(lockedRow));
 
         ProductMutationResult result = service.deleteProduct(raceId, caller);
-        // The delete path consulted the LOCKED read (the stale unlocked
-        // witness never reaches the decision).
-        verify(productRepository).findByIdForUpdate(raceId);
+        // The delete path consulted the LOCKED scoped read (the stale unlocked
+        // witness never reaches the decision; the provider predicate rides
+        // INSIDE the locking query — the round-21 law).
+        verify(productRepository).findByIdAndProviderIdForUpdate(raceId, ProviderIds.CALLER);
 
         assertThat(result.success()).isFalse();
         assertThat(result.errors()).singleElement()
@@ -521,8 +526,10 @@ class ProductWriteServiceTest {
         Product strangers = rowOwnedBy(ProviderIds.STRANGER);
         // The bulk candidates ride the same locked read the single delete
         // owns (the per-row guard checks the LOCKED counters).
-        when(productRepository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
-        when(productRepository.findByIdForUpdate(strangers.getId())).thenReturn(Optional.of(strangers));
+        when(productRepository.findByIdAndProviderIdForUpdate(first.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(first));
+        // The scoped locked load answers EMPTY for a stranger's row (the provider
+        // predicate rides INSIDE the query — the round-21 law).
+        when(productRepository.findByIdAndProviderIdForUpdate(strangers.getId(), ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         // Arrays.asList carries the null member the honest-skip case
         // feeds the owner (List.of's own null refusal is not the seam).
@@ -544,8 +551,8 @@ class ProductWriteServiceTest {
         when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(reserved.getReservedQuantity()).thenReturn(5);
         Product free = rowOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findByIdForUpdate(reserved.getId())).thenReturn(Optional.of(reserved));
-        when(productRepository.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
+        when(productRepository.findByIdAndProviderIdForUpdate(reserved.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(reserved));
+        when(productRepository.findByIdAndProviderIdForUpdate(free.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(free));
 
         int count = service.deleteProducts(List.of(reserved.getId(), free.getId()), caller);
 
@@ -646,7 +653,7 @@ class ProductWriteServiceTest {
         Product owned = rowOwnedBy(ProviderIds.CALLER);
         CollectionProduct member = CollectionProduct.create(
                 UUID.randomUUID(), owned.getId(), 1);
-        when(productRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
+        when(productRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
         when(collectionProducts.findByProductIdOrderByPositionAsc(owned.getId()))
                 .thenReturn(List.of(member));
 

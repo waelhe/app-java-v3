@@ -71,22 +71,39 @@ public class TranslationWriteService implements TranslationWriteSpi {
     private final CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private final CatalogAttributeOptionRepository attributeOptionRepository;
     private final CollectionRepository collectionRepository;
+    private final CollectionProductRepository collectionProductRepository;
+    // The 2026-11-08 #808 round-21 review (Minor · Stability &
+    // Availability): constructor injection (not @PersistenceContext) so
+    // the unit tests can mock the refresh contract — Spring injects the
+    // shared transactional EntityManager either way (the OrdersService
+    // confirmFromPayment precedent).
+    private final jakarta.persistence.EntityManager entityManager;
 
     public TranslationWriteService(CategoryRepository categoryRepository,
                                    CatalogAttributeDefinitionRepository attributeDefinitionRepository,
                                    CatalogAttributeOptionRepository attributeOptionRepository,
-                                   CollectionRepository collectionRepository) {
+                                   CollectionRepository collectionRepository,
+                                   CollectionProductRepository collectionProductRepository,
+                                   jakarta.persistence.EntityManager entityManager) {
         this.categoryRepository = categoryRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
         this.collectionRepository = collectionRepository;
+        this.collectionProductRepository = collectionProductRepository;
+        this.entityManager = entityManager;
     }
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CategoryMutationResult translateCategory(UUID id, TranslationAmendCommand command) {
-        Optional<Category> addressed = id == null ? Optional.empty() : categoryRepository.findById(id);
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the lifecycle's locked load — the translation
+        // serializes with the edit/delete pair on the row itself (the
+        // updateCategory/deleteCategory law this round established for
+        // the whole category lifecycle).
+        Optional<Category> addressed = id == null ? Optional.empty()
+                : categoryRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return CategoryMutationResult.failure(List.of(new CategoryMutationError(
                     "id", CategoryMutationErrorCode.NOT_FOUND, "No category found for the id")));
@@ -174,6 +191,18 @@ public class TranslationWriteService implements TranslationWriteSpi {
                     "id", AttributeMutationErrorCode.NOT_FOUND,
                     "No attribute value found for the id")));
         }
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability): the option RE-READS under the lock — the row
+        // was loaded BEFORE the definition lock was taken, so a
+        // concurrent reorder (the locked definition writer that
+        // repositions every option) or a sibling translation that
+        // committed while THIS transaction waited on the lock leaves the
+        // managed row's @Version stale; the save would answer the raw
+        // OptimisticLockException. The JPA-documented re-read-under-lock
+        // is refresh(entity, PESSIMISTIC_WRITE) — the row's state is
+        // reloaded from the authoritative row (the OrdersService
+        // confirmFromPayment precedent verbatim).
+        entityManager.refresh(row, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         if (command.name() == null) {
             return AttributeValueMutationResult.success(toView(parent.get()), toValueView(row));
         }
@@ -189,6 +218,18 @@ public class TranslationWriteService implements TranslationWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CollectionMutationResult translateCollection(UUID id, TranslationAmendCommand command) {
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration, additional comment): the translation rides the
+        // SAME advisory lock every other collection writer carries —
+        // the locked-first law (the updateCollection/deleteCollection
+        // discipline). An unlocked load let a concurrent delete commit
+        // between the read and the save, and the translation then wrote
+        // over the soft-deleted row and answered a fabricated SUCCESS
+        // for a collection no read could resolve, or the stale
+        // @Version answered the raw OptimisticLockException.
+        if (id != null) {
+            collectionProductRepository.lockCollectionPositionAllocation(id.toString());
+        }
         Optional<Collection> addressed = id == null ? Optional.empty() : collectionRepository.findById(id);
         if (addressed.isEmpty()) {
             return CollectionMutationResult.failure(List.of(new CollectionMutationError(

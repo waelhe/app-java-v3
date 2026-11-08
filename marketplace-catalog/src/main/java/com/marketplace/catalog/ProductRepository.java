@@ -108,6 +108,21 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     Optional<Product> findByIdForUpdate(@Param("id") UUID id);
 
     /**
+     * The 2026-11-08 #808 round-21 review (Minor · Stability &amp;
+     * Availability, additional comment): the OWNERSHIP-SCOPED locked
+     * read — the provider predicate rides INSIDE the locking query, so a
+     * skipped foreign row never locks (the previous lock-then-filter
+     * shape held the WRITE lock on another provider's row for the whole
+     * batch duration, blocking its reservations and legitimate writes).
+     * The same locked-read law the delete wall owns, scoped to the
+     * caller's own shelf from the first statement.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.id = :id and p.providerId = :providerId")
+    Optional<Product> findByIdAndProviderIdForUpdate(
+            @Param("id") UUID id, @Param("providerId") UUID providerId);
+
+    /**
      * The 2026-11-07 #808 round-19 review (Minor · Data Integrity &amp;
      * Integration): the reference-CREATING read's FOR-SHARE twin (the
      * {@code ProductTypeRepository.findByIdForShare} precedent verbatim)

@@ -82,20 +82,36 @@ final class PositionSequences {
             return natural;
         }
         Set<Integer> held = new HashSet<>(heldPositions);
-        int start = size + 1;
-        int lastLegalStart = Integer.MAX_VALUE - size + 1;
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability): the scan rides a LONG cursor — at the boundary
+        // window (start == Integer.MAX_VALUE - size + 1) the previous
+        // {@code position < start + size} bound overflowed to a negative
+        // int, examined NO position, and returned the window unchecked
+        // (an occupied window — the unique index answered the reorder
+        // mid-rewrite), and a blocker AT the ceiling wrapped its
+        // {@code position + 1} jump to Integer.MIN_VALUE (a negative
+        // base — the DB CHECK's own failure). The long cursor keeps
+        // every bound and every jump in range: the window is always
+        // examined in full, the jump past a ceiling blocker exits the
+        // loop, and the contract stays total (never an occupied window,
+        // never a negative base).
+        long start = size + 1L;
+        long lastLegalStart = (long) Integer.MAX_VALUE - size + 1;
         while (start <= lastLegalStart) {
             boolean free = true;
-            for (int position = start; position < start + size; position++) {
+            long nextStart = start;
+            for (int offset = 0; offset < size; offset++) {
+                int position = (int) (start + offset);
                 if (held.contains(position)) {
-                    start = position + 1;
+                    nextStart = position + 1L;
                     free = false;
                     break;
                 }
             }
             if (free) {
-                return start;
+                return (int) start;
             }
+            start = nextStart;
         }
         return -1;
     }

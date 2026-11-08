@@ -251,7 +251,7 @@ public class ProductWriteService implements ProductWriteSpi {
         // placement's own honest 409 rolls back whole, or the reservation
         // committed first and the locked read sees the counter and
         // refuses) — and the variant roster through
-        // findByProductIdOrderBySkuAscForUpdate, because the VARIANT
+        // findByProductIdOrderByIdAscForUpdate, because the VARIANT
         // reservation is a native UPDATE on the variant row ALONE (its
         // parent gate is a non-locking EXISTS, and a variant cart line
         // never increments the parent product's counter — ADR-0012's
@@ -304,6 +304,29 @@ public class ProductWriteService implements ProductWriteSpi {
         // every candidate reuses (getCurrentUserId hits the user source
         // per call; a 500-row delete paid it 500 times).
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability): the batch's collection advisory locks come in
+        // ONE sorted pass BEFORE any product row lock — the previous
+        // per-product cascade locked each product's collections inside
+        // the caller's list order, so two concurrent bulk deletes naming
+        // overlapping collections in opposite orders deadlocked on the
+        // advisory locks (each holding one collection and waiting for
+        // the other's), and a bulk delete racing a membership ADD
+        // deadlocked the same way (the add holds the collection's
+        // advisory lock, then takes the product's FOR-SHARE read; the
+        // batch held the product's FOR-UPDATE lock, then waited for the
+        // collection's advisory lock). The provider-scoped projection
+        // keeps the lock footprint on the caller's own shelf; the sorted
+        // pass is the deterministic order the module's bulk writers
+        // own. The per-product cascade's own advisory re-take inside the
+        // loop is free (pg_advisory_xact_lock is re-entrant within the
+        // transaction).
+        for (UUID collectionId : collectionProducts
+                .findDistinctCollectionIdsByProductIdsAndProvider(
+                        ids.stream().filter(java.util.Objects::nonNull).toList(), caller)
+                .stream().sorted().toList()) {
+            collectionProducts.lockCollectionPositionAllocation(collectionId.toString());
+        }
         for (UUID id : ids) {
             // Unknown or stranger ids are skipped — the honest affected
             // count answers only what the caller owns and the registry
@@ -346,7 +369,7 @@ public class ProductWriteService implements ProductWriteSpi {
      * variant reservation is the same unreleasable state the product's
      * own counter carries (ADR-0012's reservation spans BOTH shelves).
      * The roster is read through the LOCKED variant roster
-     * (findByProductIdOrderBySkuAscForUpdate): the variant reservation is
+     * (findByProductIdOrderByIdAscForUpdate): the variant reservation is
      * a native UPDATE on the variant row alone, so the variant rows —
      * not just the parent product row — must be under the delete's
      * pessimistic lock for the guard to be race-free (the locks are held
@@ -354,7 +377,7 @@ public class ProductWriteService implements ProductWriteSpi {
      * this check and the cascade below).
      */
     private boolean variantsHoldOpenReservations(UUID productId) {
-        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAscForUpdate(productId)) {
+        for (ProductVariant variant : variantRepository.findByProductIdOrderByIdAscForUpdate(productId)) {
             if (variant.getReservedQuantity() > 0) {
                 return true;
             }
@@ -373,7 +396,7 @@ public class ProductWriteService implements ProductWriteSpi {
      * reservation exactly like the guard's read.
      */
     private void deleteVariantsOf(UUID productId) {
-        for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAscForUpdate(productId)) {
+        for (ProductVariant variant : variantRepository.findByProductIdOrderByIdAscForUpdate(productId)) {
             variantRepository.delete(variant);
         }
     }
@@ -497,11 +520,17 @@ public class ProductWriteService implements ProductWriteSpi {
 
     /** The batch's own shape — the caller's identity resolved once, reused per row. */
     private Optional<Product> ownedRowForUpdate(UUID id, UUID caller) {
-        if (id == null) {
+        if (id == null || caller == null) {
             return Optional.empty();
         }
-        return productRepository.findByIdForUpdate(id)
-                .filter(row -> row.getProviderId().equals(caller));
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability, additional comment): the provider predicate rides
+        // INSIDE the locking query — the previous lock-then-filter shape
+        // took the WRITE lock on a foreign provider's row first and held
+        // it for the whole batch duration (a skipped stranger row blocked
+        // its owner's reservations and legitimate writes). The scoped
+        // query never locks a row the caller does not own.
+        return productRepository.findByIdAndProviderIdForUpdate(id, caller);
     }
 
     /** The bounded projection — the read service's own rendering rule. */

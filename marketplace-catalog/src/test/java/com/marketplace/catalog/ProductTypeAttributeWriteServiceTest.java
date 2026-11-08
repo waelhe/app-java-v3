@@ -943,6 +943,68 @@ class ProductTypeAttributeWriteServiceTest {
     }
 
     @Test
+    void aNullOperationElementAnswersThePerItemRequiredErrorNeverTheBatchNpe() {
+        // The 2026-11-08 #808 round-21 review (Minor · Functional
+        // Correctness, additional comment): updateAssignments and
+        // reorderAttributes own the SAME null-element law assignAttributes
+        // and the bulk-create paths established — a null element answers
+        // the per-item REQUIRED entry, never the NullPointerException
+        // that aborts the whole batch.
+        java.util.List<UUID> none = java.util.List.of();
+        ProductTypeMutationResult updated = service.updateAssignments(type.getId(),
+                java.util.Arrays.asList((ProductTypeAttributeAssignmentUpdateOperation) null));
+        assertThat(updated.success()).isFalse();
+        assertThat(updated.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.REQUIRED, "operation");
+
+        ProductTypeMutationResult reordered = service.reorderAttributes(type.getId(), "VARIANT",
+                java.util.Arrays.asList((AttributeReorderMove) null));
+        assertThat(reordered.success()).isFalse();
+        assertThat(reordered.errors()).singleElement()
+                .extracting(ProductTypeMutationError::code, ProductTypeMutationError::field)
+                .containsExactly(ProductTypeMutationErrorCode.REQUIRED, "move");
+    }
+
+    @Test
+    void theBatchDefinitionShareLocksComeInOneSortedPass() {
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability, the lock-order law): the batch's definition
+        // FOR-SHARE reads walk ONE sorted pass — the caller's list order
+        // never reaches the lock sequence (a caller naming two
+        // definitions in DESCENDING uuid order still locks them in the
+        // ASCENDING order every bulk writer in this module owns; the
+        // reverse order could deadlock against a concurrent
+        // unassignAttributes holding the first row FOR UPDATE).
+        CatalogAttributeDefinition low = definition("low-attr", CatalogAttributeType.NUMBER);
+        CatalogAttributeDefinition high = definition("high-attr", CatalogAttributeType.NUMBER);
+        UUID first = java.util.stream.Stream.of(low.getId(), high.getId())
+                .min(java.util.UUID::compareTo).get();
+        UUID second = java.util.stream.Stream.of(low.getId(), high.getId())
+                .max(java.util.UUID::compareTo).get();
+        when(attributeDefinitionRepository.findByIdForShare(first)).thenReturn(Optional.of(first.equals(low.getId()) ? low : high));
+        when(attributeDefinitionRepository.findByIdForShare(second)).thenReturn(Optional.of(second.equals(low.getId()) ? low : high));
+        when(assignmentRepository.findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId()))
+                .thenReturn(java.util.List.of());
+        when(assignmentRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // The caller names the HIGHER uuid first — the locks still come
+        // in the sorted order.
+        java.util.List<ProductTypeAttributeAssignOperation> ops = second.equals(high.getId())
+                ? java.util.List.of(new ProductTypeAttributeAssignOperation(high.getId(), "VARIANT", false),
+                        new ProductTypeAttributeAssignOperation(low.getId(), "VARIANT", false))
+                : java.util.List.of(new ProductTypeAttributeAssignOperation(low.getId(), "VARIANT", false),
+                        new ProductTypeAttributeAssignOperation(high.getId(), "VARIANT", false));
+
+        ProductTypeMutationResult result = service.assignAttributes(type.getId(), ops);
+
+        assertThat(result.success()).isTrue();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(attributeDefinitionRepository);
+        order.verify(attributeDefinitionRepository).findByIdForShare(first);
+        order.verify(attributeDefinitionRepository).findByIdForShare(second);
+    }
+
+    @Test
     void assignAttributesIsRefusedWhileAPublishedProductCarriesAnyLiveVariant() {
         // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
         // Integration), widened by the round-5 review: a NEW selection

@@ -78,6 +78,12 @@ class PositionSequencesTest {
 
     @Test
     void parkBaseAnswersNegativeOnlyWhenNoWindowExists() {
+        // The 2026-11-08 #808 round-21 review: a size that cannot fit
+        // under the ceiling at all — the scan's first candidate start
+        // (size + 1) already exceeds the last legal start
+        // (Integer.MAX_VALUE - size + 1), so no window exists and the
+        // answer is the negative contract.
+        assertThat(PositionSequences.parkBase(List.of(), 1_073_741_824)).isNegative();
         // A pathological full block: every candidate start is held —
         // unreachable through any real bucket (n held positions block at
         // most n candidate windows), but the contract stays total.
@@ -85,5 +91,38 @@ class PositionSequencesTest {
         // An empty held set still parks above the dense range's top —
         // the natural law (max(0, size) + 1), never a window inside it.
         assertThat(PositionSequences.parkBase(List.of(), 1)).isEqualTo(2);
+    }
+
+    @Test
+    void theBoundaryWindowIsExaminedInFullNeverReturnedOccupied() {
+        // The 2026-11-08 #808 round-21 review (the overflow fix's own
+        // regression): a size of 2^30 - 1 makes the boundary window
+        // [Integer.MAX_VALUE - size + 1, Integer.MAX_VALUE] the SECOND
+        // candidate — a blocker in the first window parks the scan
+        // exactly on it. The previous `position < start + size` int
+        // bound overflowed at that start (start + size = MAX + 1 wraps
+        // negative), examined NO position, and returned the window
+        // UNCHECKED — occupied here by the boundary window's own held
+        // seat. The long-cursor scan examines the window in full and
+        // answers the negative contract (the next start exceeds the
+        // last legal start), never an occupied window.
+        int boundarySize = 1_073_741_823; // 2^30 - 1
+        int firstWindowBlocker = 1_073_741_824; // 2^30 — inside the first window
+        int boundaryWindowBlocker = 1_073_741_825; // the boundary window's first seat
+        assertThat(PositionSequences.parkBase(
+                List.of(firstWindowBlocker, boundaryWindowBlocker), boundarySize)).isNegative();
+    }
+
+    @Test
+    void theFreeBoundaryWindowIsReturned() {
+        // The natural branch's own ceiling boundary: a held blocker at
+        // 2^30 with size 2^30 - 1 derives natural = max(held, size) + 1
+        // = 2^30 + 1, and the whole parked range [2^30 + 1, MAX] fits
+        // under the ceiling EXACTLY (natural == MAX - size + 1) — the
+        // guard's own boundary is inclusive, never off-by-one.
+        int boundarySize = 1_073_741_823; // 2^30 - 1
+        int heldBelowTheParkedRange = 1_073_741_824; // 2^30
+        assertThat(PositionSequences.parkBase(
+                List.of(heldBelowTheParkedRange), boundarySize)).isEqualTo(1_073_741_825);
     }
 }

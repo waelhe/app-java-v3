@@ -207,7 +207,15 @@ public class CategoryWriteService implements CategoryWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CategoryMutationResult updateCategory(UUID id, CategoryUpdateCommand command) {
-        Optional<Category> addressed = id == null ? Optional.empty() : categoryRepository.findById(id);
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the lifecycle's locked load — the edit serializes
+        // with the delete (and every other writer) on the row itself; an
+        // unlocked read let a concurrent delete commit between the load
+        // and the save, and the update then wrote over the soft-deleted
+        // row (the fabricated SUCCESS the round-21 finding proved) or
+        // answered the stale @Version's raw OptimisticLockException.
+        Optional<Category> addressed = id == null ? Optional.empty()
+                : categoryRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return CategoryMutationResult.failure(List.of(new CategoryMutationError(
                     "id", CategoryMutationErrorCode.NOT_FOUND, "No category found for the id")));
@@ -269,7 +277,14 @@ public class CategoryWriteService implements CategoryWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public CategoryMutationResult deleteCategory(UUID id) {
-        Optional<Category> addressed = id == null ? Optional.empty() : categoryRepository.findById(id);
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the locked load the whole lifecycle now owns —
+        // the delete serializes with the edit/translate pair on the row
+        // itself (a concurrent writer's stale row never rides past this
+        // commit; the loser's own locked load answers the honest
+        // NOT_FOUND on the soft-delete-filtered re-read).
+        Optional<Category> addressed = id == null ? Optional.empty()
+                : categoryRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return CategoryMutationResult.failure(List.of(new CategoryMutationError(
                     "id", CategoryMutationErrorCode.NOT_FOUND, "No category found for the id")));
@@ -288,11 +303,17 @@ public class CategoryWriteService implements CategoryWriteSpi {
             return 0;
         }
         int deleted = 0;
-        for (UUID id : ids) {
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the bulk rides the SAME locked load in ONE
+        // sorted, null-free pass — the module's own bulk law (two
+        // concurrent bulk deletes naming overlapping ids in opposite
+        // orders can never deadlock, and every row lock is a fresh
+        // locked load, never an unlocked pre-read).
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).sorted().toList()) {
             // Unknown ids are skipped — the honest affected count answers
             // what the registry itself deleted (never a fabricated count,
             // never an error entry for an id the registry never knew).
-            Optional<Category> addressed = id == null ? Optional.empty() : categoryRepository.findById(id);
+            Optional<Category> addressed = categoryRepository.findByIdForUpdate(id);
             if (addressed.isPresent()) {
                 categoryRepository.delete(addressed.get());
                 deleted++;

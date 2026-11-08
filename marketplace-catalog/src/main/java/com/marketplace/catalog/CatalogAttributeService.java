@@ -17,15 +17,22 @@ public class CatalogAttributeService {
     /** The live-reference walls the remove law reads (the 2026-11-07 #808 round-20). */
     private final ProductVariantAttributeValueRepository variantValues;
     private final ProductAttributeValueRepository productValues;
+    // The 2026-11-08 #808 round-21 review (Minor · Stability &
+    // Availability): constructor injection (not @PersistenceContext) so
+    // the unit tests can mock the refresh contract — the OrdersService
+    // confirmFromPayment precedent.
+    private final jakarta.persistence.EntityManager entityManager;
 
     public CatalogAttributeService(CatalogAttributeDefinitionRepository definitions,
                                    CatalogAttributeOptionRepository options,
                                    ProductVariantAttributeValueRepository variantValues,
-                                   ProductAttributeValueRepository productValues) {
+                                   ProductAttributeValueRepository productValues,
+                                   jakarta.persistence.EntityManager entityManager) {
         this.definitions = definitions;
         this.options = options;
         this.variantValues = variantValues;
         this.productValues = productValues;
+        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -67,7 +74,23 @@ public class CatalogAttributeService {
     @PreAuthorize("hasRole('ADMIN')")
     public CatalogAttributeOption registerOption(UUID attributeDefinitionId, String code,
                                                   String nameEn, String nameAr, int position) {
-        CatalogAttributeDefinition definition = findDefinition(attributeDefinitionId);
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the registration rides the definition's own
+        // FOR-UPDATE lock — the unlocked findDefinition let a concurrent
+        // deleteAttribute (the locked writer whose children cascade
+        // soft-deletes every option) commit between this read and the
+        // insert, leaving a LIVE option row bound to a soft-deleted
+        // definition (unreachable through the read paths, unremovable
+        // through the option-delete guard's parent re-read). Locked
+        // first, the pair serializes: the delete's cascade carries THIS
+        // insert away, or the delete's verdict was committed first and
+        // the fresh locked read answers the honest NOT_FOUND.
+        if (attributeDefinitionId == null) {
+            throw new ResourceNotFoundException("CatalogAttributeDefinition", null);
+        }
+        CatalogAttributeDefinition definition = definitions.findByIdForUpdate(attributeDefinitionId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "CatalogAttributeDefinition", attributeDefinitionId));
         if (definition.getValueType() != CatalogAttributeType.CHOICE) {
             throw new ConflictException("Allowed values can only be added to CHOICE attributes");
         }
@@ -105,6 +128,15 @@ public class CatalogAttributeService {
         if (!options.existsById(optionId)) {
             throw new ResourceNotFoundException("CatalogAttributeOption", optionId);
         }
+        // The 2026-11-08 #808 round-21 review (Minor · Stability &
+        // Availability): the option RE-READS under the lock — it was
+        // loaded BEFORE the definition lock, so a translation or reorder
+        // that committed while THIS call waited leaves the managed row's
+        // @Version stale and the soft delete matches zero rows (the raw
+        // OptimisticLockException). refresh(entity, PESSIMISTIC_WRITE)
+        // reloads the authoritative row first (the OrdersService
+        // confirmFromPayment precedent).
+        entityManager.refresh(option, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         if (variantValues.existsByOptionId(optionId)) {
             throw new ConflictException(
                     "An attribute value referenced by a live variant cannot be deleted");

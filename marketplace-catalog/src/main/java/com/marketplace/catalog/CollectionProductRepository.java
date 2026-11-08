@@ -39,6 +39,24 @@ public interface CollectionProductRepository extends JpaRepository<CollectionPro
     @Query("select distinct cp.collectionId from CollectionProduct cp where cp.productId = :productId")
     java.util.List<UUID> findDistinctCollectionIdsByProductId(@Param("productId") UUID productId);
 
+    /**
+     * The 2026-11-08 #808 round-21 review (Minor · Stability &amp;
+     * Availability): the BULK product delete's own pre-lock projection —
+     * the DISTINCT collection ids of the batch's OWNED candidates' live
+     * memberships. The provider predicate keeps the lock footprint on
+     * the caller's own shelf (a foreign product's collections never
+     * lock), and the sorted pass over these ids is the batch's ONE
+     * deterministic lock order (two concurrent bulk deletes naming
+     * overlapping collections in opposite product orders can never
+     * deadlock on the advisory locks — the module's own sorted-lock
+     * law, hoisted from the per-product scope to the whole batch).
+     */
+    @Query("select distinct cp.collectionId from CollectionProduct cp "
+            + "where cp.productId in :productIds "
+            + "and cp.productId in (select p.id from Product p where p.providerId = :providerId)")
+    java.util.List<UUID> findDistinctCollectionIdsByProductIdsAndProvider(
+            @Param("productIds") List<UUID> productIds, @Param("providerId") UUID providerId);
+
     /** The duplicate-add precheck — the live pair or empty. */
     Optional<CollectionProduct> findByCollectionIdAndProductId(UUID collectionId, UUID productId);
 

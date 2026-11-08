@@ -1,5 +1,6 @@
 package com.marketplace.catalog;
 
+import com.marketplace.catalog.spi.ProductVariantBulkOutcome;
 import com.marketplace.catalog.spi.ProductVariantBulkUpdateItem;
 import com.marketplace.catalog.spi.ProductVariantCreateCommand;
 import com.marketplace.catalog.spi.ProductVariantMutationError;
@@ -416,7 +417,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void anUnknownRowAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(variantRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+        when(variantRepository.findByIdAndProviderIdForUpdate(unknown, ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.updateVariant(
                 unknown, new ProductVariantUpdateCommand("SKU-2", null, null), caller);
@@ -430,7 +431,9 @@ class ProductVariantWriteServiceTest {
     void aStrangersRowAnswersTheSameSafeAbsenceNeverAnExistenceDisclosure() {
         Product strangerProduct = productOwnedBy(ProviderIds.STRANGER);
         ProductVariant strangerRow = variantUnder(strangerProduct, "SKU-9");
-        when(variantRepository.findByIdForUpdate(strangerRow.getId())).thenReturn(Optional.of(strangerRow));
+        // The scoped locked load answers EMPTY for a stranger's row (the provider
+        // predicate rides INSIDE the query — the round-21 law).
+        when(variantRepository.findByIdAndProviderIdForUpdate(strangerRow.getId(), ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.updateVariant(
                 strangerRow.getId(), new ProductVariantUpdateCommand("SKU-2", null, null), caller);
@@ -444,7 +447,7 @@ class ProductVariantWriteServiceTest {
     void theEmptyCommandAnswersTheCurrentProjectionWithoutAWrite() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.updateVariant(
@@ -460,7 +463,7 @@ class ProductVariantWriteServiceTest {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant archived = variantUnder(parent, "SKU-1");
         archived.archive();
-        when(variantRepository.findByIdForUpdate(archived.getId())).thenReturn(Optional.of(archived));
+        when(variantRepository.findByIdAndProviderIdForUpdate(archived.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(archived));
 
         ProductVariantMutationResult result = service.updateVariant(
                 archived.getId(), new ProductVariantUpdateCommand("SKU-2", null, null), caller);
@@ -475,7 +478,7 @@ class ProductVariantWriteServiceTest {
     void aBlankSkuOnUpdateAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
 
         ProductVariantMutationResult result = service.updateVariant(
                 row.getId(), new ProductVariantUpdateCommand("  ", null, null), caller);
@@ -490,7 +493,7 @@ class ProductVariantWriteServiceTest {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
         ProductVariant other = variantUnder(parent, "SKU-2");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
                 ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(1L);
 
@@ -511,7 +514,7 @@ class ProductVariantWriteServiceTest {
         // classified ALREADY_EXISTS, never the raw constraint error.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
                 ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(1L);
 
@@ -528,7 +531,7 @@ class ProductVariantWriteServiceTest {
     void theSameSkuResendStaysTheIdempotentNoOp() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         // The same-sku re-send excludes the addressed row itself — the
         // raw-table reservation count of the OTHER rows is what the
         // idempotent no-op rides (the 2026-11-06 #808 round).
@@ -549,7 +552,7 @@ class ProductVariantWriteServiceTest {
     void aNegativePriceOnUpdateAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
 
         ProductVariantMutationResult result = service.updateVariant(
                 row.getId(), new ProductVariantUpdateCommand(null, null, -5L), caller);
@@ -563,7 +566,7 @@ class ProductVariantWriteServiceTest {
     void theHappyUpdateAmendsTheMovableSetAndPreservesTheOwnershipFacts() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
                 ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(0L);
         when(variantRepository.save(any(ProductVariant.class)))
@@ -590,7 +593,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void deletingAnUnknownRowAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(variantRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+        when(variantRepository.findByIdAndProviderIdForUpdate(unknown, ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.deleteVariant(unknown, caller);
 
@@ -603,7 +606,7 @@ class ProductVariantWriteServiceTest {
     void theHappyDeleteSoftDeletesAndAnswersTheLastKnownProjection() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.deleteVariant(row.getId(), caller);
@@ -632,7 +635,7 @@ class ProductVariantWriteServiceTest {
         when(reserved.getId()).thenReturn(reservedId);
         when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(reserved.getReservedQuantity()).thenReturn(5);
-        when(variantRepository.findByIdForUpdate(reservedId)).thenReturn(Optional.of(reserved));
+        when(variantRepository.findByIdAndProviderIdForUpdate(reservedId, ProviderIds.CALLER)).thenReturn(Optional.of(reserved));
 
         ProductVariantMutationResult result = service.deleteVariant(reservedId, caller);
 
@@ -657,8 +660,8 @@ class ProductVariantWriteServiceTest {
         when(reserved.getId()).thenReturn(reservedId);
         when(reserved.getProviderId()).thenReturn(ProviderIds.CALLER);
         when(reserved.getReservedQuantity()).thenReturn(3);
-        when(variantRepository.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
-        when(variantRepository.findByIdForUpdate(reservedId)).thenReturn(Optional.of(reserved));
+        when(variantRepository.findByIdAndProviderIdForUpdate(free.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(free));
+        when(variantRepository.findByIdAndProviderIdForUpdate(reservedId, ProviderIds.CALLER)).thenReturn(Optional.of(reserved));
 
         int deleted = service.deleteVariants(
                 java.util.List.of(free.getId(), reservedId), caller);
@@ -701,7 +704,7 @@ class ProductVariantWriteServiceTest {
         // the raw orElseThrow produced.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-ORPHAN");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.updateVariant(row.getId(),
@@ -718,7 +721,7 @@ class ProductVariantWriteServiceTest {
     void aDeleteOfAVariantWhoseParentIsSoftDeletedAnswersTheClassifiedNotFound() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-ORPHAN");
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(productRepository.findById(parent.getId())).thenReturn(Optional.empty());
 
         ProductVariantMutationResult result = service.deleteVariant(row.getId(), caller);
@@ -736,9 +739,11 @@ class ProductVariantWriteServiceTest {
         ProductVariant owned = variantUnder(parent, "SKU-1");
         ProductVariant strangerOwned = variantUnder(productOwnedBy(ProviderIds.STRANGER), "SKU-9");
         UUID unknown = UUID.randomUUID();
-        when(variantRepository.findByIdForUpdate(owned.getId())).thenReturn(Optional.of(owned));
-        when(variantRepository.findByIdForUpdate(strangerOwned.getId())).thenReturn(Optional.of(strangerOwned));
-        when(variantRepository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+        when(variantRepository.findByIdAndProviderIdForUpdate(owned.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(owned));
+        // The scoped locked load answers EMPTY for a stranger's row (the provider
+        // predicate rides INSIDE the query — the round-21 law).
+        when(variantRepository.findByIdAndProviderIdForUpdate(strangerOwned.getId(), ProviderIds.CALLER)).thenReturn(Optional.empty());
+        when(variantRepository.findByIdAndProviderIdForUpdate(unknown, ProviderIds.CALLER)).thenReturn(Optional.empty());
 
         int count = service.deleteVariants(
                 List.of(owned.getId(), strangerOwned.getId(), unknown), caller);
@@ -746,6 +751,45 @@ class ProductVariantWriteServiceTest {
         assertThat(count).isEqualTo(1);
         verify(variantRepository).delete(owned);
         verify(variantRepository, never()).delete(strangerOwned);
+    }
+
+    @Test
+    void theBulkCreateAnswersTheClassifiedCollisionWhenAConcurrentSkuClaimWinsTheIndex() {
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration, additional comment): the non-atomic policy's
+        // concurrent-collision backstop — the flush inside the boundary
+        // surfaces the global unique index's verdict and the batch
+        // answers the classified ALREADY_EXISTS for every item (the
+        // bulkCreateAttributes precedent verbatim), never the raw
+        // constraint error past every catch at the interceptor's commit.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        org.mockito.Mockito.lenient().when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "RACE-SKU"))
+                .thenReturn(Optional.empty());
+        org.mockito.Mockito.lenient().when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "RACE-SKU"))
+                .thenReturn(0L);
+        org.mockito.Mockito.lenient().when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "could not execute statement; SQL n/a; constraint [uq_product_variants_provider_sku]"))
+                .when(variantRepository).flush();
+
+        List<ProductVariantBulkOutcome> outcomes;
+        try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
+
+            outcomes = service.bulkCreateVariants(parent.getId(),
+                    List.of(new ProductVariantCreateCommand(parent.getId(), "RACE-SKU", "Racer", 100L)),
+                    caller, "IGNORE_FAILED");
+        }
+
+        assertThat(outcomes).singleElement()
+                .extracting(ProductVariantBulkOutcome::success, o -> o.errors().get(0).code(),
+                        o -> o.errors().get(0).field())
+                .containsExactly(false, ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+        verify(variantRepository).flush();
     }
 
     @Test
@@ -799,7 +843,7 @@ class ProductVariantWriteServiceTest {
         // serves the update itself (the 2026-11-05 #808 round's locked
         // update).
         when(variantRepository.existsByIdAndProductId(row.getId(), parent.getId())).thenReturn(true);
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
                 ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(0L);
         when(variantRepository.save(any(ProductVariant.class)))
@@ -947,7 +991,7 @@ class ProductVariantWriteServiceTest {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         ProductVariant row = variantUnder(parent, "SKU-1");
         when(variantRepository.existsByIdAndProductId(row.getId(), parent.getId())).thenReturn(true);
-        when(variantRepository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
+        when(variantRepository.findByIdAndProviderIdForUpdate(row.getId(), ProviderIds.CALLER)).thenReturn(Optional.of(row));
         when(variantRepository.countSkuReservationsIncludingDeletedExcluding(
                 ProviderIds.CALLER, "SKU-2", row.getId())).thenReturn(0L);
         when(variantRepository.save(any(ProductVariant.class)))

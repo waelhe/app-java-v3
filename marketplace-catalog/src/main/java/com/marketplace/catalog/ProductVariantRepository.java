@@ -129,10 +129,20 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
      * placement's own honest 409, rolled back whole), or the reservation
      * committed first and the locked roster sees its counter and the
      * delete refuses.
+     *
+     * <p>The 2026-11-08 #808 round-21 review (Minor · Stability &amp;
+     * Availability, additional comment): the roster's lock order is the
+     * row ID — the module's ONE deterministic variant-row lock order
+     * (the bulk variant delete locks the same rows in sorted-UUID
+     * order; the previous SKU order let a product delete and a bulk
+     * variant delete hold one variant each and wait for the other's —
+     * the database's own deadlock abort). The display order was never
+     * load-bearing here: the guard scans every row and the cascade
+     * deletes the same set either way.</p>
      */
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @Query("select v from ProductVariant v where v.productId = :productId order by v.sku asc")
-    List<ProductVariant> findByProductIdOrderBySkuAscForUpdate(@Param("productId") UUID productId);
+    @Query("select v from ProductVariant v where v.productId = :productId order by v.id asc")
+    List<ProductVariant> findByProductIdOrderByIdAscForUpdate(@Param("productId") UUID productId);
 
     /**
      * The single-row locked read for the DELETE paths (the 2026-11-05
@@ -146,6 +156,18 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select v from ProductVariant v where v.id = :id")
     Optional<ProductVariant> findByIdForUpdate(@Param("id") UUID id);
+
+    /**
+     * The 2026-11-08 #808 round-21 review (Minor · Stability &amp;
+     * Availability, additional comment): the OWNERSHIP-SCOPED locked
+     * read — the provider predicate rides INSIDE the locking query (a
+     * skipped foreign row never locks; the ProductRepository
+     * .findByIdAndProviderIdForUpdate precedent verbatim).
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from ProductVariant v where v.id = :id and v.providerId = :providerId")
+    Optional<ProductVariant> findByIdAndProviderIdForUpdate(
+            @Param("id") UUID id, @Param("providerId") UUID providerId);
 
     /**
      * The 2026-11-07 #808 round-19 review (Minor · Data Integrity &amp;

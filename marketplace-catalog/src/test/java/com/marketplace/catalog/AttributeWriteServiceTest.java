@@ -197,7 +197,7 @@ class AttributeWriteServiceTest {
     @Test
     void unknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(repository.findById(unknown)).thenReturn(Optional.empty());
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         AttributeMutationResult result = service.updateAttribute(unknown,
                 new AttributeUpdateCommand("New", null));
@@ -210,7 +210,7 @@ class AttributeWriteServiceTest {
     @Test
     void emptyCommandAnswersTheCurrentProjectionWithoutASave() {
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         AttributeMutationResult result = service.updateAttribute(existing.getId(),
                 new AttributeUpdateCommand(null, null));
@@ -224,7 +224,7 @@ class AttributeWriteServiceTest {
     @Test
     void providedFieldsReplaceAndNullsPreserve() {
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         // The 2026-11-07 #808 round-19: the single create rides the
         // executor's saveAndFlush door.
@@ -243,7 +243,7 @@ class AttributeWriteServiceTest {
     @Test
     void blankNameAnswersTheInvalidDomainError() {
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         AttributeMutationResult result = service.updateAttribute(existing.getId(),
                 new AttributeUpdateCommand("   ", null));
@@ -262,7 +262,7 @@ class AttributeWriteServiceTest {
         // INVALID refusal, never a silent drop and never an
         // unauthorized move.
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("fresh-name")).thenReturn(Optional.empty());
 
         AttributeMutationResult result = service.updateAttribute(existing.getId(),
@@ -284,7 +284,7 @@ class AttributeWriteServiceTest {
         // refusal first — the code never moves, so the uniqueness
         // ladder below it is unreachable for a different code.
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("taken")).thenReturn(Optional.of(row("taken", "Taken")));
 
         AttributeMutationResult result = service.updateAttribute(existing.getId(),
@@ -302,7 +302,7 @@ class AttributeWriteServiceTest {
         // The row's own code is EXCLUDED from the duplicate check — a
         // re-send of the current slug is a no-op, not a conflict.
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("keep-attr")).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         // The 2026-11-07 #808 round-19: the single create rides the
@@ -322,7 +322,7 @@ class AttributeWriteServiceTest {
         // An explicitly blank slug is a change attempt (to blank) —
         // the immutable refusal answers it, never a silent drop.
         CatalogAttributeDefinition existing = row("keep-attr", "Kept");
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         AttributeMutationResult result = service.updateAttribute(existing.getId(),
                 new AttributeUpdateCommand(null, "   "));
@@ -693,7 +693,7 @@ class AttributeWriteServiceTest {
     @Test
     void bulkUpdateReturnsThePerItemOutcomes() {
         CatalogAttributeDefinition row = row("bulk-upd", "Bulk Upd");
-        when(repository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(repository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));
         when(repository.save(any(CatalogAttributeDefinition.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 

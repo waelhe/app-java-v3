@@ -213,7 +213,7 @@ class CategoryWriteServiceTest {
     @Test
     void unknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(repository.findById(unknown)).thenReturn(Optional.empty());
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         CategoryMutationResult result = service.updateCategory(unknown,
                 new CategoryUpdateCommand("Fresh", "fresh"));
@@ -227,7 +227,7 @@ class CategoryWriteServiceTest {
     @Test
     void nullFieldsPreserveEveryColumn() {
         Category existing = row("keep-code", "Keep", 4);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.updateCategory(existing.getId(),
@@ -242,7 +242,7 @@ class CategoryWriteServiceTest {
     @Test
     void providedFieldsReplaceTheColumns() {
         Category existing = row("old-code", "Old", 4);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.updateCategory(existing.getId(),
@@ -260,7 +260,7 @@ class CategoryWriteServiceTest {
         // slug command answers the classified INVALID domain error, never
         // a silent code move that strands the standing references.
         Category existing = row("old-code", "Old", 4);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         CategoryMutationResult result = service.updateCategory(existing.getId(),
                 new CategoryUpdateCommand("New", "NEW-CODE"));
@@ -275,7 +275,7 @@ class CategoryWriteServiceTest {
     @Test
     void blankNameOnUpdateAnswersTheInvalidDomainError() {
         Category existing = row("code", "Old", 4);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         CategoryMutationResult result = service.updateCategory(existing.getId(),
                 new CategoryUpdateCommand(" ", null));
@@ -294,7 +294,7 @@ class CategoryWriteServiceTest {
         // own code is the classified INVALID refusal.
         Category existing = row("own-code", "Old", 4);
         Category other = row("other-code", "Other", 5);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("other-code")).thenReturn(Optional.of(other));
 
         CategoryMutationResult result = service.updateCategory(existing.getId(),
@@ -309,7 +309,7 @@ class CategoryWriteServiceTest {
     @Test
     void keepingTheRowsOwnSlugIsNotADuplicate() {
         Category existing = row("own-code", "Old", 4);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
         when(repository.findByCode("own-code")).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -327,7 +327,7 @@ class CategoryWriteServiceTest {
     @Test
     void deleteAnswersTheLastKnownProjectionAndSoftDeletesTheRow() {
         Category existing = row("gone", "Gone", 7);
-        when(repository.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
 
         CategoryMutationResult result = service.deleteCategory(existing.getId());
 
@@ -341,7 +341,7 @@ class CategoryWriteServiceTest {
     @Test
     void deleteOfAnUnknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(repository.findById(unknown)).thenReturn(Optional.empty());
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         CategoryMutationResult result = service.deleteCategory(unknown);
 
@@ -357,9 +357,9 @@ class CategoryWriteServiceTest {
         Category first = row("one", "One", 1);
         Category second = row("two", "Two", 2);
         UUID unknown = UUID.randomUUID();
-        when(repository.findById(first.getId())).thenReturn(Optional.of(first));
-        when(repository.findById(second.getId())).thenReturn(Optional.of(second));
-        when(repository.findById(unknown)).thenReturn(Optional.empty());
+        when(repository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(repository.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
 
         int count = service.deleteCategories(List.of(first.getId(), unknown, second.getId()));
 
@@ -384,7 +384,7 @@ class CategoryWriteServiceTest {
         // only (a legacy row's re-send never re-validates its own
         // stored identity).
         Category legacy = row("legacy.code", "Legacy", 0);
-        when(repository.findById(legacy.getId())).thenReturn(Optional.of(legacy));
+        when(repository.findByIdForUpdate(legacy.getId())).thenReturn(Optional.of(legacy));
         when(repository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CategoryMutationResult result = service.updateCategory(legacy.getId(),
@@ -401,7 +401,7 @@ class CategoryWriteServiceTest {
         // INVALID together — the shape law rides the same branch, and
         // the stored code never moves.
         Category legacy = row("legacy.code", "Legacy", 0);
-        when(repository.findById(legacy.getId())).thenReturn(Optional.of(legacy));
+        when(repository.findByIdForUpdate(legacy.getId())).thenReturn(Optional.of(legacy));
 
         CategoryMutationResult result = service.updateCategory(legacy.getId(),
                 new CategoryUpdateCommand(null, "other.code"));

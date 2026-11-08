@@ -20,6 +20,7 @@ class CatalogAttributeServiceTest {
     private CatalogAttributeOptionRepository options;
     private ProductVariantAttributeValueRepository variantValues;
     private ProductAttributeValueRepository productValues;
+    private jakarta.persistence.EntityManager entityManager;
     private CatalogAttributeService service;
 
     @BeforeEach void setUp() {
@@ -32,7 +33,11 @@ class CatalogAttributeServiceTest {
         when(productValues.existsLiveProductValueForOption(any())).thenReturn(false);
         // The remove law's post-lock re-read answers ALIVE by default.
         lenient().when(options.existsById(any())).thenReturn(true);
-        service = new CatalogAttributeService(definitions, options, variantValues, productValues);
+        // The 2026-11-08 #808 round-21: the refresh-under-lock contract's own
+        // mock (the OrdersService precedent — a no-op refresh).
+        entityManager = org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class);
+        service = new CatalogAttributeService(definitions, options, variantValues, productValues,
+                entityManager);
     }
 
     @Test void registerDefinitionPersistsReusableTypedAttribute() {
@@ -47,7 +52,7 @@ class CatalogAttributeServiceTest {
 
     @Test void registerOptionOnlyAcceptsChoiceDefinitionsAndKeepsStableOrder() {
         UUID definitionId = UUID.randomUUID();
-        when(definitions.findById(definitionId)).thenReturn(Optional.of(
+        when(definitions.findByIdForUpdate(definitionId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("material", "Material", "الخامة", CatalogAttributeType.CHOICE, null)));
         when(options.findByAttributeDefinitionIdAndCode(definitionId, "cotton")).thenReturn(Optional.empty());
         when(options.existsByAttributeDefinitionIdAndPosition(definitionId, 0)).thenReturn(false);
@@ -61,7 +66,7 @@ class CatalogAttributeServiceTest {
 
     @Test void nonChoiceDefinitionCannotReceiveAllowedValues() {
         UUID definitionId = UUID.randomUUID();
-        when(definitions.findById(definitionId)).thenReturn(Optional.of(
+        when(definitions.findByIdForUpdate(definitionId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("weight", "Weight", "الوزن", CatalogAttributeType.NUMBER, null)));
         assertThatThrownBy(() -> service.registerOption(definitionId, "light", "Light", "خفيف", 0))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("CHOICE");
@@ -70,7 +75,7 @@ class CatalogAttributeServiceTest {
 
     @Test void duplicateOptionCodeOrPositionIsRejectedBeforeWrite() {
         UUID definitionId = UUID.randomUUID();
-        when(definitions.findById(definitionId)).thenReturn(Optional.of(
+        when(definitions.findByIdForUpdate(definitionId)).thenReturn(Optional.of(
                 CatalogAttributeDefinition.create("color", "Color", "اللون", CatalogAttributeType.CHOICE, null)));
         when(options.findByAttributeDefinitionIdAndCode(definitionId, "red"))
                 .thenReturn(Optional.of(CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0)));
@@ -81,6 +86,27 @@ class CatalogAttributeServiceTest {
         assertThatThrownBy(() -> service.registerOption(definitionId, "blue", "Blue", "أزرق", 0))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("position");
         verify(options, never()).save(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void removeOptionRefusesAnOptionReferencedByALiveProduct() {
+        // The 2026-11-08 #808 round-21 review (nitpick): the PRODUCT-value
+        // wall's own pin — the variant check passes (false) and the product
+        // check fires (true), the remove answers the ConflictException and
+        // the delete never happens (removing the product wall from
+        // removeOption would otherwise pass the suite silently).
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption used = CatalogAttributeOption.create(parent.getId(), "red", "Red", null, 1);
+        when(options.findById(used.getId())).thenReturn(Optional.of(used));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantValues.existsByOptionId(used.getId())).thenReturn(false);
+        when(productValues.existsLiveProductValueForOption(used.getId())).thenReturn(true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.removeOption(used.getId()))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("live product");
+        org.mockito.Mockito.verify(options, org.mockito.Mockito.never()).delete(any());
     }
 
     @org.junit.jupiter.api.Test

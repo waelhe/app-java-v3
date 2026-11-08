@@ -207,6 +207,55 @@ class ProductVariantServiceTest {
     }
 
     @Test
+    void everyNonChoiceValueTypeLoadRidesTheDefinitionShareLock() {
+        // The 2026-11-08 #808 round-21 review (nitpick): the round-8
+        // consolidation made the definition LOAD itself read FOR SHARE
+        // for EVERY value type — a regression to an unlocked load for
+        // the TEXT/NUMBER/BOOLEAN legs would pass the CHOICE-only
+        // assertions silently. Each leg's own pin: the share read fires
+        // before the value's shape check.
+        for (CatalogAttributeType type : java.util.List.of(
+                CatalogAttributeType.TEXT, CatalogAttributeType.NUMBER, CatalogAttributeType.BOOLEAN)) {
+            UUID productTypeId = UUID.randomUUID();
+            CatalogAttributeDefinition definition = CatalogAttributeDefinition.create(
+                    type.name().toLowerCase(), "Attr " + type, null, type, null);
+            Product product = Product.register("typed-" + type.name(), "Typed", null, 100L, "SAR", seller,
+                    productTypeId);
+            ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                    productTypeId, definition.getId(), ProductTypeAttributeScope.VARIANT, false, 0);
+            org.mockito.Mockito.reset(definitions, productRepository, currentUserProvider,
+                    variantRepository, assignments, attributeValues);
+            when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+            when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
+            when(variantRepository.findByProviderIdAndSku(seller, "T-" + type.name())).thenReturn(Optional.empty());
+            when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
+                    .thenReturn(java.util.List.of(assignment));
+            when(definitions.findByIdForShare(definition.getId())).thenReturn(Optional.of(definition));
+            when(variantRepository.save(any(ProductVariant.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(attributeValues.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            CatalogAttributeValueInput value =
+                    switch (type) {
+                        case TEXT -> new CatalogAttributeValueInput(
+                                assignment.getId(), "plain", null, null, null);
+                        case NUMBER -> new CatalogAttributeValueInput(
+                                assignment.getId(), null, java.math.BigDecimal.valueOf(7), null, null);
+                        case BOOLEAN -> new CatalogAttributeValueInput(
+                                assignment.getId(), null, null, true, null);
+                        default -> throw new IllegalStateException("non-choice leg only");
+                    };
+
+            ProductVariant saved = service.register(product.getId(),
+                    new ProductVariantService.RegisterVariantCommand("T-" + type.name(), "Typed", 100,
+                            java.util.List.of(value)),
+                    authentication);
+
+            assertThat(saved.getSku()).isEqualTo("T-" + type.name());
+            verify(definitions).findByIdForShare(definition.getId());
+        }
+    }
+
+    @Test
     void registrationUnderAWithdrawnTypeRidesTheFreeFormPath() {
         // The 2026-11-06 #808 round-3 review (Major · Stability &
         // Availability): a soft-deleted type row owns NO live schema —
