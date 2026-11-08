@@ -542,6 +542,28 @@ class ProductWriteServiceTest {
     }
 
     @Test
+    void bulkDeleteTakesTheProductLocksInSortedOrder() {
+        // The 2026-11-08 #808 round-23 review (Minor · Stability &
+        // Availability): the product row locks come in ONE sorted pass —
+        // the caller's list order let two concurrent bulk deletes naming
+        // the same rows in opposite orders meet the deadlock detector.
+        // The 80-row's signed-long msb makes it sort FIRST in Java's
+        // natural order while the 0f row sorts first in the hex order —
+        // the pass must lock the NATURAL order (the module's bulk
+        // convention), whatever order the caller named.
+        UUID late = UUID.fromString("0f000000-0000-0000-0000-000000000000");
+        UUID early = UUID.fromString("80000000-0000-0000-0000-000000000000");
+        when(productRepository.findByIdAndProviderIdForUpdate(any(UUID.class), any(UUID.class)))
+                .thenReturn(java.util.Optional.empty());
+
+        service.deleteProducts(java.util.Arrays.asList(late, early), caller);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(productRepository);
+        order.verify(productRepository).findByIdAndProviderIdForUpdate(early, ProviderIds.CALLER);
+        order.verify(productRepository).findByIdAndProviderIdForUpdate(late, ProviderIds.CALLER);
+    }
+
+    @Test
     void bulkDeleteSkipsTheReservedRowWithoutCountingIt() {
         // B7 (CAT-04): the bulk shape of the open-reservation wall — the
         // blocked row is neither deleted nor counted (the count answers

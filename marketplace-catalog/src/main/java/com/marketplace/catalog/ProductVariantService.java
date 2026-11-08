@@ -78,7 +78,7 @@ public class ProductVariantService {
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant register(UUID productId, RegisterVariantCommand command,
                                    Authentication authentication) {
-        Product product = requireOwnedProduct(productId, authentication);
+        Product product = requireOwnedProductForShare(productId, authentication);
         UUID providerId = product.getProviderId();
         variantRepository.findByProviderIdAndSku(providerId, command.sku()).ifPresent(existing -> {
             throw new ConflictException("SKU '" + command.sku() + "' is already used by variant "
@@ -333,6 +333,27 @@ public class ProductVariantService {
      */
     private Product requireOwnedProduct(UUID productId, Authentication authentication) {
         Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        if (!product.getProviderId().equals(caller) && !currentUserProvider.isAdmin(authentication)) {
+            throw new ResourceNotFoundException("Product", productId);
+        }
+        return product;
+    }
+
+    /**
+     * The WRITE paths' own ownership gate — the 2026-11-08 #808 round-23
+     * review (Minor · Data Integrity &amp; Integration): the registration
+     * reads the owning product FOR SHARE, held to the transaction's end,
+     * so the product delete's FOR-UPDATE guard-plus-cascade serializes
+     * with the registration (never a live variant committed under a
+     * dead product — the same law the untyped createVariant leg just
+     * adopted). The read-only roster keeps the unlocked shape (the
+     * {@code requireOwnedProduct} above) — a shared lock on every read
+     * would serialize deletes behind browsing for no integrity gain.
+     */
+    private Product requireOwnedProductForShare(UUID productId, Authentication authentication) {
+        Product product = productRepository.findByIdForShare(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
         if (!product.getProviderId().equals(caller) && !currentUserProvider.isAdmin(authentication)) {

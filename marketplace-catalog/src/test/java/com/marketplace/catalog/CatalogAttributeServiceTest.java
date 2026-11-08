@@ -145,11 +145,19 @@ class CatalogAttributeServiceTest {
         // only then the delete. A reorder that swaps the refresh and
         // the delete (or drops the refresh) must fail here, not ride a
         // green suite silently.
-        org.mockito.InOrder order = org.mockito.Mockito.inOrder(definitions, options, entityManager);
+        // The 2026-11-08 #808 round-23 review (nitpick): the reference
+        // probes join the ladder — BOTH walls (the live-variant and the
+        // live-product probes) sit AFTER the refresh and BEFORE the
+        // delete; moving them ahead of the lock reopens the concurrency
+        // window the walls exist to close.
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(
+                definitions, options, entityManager, variantValues, productValues);
         order.verify(definitions).findByIdForUpdate(parent.getId());
         order.verify(options).existsById(victim.getId());
         order.verify(entityManager).refresh(victim,
                 jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        order.verify(variantValues).existsByOptionId(victim.getId());
+        order.verify(productValues).existsLiveProductValueForOption(victim.getId());
         order.verify(options).delete(victim);
     }
 

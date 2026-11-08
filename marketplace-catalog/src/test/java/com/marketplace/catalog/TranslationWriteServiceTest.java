@@ -324,9 +324,14 @@ class TranslationWriteServiceTest {
 
     @Test
     void aBlankValueNameAnswersTheInvalidDomainError() {
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
         CatalogAttributeOption row = CatalogAttributeOption.create(
-                UUID.randomUUID(), "red", "Red", "أحمر", 1);
+                parent.getId(), "red", "Red", "أحمر", 1);
         when(attributeOptionRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        // The round-23 family lock rides the setup's For-Update → findById
+        // delegation; the definition must answer present.
+        when(attributeDefinitionRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.translateAttributeValue(
                 row.getId(), new TranslationAmendCommand("  ", "EN"));
@@ -336,6 +341,56 @@ class TranslationWriteServiceTest {
                 .extracting(AttributeMutationError::code, AttributeMutationError::field)
                 .containsExactly(AttributeMutationErrorCode.INVALID, "name");
         verify(attributeOptionRepository, never()).save(any(CatalogAttributeOption.class));
+    }
+
+    @Test
+    void translateAttributeRidesTheDefinitionLock() {
+        // The 2026-11-08 #808 round-23 review (Minor · Data Integrity &
+        // Integration): the attribute translation rides the locked load —
+        // the category/collection twins took the round-21 lock treatment
+        // and the attribute twin missed it (the fabricated SUCCESS over
+        // a soft-deleted row, or the raw OptimisticLockException).
+        CatalogAttributeDefinition row = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
+        when(attributeDefinitionRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(attributeDefinitionRepository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.translateAttribute(row.getId(), new TranslationAmendCommand("Colour", "EN"));
+
+        verify(attributeDefinitionRepository).findByIdForUpdate(row.getId());
+        verify(attributeDefinitionRepository).save(any(CatalogAttributeDefinition.class));
+    }
+
+    @Test
+    void bulkTranslateAttributesLocksTheDefinitionsInSortedOrderBeforeTheItems() {
+        // The 2026-11-08 #808 round-23 review (Minor · Stability &
+        // Availability): the definition locks come in ONE sorted pass —
+        // the per-item ladder locked inside the CALLER's list order, so
+        // two concurrent bulk translations naming overlapping
+        // definitions in opposite orders could deadlock.
+        CatalogAttributeDefinition first = CatalogAttributeDefinition.create(
+                "first", "First", null, CatalogAttributeType.TEXT, null);
+        CatalogAttributeDefinition second = CatalogAttributeDefinition.create(
+                "second", "Second", null, CatalogAttributeType.TEXT, null);
+        when(attributeDefinitionRepository.findById(first.getId())).thenReturn(Optional.of(first));
+        when(attributeDefinitionRepository.findById(second.getId())).thenReturn(Optional.of(second));
+        when(attributeDefinitionRepository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.bulkTranslateAttributes(java.util.Arrays.asList(
+                new TranslationBulkItem(second.getId(), new TranslationAmendCommand("Zweit", "DE")),
+                new TranslationBulkItem(first.getId(), new TranslationAmendCommand("Erst", "DE"))),
+                "IGNORE_FAILED");
+
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(first.getId(), second.getId())
+                .sorted().toList();
+        org.mockito.ArgumentCaptor<UUID> locked = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        // The pre-pass (2) + the per-item re-locks (2) — the captured
+        // sequence's PREFIX is the sorted pre-pass.
+        verify(attributeDefinitionRepository, org.mockito.Mockito.times(4))
+                .findByIdForUpdate(locked.capture());
+        assertThat(locked.getAllValues()).startsWith(sorted.get(0), sorted.get(1));
     }
 
     // ------------------------------------------------------------------

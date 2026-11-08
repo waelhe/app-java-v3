@@ -178,7 +178,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void blankSkuAnswersTheRequiredDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "  ", "Large", 1000L), caller);
@@ -191,7 +191,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void oversizedSkuAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "S".repeat(101), "Large", 1000L), caller);
@@ -204,7 +204,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void duplicateSkuAnswersTheAlreadyExistsDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         // The 2026-11-06 #808 round: the reservation probe spans the RAW
         // table — a live OR soft-deleted row's SKU answers the same
         // classified ALREADY_EXISTS (the native count, never the
@@ -228,7 +228,7 @@ class ProductVariantWriteServiceTest {
         // reserved, so the raw-table count answers the classified
         // ALREADY_EXISTS where the live-rows-only probe saw nothing.
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(1L);
 
@@ -244,7 +244,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void oversizedNameAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "SKU-1", "L".repeat(201), 1000L), caller);
@@ -257,7 +257,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void missingPriceAnswersTheRequiredDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "SKU-1", "Large", null), caller);
@@ -270,7 +270,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void negativePriceAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "SKU-1", "Large", -1L), caller);
@@ -283,7 +283,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void theHappyPathRegistersTheRowWithTheOwnershipFactsCopiedFromTheParent() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(variantRepository.save(any(ProductVariant.class)))
@@ -316,7 +316,7 @@ class ProductVariantWriteServiceTest {
     void aSelectionSchemaProductRefusesTheValuelessCreateWithTheInvalidDomainError() {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(productTypeRepository.findByIdForShare(productTypeId))
@@ -343,7 +343,7 @@ class ProductVariantWriteServiceTest {
     void aRequiredVariantAssignmentRefusesTheValuelessCreateToo() {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(productTypeRepository.findByIdForShare(productTypeId))
@@ -368,7 +368,7 @@ class ProductVariantWriteServiceTest {
     void aTypedProductWithoutValueDemandsKeepsTheFreeFormCreatePath() {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(productTypeRepository.findByIdForShare(productTypeId))
@@ -392,7 +392,7 @@ class ProductVariantWriteServiceTest {
     void aWithdrawnTypeSchemaKeepsTheFreeFormCreatePath() {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         // A soft-deleted type row answers the share read empty — the
@@ -763,7 +763,7 @@ class ProductVariantWriteServiceTest {
         // bulkCreateAttributes precedent verbatim), never the raw
         // constraint error past every catch at the interceptor's commit.
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         org.mockito.Mockito.lenient().when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "RACE-SKU"))
                 .thenReturn(Optional.empty());
         org.mockito.Mockito.lenient().when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "RACE-SKU"))
@@ -806,7 +806,7 @@ class ProductVariantWriteServiceTest {
     @Test
     void bulkCreateReturnsThePerItemOutcomes() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-A")).thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-B")).thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-9")).thenReturn(1L);
@@ -923,7 +923,7 @@ class ProductVariantWriteServiceTest {
         // answers the collision honestly, the ones past the failure
         // included — and the flush itself is never reached.
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-A"))
                 .thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-B"))
@@ -1042,7 +1042,7 @@ class ProductVariantWriteServiceTest {
         // the passing items claim — the outcomes are rebuilt with no view
         // and the batch's own classified refusal.
         Product parent = productOwnedBy(ProviderIds.CALLER);
-        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-A")).thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-9")).thenReturn(1L);
         when(variantRepository.save(any(ProductVariant.class)))

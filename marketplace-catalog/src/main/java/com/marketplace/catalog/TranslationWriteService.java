@@ -126,8 +126,17 @@ public class TranslationWriteService implements TranslationWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public AttributeMutationResult translateAttribute(UUID id, TranslationAmendCommand command) {
+        // The 2026-11-08 #808 round-23 review (Minor · Data Integrity &
+        // Integration): the locked load — the category/collection twins
+        // took the round-21 lock treatment and the attribute twin missed
+        // it. An unlocked read let a concurrent deleteAttribute commit
+        // between the read and the save, and the translation then wrote
+        // over the soft-deleted row and answered a fabricated SUCCESS
+        // for an attribute no read could resolve (the updateAttribute
+        // round-21 law, this file's own shape).
         Optional<CatalogAttributeDefinition> addressed =
-                id == null ? Optional.empty() : attributeDefinitionRepository.findById(id);
+                id == null ? Optional.empty()
+                        : attributeDefinitionRepository.findByIdForUpdate(id);
         if (addressed.isEmpty()) {
             return AttributeMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute found for the id")));
@@ -154,9 +163,32 @@ public class TranslationWriteService implements TranslationWriteSpi {
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional
     public AttributeValueMutationResult translateAttributeValue(UUID id, TranslationAmendCommand command) {
+        // The 2026-11-08 #808 round-23 review (Minor · Data Integrity &
+        // Integration): the option's family lock FIRST — both value
+        // deletes (the SPI deleteAttributeValue and the REST
+        // removeOption) serialize their writers on the parent
+        // definition's FOR-UPDATE row, and the value's own translation
+        // never joined that discipline: an unlocked read let a
+        // concurrent value delete commit between the read and the save,
+        // and the translation wrote over the soft-deleted option (the
+        // fabricated SUCCESS) or the stale @Version answered the raw
+        // OptimisticLockException. The definition lock plus the fresh
+        // existence re-read answer the honest not-found.
         Optional<CatalogAttributeOption> addressed =
                 id == null ? Optional.empty() : attributeOptionRepository.findById(id);
         if (addressed.isEmpty()) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
+        }
+        if (attributeDefinitionRepository
+                .findByIdForUpdate(addressed.get().getAttributeDefinitionId()).isEmpty()) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
+        }
+        // The fresh re-read under the lock — the option may have died
+        // while this call waited (the honest not-found, never a write
+        // over a soft-deleted row).
+        if (!attributeOptionRepository.existsById(id)) {
             return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
         }
@@ -266,6 +298,22 @@ public class TranslationWriteService implements TranslationWriteSpi {
             }
             return outcomes;
         }
+        // The 2026-11-08 #808 round-23 review (Minor · Stability &
+        // Availability): the definition locks come in ONE sorted pass
+        // BEFORE the per-item loop — the per-item translateAttribute
+        // locks inside the CALLER's list order, so two concurrent bulk
+        // translations naming overlapping definitions in opposite orders
+        // could deadlock (the bulkUpdateAttributes round-22 law). The
+        // per-item re-lock is free (this transaction already holds the
+        // rows).
+        for (UUID id : items.stream()
+                .map(TranslationBulkItem::rowId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList()) {
+            attributeDefinitionRepository.findByIdForUpdate(id);
+        }
         for (TranslationBulkItem item : items) {
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
@@ -303,6 +351,30 @@ public class TranslationWriteService implements TranslationWriteSpi {
                         null, List.of(policyError)));
             }
             return outcomes;
+        }
+        // The 2026-11-08 #808 round-23 review (Minor · Stability &
+        // Availability): the definitions behind the batch's options lock
+        // in ONE sorted pass BEFORE the per-item loop — the per-item
+        // translateAttributeValue takes the family lock inside the
+        // CALLER's list order, so two concurrent batches naming
+        // overlapping families in opposite orders could deadlock (the
+        // bulkUpdateAttributes round-22 law). The pass reads each
+        // option's owning definition id only to ORDER the locks — the
+        // per-item ladder re-validates everything under the lock it
+        // already holds (the round-11 drop-id/lock/load discipline, the
+        // per-item re-reads).
+        for (UUID definitionId : items.stream()
+                .map(TranslationBulkItem::rowId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .map(id -> attributeOptionRepository.findById(id)
+                        .map(CatalogAttributeOption::getAttributeDefinitionId)
+                        .orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList()) {
+            attributeDefinitionRepository.findByIdForUpdate(definitionId);
         }
         for (TranslationBulkItem item : items) {
             AttributeValueMutationResult result = translateAttributeValue(item.rowId(), item.command());

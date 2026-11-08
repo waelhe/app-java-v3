@@ -347,7 +347,15 @@ public class ProductWriteService implements ProductWriteSpi {
                 .stream().sorted().toList()) {
             collectionProducts.lockCollectionPositionAllocation(collectionId.toString());
         }
-        for (UUID id : ids) {
+        // The 2026-11-08 #808 round-23 review (Minor · Stability &
+        // Availability): the product row locks come in ONE sorted,
+        // deduplicated, null-free pass — the caller's list order let two
+        // concurrent bulk deletes naming the same rows in opposite orders
+        // meet the database's deadlock detector (the B7 stance below
+        // accepted that abort; the sorted pass prevents it). The same
+        // lock-order law every bulk writer in this module owns
+        // (deleteAttributes, deleteVariants, bulkUpdateAttributes).
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).distinct().sorted().toList()) {
             // Unknown or stranger ids are skipped — the honest affected
             // count answers only what the caller owns and the registry
             // itself deleted (never a fabricated count, never an
@@ -355,12 +363,12 @@ public class ProductWriteService implements ProductWriteSpi {
             // B7's TOCTOU residual (CAT-04): each candidate rides the SAME
             // locked read the single delete owns — the per-row guard below
             // checks the LOCKED counters, so a reservation that lands
-            // between any two candidates is seen, not raced. The locks are
-            // taken in the caller's list order; two concurrent bulk
-            // deletes naming the same rows in opposite orders are untangled
-            // by the database's own deadlock detector (one whole delete
-            // rolls back — never a stranded reservation, which is the
-            // state this wall exists to prevent).
+            // between any two candidates is seen, not raced. The remaining
+            // cross-shape interleavings (a bulk delete racing a single
+            // delete, or the late-collection advisory window documented
+            // above) stay under the database's own deadlock detector (one
+            // whole delete rolls back — never a stranded reservation,
+            // which is the state this wall exists to prevent).
             Optional<Product> addressed = ownedRowForUpdate(id, caller);
             if (addressed.isPresent()) {
                 // B7 (CAT-04): the single delete's open-reservation wall,

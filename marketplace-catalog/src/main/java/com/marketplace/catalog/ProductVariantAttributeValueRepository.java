@@ -19,10 +19,21 @@ public interface ProductVariantAttributeValueRepository extends JpaRepository<Pr
      * soft-deletes the variant alone, never its values — the derived
      * single-table probe kept blocking the option's delete forever with
      * a "referenced by a live variant" message that named a dead row).
+     * The 2026-11-08 #808 round-23 review (Minor · Data Integrity &amp;
+     * Integration): the PARENT-PRODUCT join carries the product's own
+     * {@code @SoftDelete} filter too — only a variant bound to a LIVE
+     * product holds the option live. The product delete cascades the
+     * variant shelf in the same transaction (the wave-19 cascade), and
+     * the round-23 create-side fix (the parent FOR-SHARE read) closes
+     * the registration-vs-delete race that could have committed a live
+     * variant under a dead product — this join makes the guard's law
+     * LOCAL to the query, never dependent on those two invariants
+     * holding elsewhere.
      */
     @org.springframework.data.jpa.repository.Query("""
             select (count(vav) > 0) from ProductVariantAttributeValue vav
               join ProductVariant v on v.id = vav.productVariantId
+              join Product p on p.id = v.productId
              where vav.optionId = :optionId
             """)
     boolean existsByOptionId(

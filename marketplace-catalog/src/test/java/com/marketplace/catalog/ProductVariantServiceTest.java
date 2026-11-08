@@ -108,7 +108,7 @@ class ProductVariantServiceTest {
     @Test
     void theOwningProviderRegistersAVariantWithTheProductsOwnProviderAndCurrency() {
         Product product = product();
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "ESPRESSO-RED"))
                 .thenReturn(Optional.empty());
@@ -142,7 +142,7 @@ class ProductVariantServiceTest {
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
         CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "TYPED-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
@@ -175,7 +175,7 @@ class ProductVariantServiceTest {
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
         CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "DUP-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
@@ -198,7 +198,7 @@ class ProductVariantServiceTest {
     @Test
     void registrationUnderAnUnknownProductAnswersTheHonest404() {
         UUID productId = UUID.randomUUID();
-        when(productRepository.findById(productId)).thenReturn(Optional.empty());
+        when(productRepository.findByIdForShare(productId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.register(productId,
                 new ProductVariantService.RegisterVariantCommand("SKU-1", null, 100), authentication))
@@ -225,7 +225,7 @@ class ProductVariantServiceTest {
                     productTypeId, definition.getId(), ProductTypeAttributeScope.VARIANT, false, 0);
             org.mockito.Mockito.reset(definitions, productRepository, currentUserProvider,
                     variantRepository, assignments, attributeValues);
-            when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+            when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
             when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
             when(variantRepository.findByProviderIdAndSku(seller, "T-" + type.name())).thenReturn(Optional.empty());
             when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
@@ -266,7 +266,7 @@ class ProductVariantServiceTest {
         UUID productTypeId = UUID.randomUUID();
         Product product = Product.register("orphaned-goods", "Orphaned goods", null, 100L, "SAR", seller,
                 productTypeId);
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "FREE-1")).thenReturn(Optional.empty());
         when(productTypes.findByIdForShare(productTypeId)).thenReturn(Optional.empty());
@@ -284,7 +284,7 @@ class ProductVariantServiceTest {
     @Test
     void aStrangerCannotRegisterUnderSomeoneElsesProduct() {
         Product product = product();
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(stranger);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
@@ -297,7 +297,7 @@ class ProductVariantServiceTest {
     @Test
     void anAdminMayRegisterUnderAnyProduct() {
         Product product = product();
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(stranger);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(variantRepository.findByProviderIdAndSku(seller, "ADMIN-SKU"))
@@ -316,7 +316,7 @@ class ProductVariantServiceTest {
     void aSkuCollisionInTheSellersNamespaceAnswersThe409WithTheCollisionNamed() {
         Product product = product();
         ProductVariant existing = variant(product);
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, existing.getSku()))
                 .thenReturn(Optional.of(existing));
@@ -339,7 +339,7 @@ class ProductVariantServiceTest {
         // count answers the same friendly 409 BEFORE the save dies on
         // the constraint.
         Product product = product();
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "RED-XL"))
                 .thenReturn(Optional.empty());
@@ -357,7 +357,7 @@ class ProductVariantServiceTest {
     @Test
     void theSameSkuIsFreeInAnotherSellersNamespace() {
         Product product = product();
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "RED-XL"))
                 .thenReturn(Optional.empty());
@@ -416,6 +416,9 @@ class ProductVariantServiceTest {
     @Test
     void theRosterReadIsTheOwnersOwn() {
         Product product = product();
+        // The read-only roster keeps the UNLOCKED parent read (the
+        // requireOwnedProduct shape — the round-23 For-Share lock is the
+        // WRITE paths' own).
         when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(java.util.List.of());

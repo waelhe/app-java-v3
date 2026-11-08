@@ -199,6 +199,24 @@ public class ProductTypeAttributeService {
         ProductTypeAttributeAssignment assignment = assignments.findById(assignmentId)
                 .filter(row -> row.getProductTypeId().equals(productTypeId))
                 .orElseThrow(() -> new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId));
+        // The 2026-11-08 #808 round-23 review (Minor · Data Integrity &
+        // Integration): the setRequired round-19 discipline, applied to
+        // the remove — the path serialized on the TYPE row only, but
+        // deleteAttribute holds the DEFINITION row FOR UPDATE while its
+        // children cascade soft-deletes THIS assignment, and the type
+        // lock never serialized the pair (two different rows): a
+        // definition delete that committed between this load and the
+        // delete answered the raw OptimisticLockException on a dead row.
+        // The definition's own FOR-UPDATE lock plus the fresh assignment
+        // re-read answer the honest not-found when the delete committed
+        // first; a delete that has not started waits on THIS lock and
+        // re-runs its own guards after the removal commits.
+        definitions.findByIdForUpdate(assignment.getAttributeDefinitionId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "ProductTypeAttributeAssignment", assignmentId));
+        if (!assignments.existsById(assignmentId)) {
+            throw new ResourceNotFoundException("ProductTypeAttributeAssignment", assignmentId);
+        }
         if (variantAttributeValues.existsLiveVariantValueForAssignmentsOrOptions(
                 List.of(assignment.getId()), List.of())) {
             throw new ConflictException("An assignment referenced by a live variant cannot be removed"

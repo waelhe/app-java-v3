@@ -119,9 +119,20 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                                                       Authentication authentication) {
         List<ProductVariantMutationError> errors = new ArrayList<>();
         UUID productId = command.productId();
+        // The 2026-11-08 #808 round-23 review (Minor · Data Integrity &
+        // Integration): the parent read carries a SHARED row lock, held
+        // to the transaction's end — the product delete takes the SAME
+        // row FOR UPDATE before its guard-plus-cascade, so the pair
+        // serializes: either this create commits its variant first and
+        // the delete's locked roster sees and cascades it, or the
+        // delete commits first and this read answers the honest
+        // absence (never a live variant committed under a dead
+        // product — the orphan shelf the wave-19 cascade exists to
+        // prevent). The unlocked read let the insert ride a parent the
+        // delete had already soft-deleted.
         Optional<Product> parent = productId == null
                 ? Optional.empty()
-                : productRepository.findById(productId);
+                : productRepository.findByIdForShare(productId);
         // Row 12 (agent findings 2026-10-26 14:33 export, CWE-203): the
         // ownership decision is resolved FIRST and gates the seller's own
         // namespace queries. The pre-fix flow kept validating after a

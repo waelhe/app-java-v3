@@ -408,6 +408,27 @@ class ProductTypeAttributeServiceTest {
         inOrder.verify(assignments).save(optional);
     }
 
+    @Test void removeRidesTheDefinitionLockToo() {
+        // The 2026-11-08 #808 round-23 review (Minor · Data Integrity &
+        // Integration): the setRequired round-19 discipline, applied to
+        // the remove — the definition's FOR-UPDATE lock serializes with
+        // deleteAttribute's children cascade, and the fresh assignment
+        // re-read answers the honest not-found when the delete committed
+        // first (never the raw OptimisticLockException on a dead row).
+        ProductTypeAttributeAssignment assignment = ProductTypeAttributeAssignment.create(
+                typeId, attributeId, ProductTypeAttributeScope.PRODUCT, false, 0);
+        when(assignments.findProductTypeIdById(assignment.getId())).thenReturn(java.util.Optional.of(typeId));
+        when(assignments.findById(assignment.getId())).thenReturn(java.util.Optional.of(assignment));
+
+        service.remove(assignment.getId());
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(productTypes, definitions, assignments);
+        order.verify(productTypes).findByIdForUpdate(typeId);
+        order.verify(definitions).findByIdForUpdate(attributeId);
+        order.verify(assignments).existsById(assignment.getId());
+        verify(assignments).delete(assignment);
+    }
+
     @Test void removeRidesTheTypeLockAndTheLiveValuesWall() {
         // The 2026-11-07 #808 round-12 review (Major · Data Integrity &
         // Integration): the REST remove mirrors the GraphQL unassign
