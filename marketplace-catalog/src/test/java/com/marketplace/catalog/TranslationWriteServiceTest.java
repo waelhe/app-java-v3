@@ -28,6 +28,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -68,6 +69,11 @@ class TranslationWriteServiceTest {
         attributeDefinitionRepository = mock(CatalogAttributeDefinitionRepository.class);
         attributeOptionRepository = mock(CatalogAttributeOptionRepository.class);
         collectionRepository = mock(CollectionRepository.class);
+        // The 2026-11-07 #808 round-20: the value translation rides the
+        // definition's FOR-UPDATE lock — the delete-pairing default.
+        lenient().when(attributeDefinitionRepository.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> attributeDefinitionRepository.findById(invocation.getArgument(0)));
+        lenient().when(attributeOptionRepository.existsById(any(UUID.class))).thenReturn(true);
         service = new TranslationWriteService(categoryRepository, attributeDefinitionRepository,
                 attributeOptionRepository, collectionRepository);
     }
@@ -568,4 +574,30 @@ class TranslationWriteServiceTest {
                     .isEqualTo(AttributeMutationErrorCode.NOT_FOUND);
         }
     }
+
+    @Test
+    void theValueTranslationAnswersTheHonestNotFoundWhenTheOptionDiedUnderTheLock() {
+        // The 2026-11-07 #808 round-20 review (Minor · Data Integrity &
+        // Integration): the definition's FOR-UPDATE lock serializes with
+        // the attribute delete's cascade; the option re-read under it
+        // answers the honest absence — never a fabricated success on a
+        // dead row.
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption row = CatalogAttributeOption.create(
+                parent.getId(), "red", "Red", null, 1);
+        when(attributeOptionRepository.findById(row.getId())).thenReturn(Optional.of(row));
+        when(attributeDefinitionRepository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(attributeOptionRepository.existsById(row.getId())).thenReturn(false);
+
+        AttributeValueMutationResult result = service.translateAttributeValue(
+                row.getId(), new TranslationAmendCommand("أحمر", "AR"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "id");
+        verify(attributeOptionRepository, never()).save(any(CatalogAttributeOption.class));
+    }
+
 }

@@ -187,6 +187,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
              where p.productTypeId = :productTypeId
                and p.status in (com.marketplace.catalog.StoreProductStatus.ACTIVE,
                                 com.marketplace.catalog.StoreProductStatus.SUSPENDED)
+               and v.status <> com.marketplace.catalog.ProductStatus.ARCHIVED
             """)
     boolean existsPublishedShelfVariantForType(@Param("productTypeId") UUID productTypeId);
 

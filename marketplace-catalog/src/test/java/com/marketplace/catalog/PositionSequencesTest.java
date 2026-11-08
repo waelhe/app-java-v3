@@ -58,9 +58,12 @@ class PositionSequencesTest {
     void parkBaseKeepsTheWindowClearOfEveryHeldPosition() {
         // The window walk skips past EACH held position it meets — the
         // parked range never shares a seat with a not-yet-moved row.
-        // Held {2, 4, 6}, size 3: starts at 4 (blocked by 4), then 5
-        // (window [5,7] meets 6), then 7 — the window [7, 9] is free.
-        assertThat(PositionSequences.parkBase(List.of(2, 4, 6), 3)).isEqualTo(7);
+        // The 2026-11-07 #808 round-20 nitpick: the ceiling member forces
+        // the SCAN path (the natural base wraps) — held {4, 6, MAX}, size
+        // 3: starts at 4 (blocked by 4), then 5 (window [5,7] meets 6),
+        // then 7 — the window [7, 9] is free.
+        assertThat(PositionSequences.parkBase(
+                List.of(4, 6, Integer.MAX_VALUE), 3)).isEqualTo(7);
     }
 
     @Test

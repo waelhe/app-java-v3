@@ -585,12 +585,19 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // The 2026-11-07 #808 round-19 review (the overflow family): the
         // append's own derivation rides the shared law too — the ceiling
         // answers the classified refusal, never the negative wrap.
+        // The 2026-11-07 #808 round-20 review widens it: the WHOLE batch's
+        // capacity is checked BEFORE any membership saves — a derived
+        // MAX_VALUE-1 head with a two-member batch wrapped the SECOND
+        // member's next++ to Integer.MIN_VALUE and the DB CHECK answered
+        // the unclassified failure after the first member already saved.
         java.util.OptionalInt nextPosition = PositionSequences.appendPosition(
                 collectionProductRepository
                         .findByCollectionIdOrderByPositionAscIdAsc(collectionId).stream()
                         .mapToInt(CollectionProduct::getPosition)
                         .max().orElse(0));
-        if (nextPosition.isEmpty()) {
+        int batch = distinct(productIds).size();
+        if (nextPosition.isEmpty()
+                || (long) nextPosition.getAsInt() + batch - 1 > Integer.MAX_VALUE) {
             throw new com.marketplace.shared.api.ConflictException(
                     "The collection's membership positions are exhausted — reorder the members to compact"
                             + " the positions, then retry the add");

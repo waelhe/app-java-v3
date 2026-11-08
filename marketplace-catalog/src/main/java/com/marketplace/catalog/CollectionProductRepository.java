@@ -30,6 +30,15 @@ public interface CollectionProductRepository extends JpaRepository<CollectionPro
      */
     List<CollectionProduct> findByProductIdOrderByPositionAsc(UUID productId);
 
+    /**
+     * The 2026-11-07 #808 round-20 review: the product delete's membership
+     * cascade locks every affected collection's advisory position lock
+     * BEFORE loading the rows — the DISTINCT collection ids of one
+     * product's live memberships, a projection (never the entities).
+     */
+    @Query("select distinct cp.collectionId from CollectionProduct cp where cp.productId = :productId")
+    java.util.List<UUID> findDistinctCollectionIdsByProductId(@Param("productId") UUID productId);
+
     /** The duplicate-add precheck — the live pair or empty. */
     Optional<CollectionProduct> findByCollectionIdAndProductId(UUID collectionId, UUID productId);
 

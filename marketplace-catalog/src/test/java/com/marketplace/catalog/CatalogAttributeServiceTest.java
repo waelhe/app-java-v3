@@ -8,6 +8,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,12 +18,21 @@ import static org.mockito.Mockito.when;
 class CatalogAttributeServiceTest {
     private CatalogAttributeDefinitionRepository definitions;
     private CatalogAttributeOptionRepository options;
+    private ProductVariantAttributeValueRepository variantValues;
+    private ProductAttributeValueRepository productValues;
     private CatalogAttributeService service;
 
     @BeforeEach void setUp() {
         definitions = mock(CatalogAttributeDefinitionRepository.class);
         options = mock(CatalogAttributeOptionRepository.class);
-        service = new CatalogAttributeService(definitions, options);
+        // The 2026-11-07 #808 round-20: the remove law's reference walls.
+        variantValues = mock(ProductVariantAttributeValueRepository.class);
+        productValues = mock(ProductAttributeValueRepository.class);
+        when(variantValues.existsByOptionId(any())).thenReturn(false);
+        when(productValues.existsLiveProductValueForOption(any())).thenReturn(false);
+        // The remove law's post-lock re-read answers ALIVE by default.
+        lenient().when(options.existsById(any())).thenReturn(true);
+        service = new CatalogAttributeService(definitions, options, variantValues, productValues);
     }
 
     @Test void registerDefinitionPersistsReusableTypedAttribute() {
@@ -72,4 +82,54 @@ class CatalogAttributeServiceTest {
                 .isInstanceOf(ConflictException.class).hasMessageContaining("position");
         verify(options, never()).save(any());
     }
+
+    @org.junit.jupiter.api.Test
+    void removeOptionRefusesAnOptionReferencedByALiveVariant() {
+        // The 2026-11-07 #808 round-20 review (Major · Data Integrity &
+        // Integration): the REST remove rides the SPI delete's own law —
+        // the definition lock, the live-reference walls, and the post-lock
+        // re-read (never the bare find-and-delete).
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption used = CatalogAttributeOption.create(parent.getId(), "red", "Red", null, 1);
+        when(options.findById(used.getId())).thenReturn(Optional.of(used));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantValues.existsByOptionId(used.getId())).thenReturn(true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.removeOption(used.getId()))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("live variant");
+        org.mockito.Mockito.verify(options, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @org.junit.jupiter.api.Test
+    void removeOptionTakesTheDefinitionLockAndReReadsBeforeDeleting() {
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption victim = CatalogAttributeOption.create(parent.getId(), "red", "Red", null, 1);
+        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+
+        service.removeOption(victim.getId());
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(definitions, options);
+        order.verify(definitions).findByIdForUpdate(parent.getId());
+        order.verify(options).existsById(victim.getId());
+        order.verify(options).delete(victim);
+    }
+
+    @org.junit.jupiter.api.Test
+    void removeOptionAnswersTheHonestNotFoundWhenTheOptionDiedUnderTheLock() {
+        CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
+                "color", "Color", null, CatalogAttributeType.CHOICE, null);
+        CatalogAttributeOption victim = CatalogAttributeOption.create(parent.getId(), "red", "Red", null, 1);
+        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(options.existsById(victim.getId())).thenReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.removeOption(victim.getId()))
+                .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
+        org.mockito.Mockito.verify(options, org.mockito.Mockito.never()).delete(any());
+    }
+
 }

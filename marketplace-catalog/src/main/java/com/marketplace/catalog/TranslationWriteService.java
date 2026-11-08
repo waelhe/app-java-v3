@@ -155,12 +155,24 @@ public class TranslationWriteService implements TranslationWriteSpi {
         // NOT_FOUND — the ProductVariantWriteService precedent's own law
         // (never a raw NoSuchElementException 500 off the wire) — and the
         // orphan revision never persists.
+        // The 2026-11-07 #808 round-20 review (Minor · Data Integrity &
+        // Integration): the definition row loads FOR UPDATE — the
+        // attribute delete holds the SAME row while its children cascade
+        // soft-deletes THIS option, and the unlocked read let the delete
+        // commit between the check and the save (the amend then answered
+        // a fabricated success on a dead row). The option re-reads under
+        // the lock; a dead option answers the honest NOT_FOUND.
         Optional<CatalogAttributeDefinition> parent =
-                attributeDefinitionRepository.findById(row.getAttributeDefinitionId());
+                attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId());
         if (parent.isEmpty()) {
             return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND,
                     "No attribute definition found for the value's parent")));
+        }
+        if (!attributeOptionRepository.existsById(row.getId())) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.NOT_FOUND,
+                    "No attribute value found for the id")));
         }
         if (command.name() == null) {
             return AttributeValueMutationResult.success(toView(parent.get()), toValueView(row));

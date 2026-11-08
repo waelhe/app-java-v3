@@ -63,7 +63,8 @@ class ProductTypeServiceTest {
     @Test void updateChangesLabelsButKeepsStableCode() {
         UUID id = UUID.randomUUID();
         ProductType existing = ProductType.create("home-appliances", "Home appliances", null, null);
-        when(repository.findById(id)).thenReturn(Optional.of(existing));
+        // The 2026-11-07 #808 round-20: the update rides the locked read.
+        when(repository.findByIdForUpdate(id)).thenReturn(Optional.of(existing));
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         ProductType updated = service.update(id, "Small appliances", "أجهزة صغيرة", "Updated.");
         assertThat(updated.getId()).isEqualTo(existing.getId());

@@ -381,8 +381,22 @@ public class ProductWriteService implements ProductWriteSpi {
     /**
      * The 2026-11-07 #808 round-19 review: the membership cascade — the
      * variants' cascade twin (the membership's shelf IS the product's).
+     *
+     * <p>The 2026-11-07 #808 round-20 review (Minor · Stability &amp;
+     * Availability): the cascade takes EACH affected collection's own
+     * advisory position lock (in sorted collection order — the deadlock
+     * law the bulk writers own) BEFORE loading the memberships — a
+     * concurrent reorder's park write on the same member row would
+     * otherwise answer the raw OptimisticLockException and abort THIS
+     * product delete; the lock serializes the pair (the reorder/append
+     * writers take the same lock per collection).</p>
      */
     private void deleteMembershipsOf(UUID productId) {
+        java.util.List<UUID> collections = collectionProducts
+                .findDistinctCollectionIdsByProductId(productId).stream().sorted().toList();
+        for (UUID collectionId : collections) {
+            collectionProducts.lockCollectionPositionAllocation(collectionId.toString());
+        }
         for (CollectionProduct member : collectionProducts.findByProductIdOrderByPositionAsc(productId)) {
             collectionProducts.delete(member);
         }

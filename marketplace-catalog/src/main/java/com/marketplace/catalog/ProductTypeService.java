@@ -50,7 +50,14 @@ public class ProductTypeService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public ProductType update(UUID id, String nameEn, String nameAr, String description) {
-        ProductType type = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("ProductType", id));
+        // The 2026-11-07 #808 round-20 review: the update rides the SAME
+        // locked read the remove owns — a concurrent delete's
+        // guard-plus-soft-delete serializes against this load (never the
+        // raw OptimisticLockException on the save of a dead row).
+        ProductType type = id == null ? null : repository.findByIdForUpdate(id).orElse(null);
+        if (type == null) {
+            throw new ResourceNotFoundException("ProductType", id);
+        }
         type.update(nameEn, nameAr, description);
         return repository.save(type);
     }

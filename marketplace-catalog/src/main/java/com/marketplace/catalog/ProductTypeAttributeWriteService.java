@@ -122,6 +122,16 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         Map<ProductTypeAttributeScope, Integer> pendingNextPosition = new HashMap<>();
         Set<UUID> pendingAttributeIds = new HashSet<>();
         for (ProductTypeAttributeAssignOperation operation : operations) {
+            // The 2026-11-07 #808 round-20 review (Minor · Functional
+            // Correctness): a null element answers the per-item REQUIRED
+            // error (the bulk-create paths' own law) — never the NPE
+            // that aborts the whole batch.
+            if (operation == null) {
+                errors.add(new ProductTypeMutationError("operation",
+                        ProductTypeMutationErrorCode.REQUIRED,
+                        "An assignment operation requires its command"));
+                continue;
+            }
             String typeMember = operation.attributeType();
             boolean variantSelection = Boolean.TRUE.equals(operation.variantSelection());
             if (!"PRODUCT".equals(typeMember) && !"VARIANT".equals(typeMember)) {
@@ -319,7 +329,20 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
             if (assignment.getScope() != target) {
                 int targetPosition = pendingNextPosition.computeIfAbsent(target,
                         candidate -> nextPosition(productTypeId, candidate));
-                pendingNextPosition.put(target, targetPosition + 1);
+                // The 2026-11-07 #808 round-20 review (the overflow
+                // family, the round-19 sentinel's own twin): the -1
+                // exhaustion sentinel answers the classified INVALID
+                // error (never the DeferredMove's negative reposition,
+                // never the staged sentinel+1 = 0 for the next move).
+                if (targetPosition < 0) {
+                    errors.add(new ProductTypeMutationError("position",
+                            ProductTypeMutationErrorCode.INVALID,
+                            "The target scope's assignment positions are exhausted — reorder the bucket"
+                                    + " to compact the positions, then retry"));
+                    continue;
+                }
+                pendingNextPosition.put(target, targetPosition == Integer.MAX_VALUE ? -1
+                        : targetPosition + 1);
                 // The 2026-11-05 #808 round (Major · Functional
                 // Correctness): the move is DEFERRED — the assignment is
                 // a managed entity, so mutating it before the failure
@@ -541,6 +564,23 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
         // variant values answers the classified INVALID refusal — the
         // variants migrate first, then the assignment goes.
         List<ProductTypeAttributeAssignment> addressedAssignments = new ArrayList<>();
+        // The 2026-11-07 #808 round-20 review (Minor · Data Integrity &
+        // Integration): the F11 law applied to the unassignment — the
+        // attribute delete holds the DEFINITION row FOR UPDATE while its
+        // children cascade soft-deletes the very assignments this path
+        // loads (the type lock never serialized the pair). Each addressed
+        // assignment's definition locks FOR UPDATE (sorted id order — the
+        // deadlock law) and the assignment re-reads fresh under it; a
+        // dead assignment is the owner's own honest skip, never the raw
+        // OptimisticLockException on the delete.
+        java.util.Set<UUID> lockedDefinitions = new java.util.TreeSet<>();
+        for (ProductTypeAttributeAssignment candidate : assignmentRepository
+                .findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)) {
+            lockedDefinitions.add(candidate.getAttributeDefinitionId());
+        }
+        for (UUID definitionId : lockedDefinitions) {
+            attributeDefinitionRepository.findByIdForUpdate(definitionId);
+        }
         for (UUID attributeId : attributeIds) {
             findAssignment(productTypeId, attributeId)
                     .ifPresent(addressedAssignments::add);
