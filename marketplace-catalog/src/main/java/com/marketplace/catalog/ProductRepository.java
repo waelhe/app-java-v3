@@ -123,6 +123,22 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
             @Param("id") UUID id, @Param("providerId") UUID providerId);
 
     /**
+     * The 2026-11-08 #808 round-25 review (Minor · Stability &amp;
+     * Availability): the FOR-SHARE twin of the ownership-scoped locked
+     * read — the provider predicate rides INSIDE the share-locking query
+     * (the {@code findByIdAndProviderIdForUpdate} round-21 precedent
+     * verbatim), so a skipped foreign row never locks: a provider naming
+     * another provider's product answers the safe absence without
+     * waiting on the stranger's row, while the caller's OWN rows keep
+     * the reference-creating share serialization the registration paths
+     * exist to carry.
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_READ)
+    @Query("select p from Product p where p.id = :id and p.providerId = :providerId")
+    Optional<Product> findByIdAndProviderIdForShare(
+            @Param("id") UUID id, @Param("providerId") UUID providerId);
+
+    /**
      * The 2026-11-07 #808 round-19 review (Minor · Data Integrity &amp;
      * Integration): the reference-CREATING read's FOR-SHARE twin (the
      * {@code ProductTypeRepository.findByIdForShare} precedent verbatim)

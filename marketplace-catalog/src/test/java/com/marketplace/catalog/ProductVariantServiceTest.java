@@ -108,7 +108,11 @@ class ProductVariantServiceTest {
     @Test
     void theOwningProviderRegistersAVariantWithTheProductsOwnProviderAndCurrency() {
         Product product = product();
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "ESPRESSO-RED"))
                 .thenReturn(Optional.empty());
@@ -142,7 +146,11 @@ class ProductVariantServiceTest {
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
         CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "TYPED-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
@@ -175,7 +183,11 @@ class ProductVariantServiceTest {
         ProductTypeAttributeAssignment selection = ProductTypeAttributeAssignment.create(
                 productTypeId, definitionId, ProductTypeAttributeScope.VARIANT_SELECTION, true, 0);
         CatalogAttributeOption option = CatalogAttributeOption.create(definitionId, "red", "Red", "أحمر", 0);
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "DUP-RED")).thenReturn(Optional.empty());
         when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId)).thenReturn(List.of(selection));
@@ -198,7 +210,6 @@ class ProductVariantServiceTest {
     @Test
     void registrationUnderAnUnknownProductAnswersTheHonest404() {
         UUID productId = UUID.randomUUID();
-        when(productRepository.findByIdForShare(productId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.register(productId,
                 new ProductVariantService.RegisterVariantCommand("SKU-1", null, 100), authentication))
@@ -225,7 +236,11 @@ class ProductVariantServiceTest {
                     productTypeId, definition.getId(), ProductTypeAttributeScope.VARIANT, false, 0);
             org.mockito.Mockito.reset(definitions, productRepository, currentUserProvider,
                     variantRepository, assignments, attributeValues);
-            when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+            // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
             when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
             when(variantRepository.findByProviderIdAndSku(seller, "T-" + type.name())).thenReturn(Optional.empty());
             when(assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId))
@@ -266,7 +281,11 @@ class ProductVariantServiceTest {
         UUID productTypeId = UUID.randomUUID();
         Product product = Product.register("orphaned-goods", "Orphaned goods", null, 100L, "SAR", seller,
                 productTypeId);
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "FREE-1")).thenReturn(Optional.empty());
         when(productTypes.findByIdForShare(productTypeId)).thenReturn(Optional.empty());
@@ -284,7 +303,8 @@ class ProductVariantServiceTest {
     @Test
     void aStrangerCannotRegisterUnderSomeoneElsesProduct() {
         Product product = product();
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), stranger))
+                .thenReturn(Optional.empty());
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(stranger);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
 
@@ -295,10 +315,49 @@ class ProductVariantServiceTest {
     }
 
     @Test
+    void aStrangersProductNeverTakesTheForeignShareLock() {
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the ownership predicate rides INSIDE the
+        // share-locking query — the stranger's row is skipped without
+        // ever locking it (the scoped query answers empty), so the
+        // register answers the honest 404 WITHOUT waiting on the
+        // foreign row's share lock.
+        Product product = product();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(stranger);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), stranger))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.register(product.getId(),
+                new ProductVariantService.RegisterVariantCommand("SKU-1", null, 100), authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(productRepository, never()).findByIdForShare(any(java.util.UUID.class));
+    }
+
+    @Test
+    void aStrangersVariantNeverTakesTheForeignWriteLock() {
+        // The same round-25 law on the setStock leg: the scoped FOR-UPDATE
+        // query skips the stranger's row without locking it — the 404 is
+        // immediate, never waited.
+        Product product = product();
+        ProductVariant variant = variant(product);
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(stranger);
+        when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
+        when(variantRepository.findByIdAndProviderIdForUpdate(variant.getId(), stranger))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.setStock(variant.getId(), 1, authentication))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(variantRepository, never()).findByIdForUpdate(any(java.util.UUID.class));
+    }
+
+    @Test
     void anAdminMayRegisterUnderAnyProduct() {
         Product product = product();
+        // The admin leg keeps the UNSCOPED share read (an admin
+        // legitimately registers under any provider's product); the
+        // round-25 shape never resolves the caller id on the admin path.
         when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
-        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(stranger);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(variantRepository.findByProviderIdAndSku(seller, "ADMIN-SKU"))
                 .thenReturn(Optional.empty());
@@ -316,7 +375,11 @@ class ProductVariantServiceTest {
     void aSkuCollisionInTheSellersNamespaceAnswersThe409WithTheCollisionNamed() {
         Product product = product();
         ProductVariant existing = variant(product);
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, existing.getSku()))
                 .thenReturn(Optional.of(existing));
@@ -339,7 +402,11 @@ class ProductVariantServiceTest {
         // count answers the same friendly 409 BEFORE the save dies on
         // the constraint.
         Product product = product();
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "RED-XL"))
                 .thenReturn(Optional.empty());
@@ -357,7 +424,11 @@ class ProductVariantServiceTest {
     @Test
     void theSameSkuIsFreeInAnotherSellersNamespace() {
         Product product = product();
-        when(productRepository.findByIdForShare(product.getId())).thenReturn(Optional.of(product));
+        // The 2026-11-08 #808 round-25 review: the provider caller
+        // rides the ownership-scoped FOR-SHARE twin (the register
+        // never calls the unscoped read on the provider leg).
+        when(productRepository.findByIdAndProviderIdForShare(product.getId(), seller))
+                .thenReturn(Optional.of(product));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.findByProviderIdAndSku(seller, "RED-XL"))
                 .thenReturn(Optional.empty());
@@ -381,7 +452,11 @@ class ProductVariantServiceTest {
         // The 2026-11-06 #808 round-3 review (Minor · Data Integrity):
         // setStock reads the row FOR UPDATE — the reservation-sensitive
         // guard serializes against the placement's native UPDATE.
-        when(variantRepository.findByIdForUpdate(variant.getId())).thenReturn(Optional.of(variant));
+        // The 2026-11-08 #808 round-25 review: the provider caller's
+        // setStock rides the ownership-scoped FOR-UPDATE twin (the
+        // lock-then-filter shape is gone).
+        when(variantRepository.findByIdAndProviderIdForUpdate(variant.getId(), seller))
+                .thenReturn(Optional.of(variant));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
 
         assertThatThrownBy(() -> service.setStock(variant.getId(), 1, authentication))

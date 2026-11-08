@@ -153,6 +153,25 @@ class CategoryReadServiceTest {
     }
 
     @Test
+    void aNonPositiveBoundedPageSizeIsRejectedUpFront() {
+        // The 2026-11-08 #808 round-25 review (Minor · Functional
+        // Correctness): a BOUNDED zero page size cut an EMPTY window that
+        // still advertised hasNext=true with no continuation cursor, and
+        // a negative limit reached subList as the raw index failure —
+        // the scrollCollections / scrollVariants guards' own law.
+        assertThatThrownBy(() -> service.scrollCategories(authentication,
+                CategorySort.of(CategorySort.Field.NAME, true),
+                ScrollPosition.keyset(), Limit.of(0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        assertThatThrownBy(() -> service.scrollCategories(authentication,
+                CategorySort.of(CategorySort.Field.NAME, true),
+                ScrollPosition.keyset(), Limit.of(-1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+    }
+
+    @Test
     void emptyRegistryAnswersTheEmptyWindowWithZeroTotal() {
         when(repository.findAll()).thenReturn(List.of());
         CategoryPage page = service.scrollCategories(authentication,

@@ -353,13 +353,21 @@ public class ProductVariantService {
      * would serialize deletes behind browsing for no integrity gain.
      */
     private Product requireOwnedProductForShare(UUID productId, Authentication authentication) {
-        Product product = productRepository.findByIdForShare(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
-        UUID caller = currentUserProvider.getCurrentUserId(authentication);
-        if (!product.getProviderId().equals(caller) && !currentUserProvider.isAdmin(authentication)) {
-            throw new ResourceNotFoundException("Product", productId);
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the ownership-scoped FOR-SHARE twin — the
+        // registration's parent read locks only the caller's OWN row (a
+        // skipped foreign row never locks, so the stranger's id answers
+        // the safe absence without waiting on its share lock), while the
+        // ADMIN capability keeps the unscoped read (an admin's
+        // registration under any provider's product is the same access
+        // rule the variant legs carry).
+        if (currentUserProvider.isAdmin(authentication)) {
+            return productRepository.findByIdForShare(productId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
         }
-        return product;
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return productRepository.findByIdAndProviderIdForShare(productId, caller)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
     }
 
     /** The variant's own ownership gate — rides the owning product's provider (the same shape). */
@@ -382,13 +390,22 @@ public class ProductVariantService {
      * ownedRowForUpdate twin, the ownership verdict kept intact).
      */
     private ProductVariant requireOwnedVariantForUpdate(UUID variantId, Authentication authentication) {
-        ProductVariant variant = variantRepository.findByIdForUpdate(variantId)
-                .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
-        UUID caller = currentUserProvider.getCurrentUserId(authentication);
-        if (!variant.getProviderId().equals(caller) && !currentUserProvider.isAdmin(authentication)) {
-            throw new ResourceNotFoundException("ProductVariant", variantId);
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the provider predicate rides INSIDE the locking
+        // query — the previous lock-then-filter shape took the WRITE lock
+        // on the addressed row before the ownership verdict, so a provider
+        // naming another provider's variant WAITED on the stranger's row
+        // lock before the honest 404 (the ProductService round-24 law,
+        // applied to the variant legs). The ADMIN capability keeps the
+        // unscoped lock (an admin legitimately manages any provider's
+        // shelf — the two HTTP paths' own access rule).
+        if (currentUserProvider.isAdmin(authentication)) {
+            return variantRepository.findByIdForUpdate(variantId)
+                    .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
         }
-        return variant;
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return variantRepository.findByIdAndProviderIdForUpdate(variantId, caller)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
     }
 
     /**

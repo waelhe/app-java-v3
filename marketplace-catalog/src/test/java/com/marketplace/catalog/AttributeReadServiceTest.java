@@ -453,6 +453,25 @@ class AttributeReadServiceTest {
     }
 
     @Test
+    void aNonPositiveBoundedPageSizeIsRejectedUpFront() {
+        // The 2026-11-08 #808 round-25 review (Minor · Functional
+        // Correctness): a BOUNDED zero page size cut an EMPTY window that
+        // still advertised hasNext=true with no continuation cursor, and
+        // a negative limit reached subList as the raw index failure —
+        // the scrollCollections / scrollVariants guards' own law.
+        assertThatThrownBy(() -> service.scrollAttributes(authentication,
+                AttributeSort.of(AttributeSort.Field.NAME, true),
+                ScrollPosition.keyset(), Limit.of(0)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+        assertThatThrownBy(() -> service.scrollAttributes(authentication,
+                AttributeSort.of(AttributeSort.Field.NAME, true),
+                ScrollPosition.keyset(), Limit.of(-1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positive page size");
+    }
+
+    @Test
     void descendingTiebreakerLegOrdersEqualCodesByReverseId() {
         // Two rows sharing the SAME code on the slug sort: the DESC window
         // orders by reverse id — the descending tiebreaker branch.

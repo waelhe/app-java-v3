@@ -312,6 +312,26 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         Optional<CatalogAttributeDefinition> parentRow =
                 attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId());
         if (parentRow.isEmpty()) {
+            // The 2026-11-08 #808 round-25 review (Minor · Stability &
+            // Availability): the orphaned-option cleanup now re-reads
+            // its OWN row under the locking refresh first — the dead
+            // family answers no definition row, so no lock serializes
+            // this branch against a rival delete of the SAME option (the
+            // bulk leg's per-option probe, or another single call): the
+            // pre-lock row could already be gone, and the cleanup delete
+            // would ride the stale managed entity into the raw
+            // OptimisticLockException (or a fabricated count). The
+            // refresh's own documented contract answers the vanished row
+            // (jakarta.persistence.EntityNotFoundException — the JPA
+            // refresh law), and the verdict is the option's own honest
+            // absence, never the raw exception.
+            try {
+                entityManager.refresh(row, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            } catch (jakarta.persistence.EntityNotFoundException vanished) {
+                return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                        "id", AttributeMutationErrorCode.NOT_FOUND,
+                        "No attribute value found for the id")));
+            }
             attributeOptionRepository.delete(row);
             return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
                     "attribute", AttributeMutationErrorCode.NOT_FOUND,
@@ -445,7 +465,23 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
             // row stale, and the soft delete then matches zero rows (the
             // raw OptimisticLockException). The honest count keeps
             // counting only rows the authoritative state still carries.
-            entityManager.refresh(option, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            //
+            // The 2026-11-08 #808 round-25 review (Minor · Stability &
+            // Availability): the option can ALSO die between the
+            // existsById probe and this locking re-read — the dead-family
+            // legs (this batch's own "no lock for a dead definition"
+            // pass, or the single leg's orphaned-option cleanup) take NO
+            // definition lock, so nothing serializes the pair; the
+            // refresh's documented contract answers the vanished row
+            // (jakarta.persistence.EntityNotFoundException — the JPA
+            // refresh law) and the honest count skips it, exactly the
+            // skip the probe below already owns for the committed-before
+            // window.
+            try {
+                entityManager.refresh(option, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            } catch (jakarta.persistence.EntityNotFoundException vanished) {
+                continue;
+            }
             // Options referenced by live variants OR live products are
             // skipped for the same honest-count reason — the single-item
             // leg's own classified refusals, in bulk form (the 2026-11-06

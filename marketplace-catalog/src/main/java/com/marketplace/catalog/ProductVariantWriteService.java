@@ -130,9 +130,20 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         // product — the orphan shelf the wave-19 cascade exists to
         // prevent). The unlocked read let the insert ride a parent the
         // delete had already soft-deleted.
-        Optional<Product> parent = productId == null
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the ownership predicate rides INSIDE the
+        // share-locking query (the new
+        // findByIdAndProviderIdForShare — the round-21 scoped-lock law's
+        // FOR-SHARE twin) — this mutation path is provider-only (no
+        // ADMIN exception below), so a stranger's product row is skipped
+        // without ever taking its share lock: the request answers the
+        // same REQUIRED refusal immediately, never waiting on the
+        // foreign row's lock before the refusal. The delete-wall pairing
+        // above is unchanged for the caller's OWN row.
+        UUID createCaller = currentUserProvider.getCurrentUserId(authentication);
+        Optional<Product> parent = productId == null || createCaller == null
                 ? Optional.empty()
-                : productRepository.findByIdForShare(productId);
+                : productRepository.findByIdAndProviderIdForShare(productId, createCaller);
         // Row 12 (agent findings 2026-10-26 14:33 export, CWE-203): the
         // ownership decision is resolved FIRST and gates the seller's own
         // namespace queries. The pre-fix flow kept validating after a
@@ -148,13 +159,7 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         // the evaluation — the stranger's product answers the same
         // REQUIRED refusal shape as an unknown id (never an existence
         // disclosure — the R5 posture), with NOTHING else measured.
-        if (productId == null || parent.isEmpty()) {
-            return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
-                    "product", ProductVariantMutationErrorCode.REQUIRED,
-                    "A variant registers under an owning product")));
-        }
-        if (!parent.get().getProviderId()
-                .equals(currentUserProvider.getCurrentUserId(authentication))) {
+        if (parent.isEmpty()) {
             return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
                     "product", ProductVariantMutationErrorCode.REQUIRED,
                     "A variant registers under an owning product")));

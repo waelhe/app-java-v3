@@ -150,6 +150,28 @@ class ProductVariantWriteServiceTest {
         verify(variantRepository, never()).save(any());
     }
 
+    @Test
+    void aStrangersProductNeverTakesTheForeignShareLock() {
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the ownership predicate rides INSIDE the
+        // share-locking query (the new findByIdAndProviderIdForShare) —
+        // this mutation path is provider-only, so the stranger's row is
+        // skipped without ever taking its share lock: the REQUIRED
+        // refusal is immediate, never waited on the foreign row.
+        Product strangerProduct = productOwnedBy(ProviderIds.STRANGER);
+        when(productRepository.findByIdAndProviderIdForShare(
+                strangerProduct.getId(), ProviderIds.CALLER)).thenReturn(Optional.empty());
+
+        ProductVariantMutationResult result = service.createVariant(
+                create(strangerProduct.getId(), "SKU-1", "Large", 1000L), caller);
+
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.REQUIRED, "product");
+        verify(productRepository, never()).findByIdForShare(any(java.util.UUID.class));
+        verify(variantRepository, never()).save(any());
+    }
+
     /**
      * Row 12 (agent findings 2026-10-26 14:33 export, CWE-203): the foreign
      * parent ends the evaluation — the SKU uniqueness check (which reads
@@ -179,6 +201,11 @@ class ProductVariantWriteServiceTest {
     void blankSkuAnswersTheRequiredDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "  ", "Large", 1000L), caller);
@@ -192,6 +219,11 @@ class ProductVariantWriteServiceTest {
     void oversizedSkuAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "S".repeat(101), "Large", 1000L), caller);
@@ -205,6 +237,11 @@ class ProductVariantWriteServiceTest {
     void duplicateSkuAnswersTheAlreadyExistsDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         // The 2026-11-06 #808 round: the reservation probe spans the RAW
         // table — a live OR soft-deleted row's SKU answers the same
         // classified ALREADY_EXISTS (the native count, never the
@@ -229,6 +266,11 @@ class ProductVariantWriteServiceTest {
         // ALREADY_EXISTS where the live-rows-only probe saw nothing.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(1L);
 
@@ -245,6 +287,11 @@ class ProductVariantWriteServiceTest {
     void oversizedNameAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "SKU-1", "L".repeat(201), 1000L), caller);
@@ -258,6 +305,11 @@ class ProductVariantWriteServiceTest {
     void missingPriceAnswersTheRequiredDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "SKU-1", "Large", null), caller);
@@ -271,6 +323,11 @@ class ProductVariantWriteServiceTest {
     void negativePriceAnswersTheInvalidDomainError() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
 
         ProductVariantMutationResult result = service.createVariant(
                 create(parent.getId(), "SKU-1", "Large", -1L), caller);
@@ -284,6 +341,11 @@ class ProductVariantWriteServiceTest {
     void theHappyPathRegistersTheRowWithTheOwnershipFactsCopiedFromTheParent() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(variantRepository.save(any(ProductVariant.class)))
@@ -317,6 +379,11 @@ class ProductVariantWriteServiceTest {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(productTypeRepository.findByIdForShare(productTypeId))
@@ -344,6 +411,11 @@ class ProductVariantWriteServiceTest {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(productTypeRepository.findByIdForShare(productTypeId))
@@ -369,6 +441,11 @@ class ProductVariantWriteServiceTest {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         when(productTypeRepository.findByIdForShare(productTypeId))
@@ -393,6 +470,11 @@ class ProductVariantWriteServiceTest {
         UUID productTypeId = UUID.randomUUID();
         Product parent = typedProductOwnedBy(ProviderIds.CALLER, productTypeId);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-1"))
                 .thenReturn(0L);
         // A soft-deleted type row answers the share read empty — the
@@ -764,6 +846,11 @@ class ProductVariantWriteServiceTest {
         // constraint error past every catch at the interceptor's commit.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         org.mockito.Mockito.lenient().when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "RACE-SKU"))
                 .thenReturn(Optional.empty());
         org.mockito.Mockito.lenient().when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "RACE-SKU"))
@@ -807,6 +894,11 @@ class ProductVariantWriteServiceTest {
     void bulkCreateReturnsThePerItemOutcomes() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-A")).thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-B")).thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-9")).thenReturn(1L);
@@ -971,6 +1063,11 @@ class ProductVariantWriteServiceTest {
         // included — and the flush itself is never reached.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-A"))
                 .thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-B"))
@@ -1090,6 +1187,11 @@ class ProductVariantWriteServiceTest {
         // and the batch's own classified refusal.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-08 #808 round-25 review: createVariant is
+        // provider-only — the parent read rides the ownership-scoped
+        // FOR-SHARE twin (the unscoped stub stays for the belt).
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-A")).thenReturn(0L);
         when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-9")).thenReturn(1L);
         when(variantRepository.save(any(ProductVariant.class)))

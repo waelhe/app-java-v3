@@ -492,6 +492,68 @@ class AttributeValueWriteServiceTest {
         verify(options).delete(orphaned);
     }
 
+    @Test
+    void anOrphanedOptionThatVanishedUnderItsOwnRefreshAnswersItsOwnNotFound() {
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the dead family answers no definition row, so
+        // NO lock serializes the orphan cleanup against a rival delete
+        // of the SAME option — the row can vanish between the pre-lock
+        // load and the under-lock refresh, and the refresh's documented
+        // contract (jakarta.persistence.EntityNotFoundException) answers
+        // the option's own honest absence: never the raw exception, and
+        // never a cleanup delete riding a stale managed entity.
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption orphaned = CatalogAttributeOption.create(
+                parent.getId(), "orphaned", "Orphaned", null, 1);
+        when(options.findById(orphaned.getId())).thenReturn(Optional.of(orphaned));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
+        org.mockito.Mockito.doThrow(new jakarta.persistence.EntityNotFoundException(
+                "the entity no longer exists in the database"))
+                .when(entityManager).refresh(orphaned,
+                        jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+
+        AttributeValueMutationResult result = service.deleteAttributeValue(orphaned.getId());
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(AttributeMutationError::code, AttributeMutationError::field)
+                .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "id");
+        verify(options, org.mockito.Mockito.never()).delete(orphaned);
+    }
+
+    @Test
+    void theBulkLegSkipsAnOptionThatVanishedBetweenItsProbeAndTheRefresh() {
+        // The same round-25 finding's bulk half: the dead-family legs
+        // take NO definition lock, so a rival delete of the option can
+        // commit between the existsById probe and the locking re-read —
+        // the refresh answers EntityNotFoundException (the JPA refresh
+        // law) and the honest count SKIPS the vanished row, never the
+        // raw exception aborting the whole batch.
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption victim = CatalogAttributeOption.create(
+                parent.getId(), "victim", "Victim", null, 1);
+        CatalogAttributeOption survivor = CatalogAttributeOption.create(
+                parent.getId(), "survivor", "Survivor", null, 2);
+        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
+        when(options.findById(survivor.getId())).thenReturn(Optional.of(survivor));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
+        when(options.existsById(victim.getId())).thenReturn(true);
+        when(options.existsById(survivor.getId())).thenReturn(true);
+        org.mockito.Mockito.doThrow(new jakarta.persistence.EntityNotFoundException(
+                "the entity no longer exists in the database"))
+                .when(entityManager).refresh(victim,
+                        jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+
+        int count = service.deleteAttributeValues(java.util.Arrays.asList(
+                victim.getId(), survivor.getId()));
+
+        // The vanished option is skipped (never a raw exception), the
+        // survivor's cleanup still runs — the honest count.
+        assertThat(count).isEqualTo(1);
+        verify(options, org.mockito.Mockito.never()).delete(victim);
+        verify(options).delete(survivor);
+    }
+
     /** The same round: the bulk leg skips the referenced options — the honest count. */
     @Test
     void deleteAttributeValuesSkipsReferencedOptions() {

@@ -118,6 +118,15 @@ public class AttributeReadService implements AttributeReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("An attribute sort is required");
         }
+        // The 2026-11-08 #808 round-25 review (Minor · Functional
+        // Correctness): a BOUNDED non-positive page size is refused up
+        // front (the scrollCollections / scrollVariants guards' own law) —
+        // a zero limit with remaining attributes cut an EMPTY window that
+        // still advertised hasNext=true with no continuation cursor, and
+        // a negative limit reached subList as the raw index failure.
+        if (limit != null && limit.isLimited() && limit.max() <= 0) {
+            throw new IllegalArgumentException("A positive page size is required");
+        }
         List<AttributeView> attributes = new ArrayList<>();
         for (CatalogAttributeDefinition definition : attributeDefinitionRepository.findAll()) {
             attributes.add(toView(definition));

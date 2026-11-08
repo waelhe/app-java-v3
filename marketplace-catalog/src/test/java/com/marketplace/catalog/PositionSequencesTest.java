@@ -114,6 +114,18 @@ class PositionSequencesTest {
     }
 
     @Test
+    void aCeilingHeldSeatDoesNotStopTheScanBeforeTheOccupiedMidWindow() {
+        // The 2026-11-08 #808 round-25 review (nitpick): with held
+        // positions [1, 6, Integer.MAX_VALUE] and size 3, the natural
+        // branch is skipped (the ceiling seat), and the scan's FIRST
+        // candidate window [4, 6] is OCCUPIED by the held 6 — the scan
+        // must skip past it and land on [7, 9], never return the
+        // occupied window (the reorder would collide mid-rewrite).
+        assertThat(PositionSequences.parkBase(
+                List.of(1, 6, Integer.MAX_VALUE), 3)).isEqualTo(7);
+    }
+
+    @Test
     void theFreeBoundaryWindowIsReturned() {
         // The natural branch's own ceiling boundary: a held blocker at
         // 2^30 with size 2^30 - 1 derives natural = max(held, size) + 1

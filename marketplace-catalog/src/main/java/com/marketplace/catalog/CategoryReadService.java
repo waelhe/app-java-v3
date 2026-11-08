@@ -120,6 +120,15 @@ public class CategoryReadService implements CategoryReadSpi {
         if (sort == null || sort.field() == null) {
             throw new IllegalArgumentException("A category sort is required");
         }
+        // The 2026-11-08 #808 round-25 review (Minor · Functional
+        // Correctness): a BOUNDED non-positive page size is refused up
+        // front (the scrollCollections / scrollVariants guards' own law) —
+        // a zero limit with remaining categories cut an EMPTY window that
+        // still advertised hasNext=true with no continuation cursor, and
+        // a negative limit reached subList as the raw index failure.
+        if (limit != null && limit.isLimited() && limit.max() <= 0) {
+            throw new IllegalArgumentException("A positive page size is required");
+        }
         List<CategoryView> categories = new ArrayList<>();
         for (Category category : categoryRepository.findAll()) {
             categories.add(toView(category));
