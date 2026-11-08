@@ -343,7 +343,7 @@ Required outcomes:
 ## 12. First executable sequence for A0
 
 1. Re-fetch the live branch/main/PR #771/root-inventory state; do not reuse the 2026-10-30 snapshot without verification.
-2. Reconcile the 14-commit main divergence safely and publish one CANDIDATE_BASE_SHA.
+2. Reconcile the main divergence safely and publish one CANDIDATE_BASE_SHA — **conditional on the live measurement (the 2026-11-08 #811 round-5 review)**: the 2026-10-31 reconciliation merge `6608a869` already completed this and §3.1's live snapshot supersedes the historical baseline; consult §3.1's current heads BEFORE any reconciliation action and only reconcile a divergence that the live measurement actually shows (main moving again), never a repeat of the completed one.
 3. Verify PR #771 and the actual presence/integrity of saleor-core and its registry on the candidate. If not yet available, read the pinned upstream skill only as read-only research.
 4. Regenerate/validate the campaign root inventory and confirm all 458 rows still match the pinned schema and domain matrix.
 5. Dispatch the existing A1–A7 assignments with this directive, the playbook, frozen contracts, exact root lists and file boundaries.

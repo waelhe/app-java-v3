@@ -12,7 +12,13 @@ public class ResourceNotFoundException extends ApiProblemDetailException {
     }
 
     public ResourceNotFoundException(String resourceType, Object id) {
-        this(resourceType, resourceType + " not found: " + id);
+        // The 2026-11-08 #811 round-5 review (Minor · Code Quality): a
+        // null id no longer leaks the literal "null" into the message
+        // (e.g. "Sitemap not found: null") — the id rides the message only
+        // when the caller actually named one.
+        this(resourceType, id == null
+                ? resourceType + " not found"
+                : resourceType + " not found: " + id);
     }
 
     private ResourceNotFoundException(String resourceType, String message) {

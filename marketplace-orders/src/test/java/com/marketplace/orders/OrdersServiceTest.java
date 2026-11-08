@@ -895,6 +895,9 @@ class OrdersServiceTest {
         verify(productStockPort).release(any());
         verify(eventPublisher).publishEvent(
                 new OrderCancelledEvent(order.getId(), consumer, "out of stock"));
+            // The 2026-11-08 #811 round-5 review: the seller leg names its own
+        // authorship.
+        assertThat(order.getCancelAuthor()).isEqualTo("SELLER");
     }
 
     @Test
@@ -1388,6 +1391,11 @@ class OrdersServiceTest {
         assertThat(confirmed.status()).isEqualTo(OrderStatus.CONFIRMED.name());
         assertThat(cancelled.id()).isEqualTo(order.getId());
         assertThat(cancelled.status()).isEqualTo(OrderStatus.CANCELLED.name());
+        // The 2026-11-08 #811 round-5 review (Minor · Functional
+        // Correctness): the administrative leg names its OWN authorship —
+        // the two-argument core used to stamp CONSUMER on every
+        // administrative cancel (V300's attribution column).
+        assertThat(order.getCancelAuthor()).isEqualTo("ADMIN");
     }
 
     private Order placedOrder() {

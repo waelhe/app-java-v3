@@ -248,6 +248,11 @@ jobs:
           case "$ctype" in application/json*) ;; *) fail "the GraphQL gate answer's content type is $ctype (expected application/json)";; esac
           jq -e '.errors[0].extensions.errorCode == "AUTHN-001"' /tmp/smoke-graphql.json > /dev/null \
             || fail "the GraphQL gate answer is not the AUTHN-001 GraphQL error envelope ($(cat /tmp/smoke-graphql.json))"
+          # The 2026-11-08 #811 round-5 review (Minor · Security & Privacy):
+          # the rejection envelope must carry NO data — an AUTHN-001 with
+          # __schema data beside it means the introspection executed anyway.
+          jq -e '(.data == null) or (.data | length == 0)' /tmp/smoke-graphql.json > /dev/null \
+            || fail "the AUTHN-001 rejection carries data — the query must not execute ($(cat /tmp/smoke-graphql.json))"
 
 
           echo "=== [5/5] The API chain's catch-all rejects an unrouted anonymous path ==="

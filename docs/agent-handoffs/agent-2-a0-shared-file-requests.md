@@ -28,7 +28,7 @@ Register, within the central integration pass after verifying the final migratio
 V253__collections.sql=572066309
 ```
 
-The value is the Flyway `ChecksumCalculator` (BOM-pinned 12.4.0) computation over the V253 file as it stands on this branch — the same value `flyway_schema_history.checksum` stores. **DECLARED CONSEQUENCE of the removal:** `MigrationChecksumGuardTest` rule 2 (unregistered migration) now FAILS BY DESIGN on this branch until A0 adds the line — the guard itself is untouched (weakening a guard is forbidden); the failure is the visible, documented cost of moving registration to the central pass, exactly as the owner's guidance directs.
+The value is the Flyway `ChecksumCalculator` (BOM-pinned 12.4.0) computation over the V253 file as it stands on this branch — the same value `flyway_schema_history.checksum` stores. ~~**DECLARED CONSEQUENCE of the removal:** `MigrationChecksumGuardTest` rule 2 (unregistered migration) now FAILS BY DESIGN on this branch until A0 adds the line~~ **STATUS UPDATE (the 2026-11-08 #811 round-5 review): the registration line is ALREADY present** — `marketplace-app/src/test/resources/migration-checksums.properties` line 199 carries `V253__collections.sql=572066309` — the request is COMPLETE; the migration-content verification below stays the standing guard.
 
 ## 3. permission_scope drifts — the 31-row central-ledger list + enforcement review request
 

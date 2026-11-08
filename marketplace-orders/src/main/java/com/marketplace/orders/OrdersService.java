@@ -1109,7 +1109,12 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
 
         int cancelledCount = 0;
         for (UUID orderId : cancellableIds) {
-            cancel(orderId, "Cancelled through the order-management bulk API");
+            // The 2026-11-08 #811 round-5 review (Minor · Functional
+            // Correctness): the administrative legs name their OWN
+            // authorship — the two-argument core used to stamp CONSUMER on
+            // every administrative cancel (V300's attribution column would
+            // carry the wrong author for any policy that reads it).
+            cancel(orderId, "Cancelled through the order-management bulk API", "ADMIN");
             cancelledCount++;
         }
         return new com.marketplace.orders.spi.OrderBulkCancelResult(cancelledCount, failures);
@@ -1127,7 +1132,10 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Transactional
     @Observed(name = "order.admin.cancel")
     public OrderView cancelAsAdmin(UUID orderId) {
-        Order cancelled = cancel(orderId, "Cancelled through the order-management API");
+        // The 2026-11-08 #811 round-5 review: the administrative leg names
+        // its own authorship (the two-argument core stamped CONSUMER).
+        Order cancelled = cancel(orderId, "Cancelled through the order-management API",
+                "ADMIN");
         return new OrderView(cancelled.getId(), cancelled.getPlacedAt(), cancelled.getStatus().name());
     }
 
@@ -1462,7 +1470,9 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Observed(name = "order.seller.cancel")
     public OrderDetail cancelForSeller(UUID orderId, String reason, Authentication authentication) {
         requireSellerOrder(orderId, authentication);
-        Order cancelled = cancel(orderId, reason);
+        // The 2026-11-08 #811 round-5 review: the seller leg names its own
+        // authorship (the two-argument core stamped CONSUMER).
+        Order cancelled = cancel(orderId, reason, "SELLER");
         return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
     }
 

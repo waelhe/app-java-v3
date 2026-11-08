@@ -83,12 +83,31 @@ jobs:
               ? context.sha
               : context.payload.workflow_run.head_sha;
 
-            const { data: { workflow_runs } } = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head_sha: target,
-              per_page: 100,
-            });
+            // The 2026-11-08 #811 round-5 review (Minor · Security): read
+            // EVERY page of the target sha's suites — a single 100-run page
+            // could hide a failed push check behind a passing one (re-runs,
+            // matrix legs and PR-head runs pile up fast on a hot sha). The
+            // gate refuses beyond GitHub's own 1000-run cap rather than
+            // deciding on a truncated view.
+            let workflow_runs = [];
+            for (let page = 1; page <= 10; page++) {
+              const { data: { workflow_runs: batch, total_count } } =
+                await github.rest.actions.listWorkflowRunsForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  head_sha: target,
+                  per_page: 100,
+                  page,
+                });
+              workflow_runs = workflow_runs.concat(batch);
+              if (workflow_runs.length >= total_count || batch.length === 0) {
+                if (total_count > 1000) {
+                  core.setFailed(`The target commit carries ${total_count} workflow runs — beyond GitHub's 1000-run pagination cap. The gate refuses to decide on a truncated view.`);
+                  return;
+                }
+                break;
+              }
+            }
 
             // Only the push-event suites of the four gate workflows on this
             // exact commit. This workflow runs from the default-branch head

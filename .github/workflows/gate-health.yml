@@ -226,22 +226,41 @@ jobs:
               except Exception as e:
                   return ("lookup-failed", f"review lookup failed: {e}")
               # 2) the app's own status check on the head tells provider sickness
+              #    (the 2026-11-08 #811 round-5 review: the app may publish the
+              #    refusal as a COMMIT STATUS instead of a check run — both
+              #    channels are read, the same classification applies.)
+              def classify_rabbit_blob(blob, channel):
+                  if "rate limit" in blob or "rate-limit" in blob:
+                      return ("provider-refusal", f"CodeRabbit {channel}: rate limited on head {head[:10]}")
+                  if "skipped" in blob:
+                      return ("provider-refusal", f"CodeRabbit {channel}: review skipped on head {head[:10]}")
+                  if "success" in blob:
+                      return ("no-review", f"CodeRabbit {channel} success but no completed review on head {head[:10]} (gate timed out before the review landed?)")
+                  return None
               try:
                   crs = call(f"/commits/{head}/check-runs?per_page=100").get("check_runs", [])
                   for cr in crs:
                       if cr["name"] == "CodeRabbit":
                           title = (cr.get("output") or {}).get("title") or ""
                           desc = (cr.get("output") or {}).get("summary") or ""
-                          blob = f"{title} {desc}".lower()
-                          if "rate limit" in blob or "rate-limit" in blob:
-                              return ("provider-refusal", f"CodeRabbit status: '{title}' on head {head[:10]}")
-                          if "skipped" in blob:
-                              return ("provider-refusal", f"CodeRabbit status: '{title}' on head {head[:10]} (review skipped)")
-                          if "success" in blob:
-                              return ("no-review", f"CodeRabbit status success but no completed review on head {head[:10]} (gate timed out before the review landed?)")
+                          verdict = classify_rabbit_blob(f"{title} {desc}".lower(), "status")
+                          if verdict:
+                              return verdict
                           return ("no-review", f"CodeRabbit status '{title}' on head {head[:10]}")
               except Exception as e:
                   return ("lookup-failed", f"check-run lookup failed: {e}")
+              # 2-b) the commit-STATUS channel (the same app, the other surface)
+              try:
+                  statuses = call(f"/commits/{head}/statuses?per_page=100")
+                  for st in statuses:
+                      if st.get("context") == "CodeRabbit":
+                          blob = f"{st.get('description') or ''} {st.get('state') or ''}".lower()
+                          verdict = classify_rabbit_blob(blob, "commit status")
+                          if verdict:
+                              return verdict
+                          return ("no-review", f"CodeRabbit commit status '{st.get('state')}' on head {head[:10]}")
+              except Exception as e:
+                  return ("lookup-failed", f"commit-status lookup failed: {e}")
               return ("no-review", f"no CodeRabbit status and no completed review on head {head[:10]}")
 
 
