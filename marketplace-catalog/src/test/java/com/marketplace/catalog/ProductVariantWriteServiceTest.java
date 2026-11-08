@@ -865,6 +865,98 @@ class ProductVariantWriteServiceTest {
     }
 
     @Test
+    void bulkUpdateLocksTheRowsInTheDatabaseUuidOrderBeforeTheItems() {
+        // The 2026-11-08 #808 round-22 review (Minor · Stability &
+        // Availability): the variant lock order is the DATABASE's own
+        // UUID order (memcmp — the roster read's ORDER BY), and Java's
+        // natural order is a DIFFERENT one (signed-long halves): the
+        // 0f row sorts FIRST in the database and SECOND in Java's
+        // natural order (the 80 row's most-significant bit makes it
+        // negative in Java) — the pass must lock 0f before 80, and the
+        // locks must come BEFORE the per-item loop.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        UUID late = UUID.fromString("80000000-0000-0000-0000-000000000000");
+        UUID early = UUID.fromString("0f000000-0000-0000-0000-000000000000");
+        org.mockito.Mockito.lenient().when(variantRepository.findByIdAndProviderIdForUpdate(any(UUID.class), any(UUID.class)))
+                .thenReturn(Optional.empty());
+
+        service.bulkUpdateVariants(parent.getId(), List.of(
+                new ProductVariantBulkUpdateItem(late, new ProductVariantUpdateCommand("X", null, null)),
+                new ProductVariantBulkUpdateItem(early, new ProductVariantUpdateCommand("Y", null, null))),
+                caller, "IGNORE_FAILED");
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(variantRepository);
+        order.verify(variantRepository).findByIdAndProviderIdForUpdate(early, ProviderIds.CALLER);
+        order.verify(variantRepository).findByIdAndProviderIdForUpdate(late, ProviderIds.CALLER);
+    }
+
+    @Test
+    void bulkDeleteLocksTheRowsInTheDatabaseUuidOrder() {
+        // The 2026-11-08 #808 round-22 review (Minor · Stability &
+        // Availability): the same law on the bulk DELETE pass — the
+        // roster read locks in the database's memcmp order, and the
+        // Java-side pass must reproduce it (the round-8/round-21
+        // natural-order passes were a different order on half of all
+        // UUIDs, so a product delete's roster and a bulk variant delete
+        // could still deadlock).
+        UUID late = UUID.fromString("80000000-0000-0000-0000-000000000000");
+        UUID early = UUID.fromString("0f000000-0000-0000-0000-000000000000");
+        org.mockito.Mockito.lenient().when(variantRepository.findByIdAndProviderIdForUpdate(any(UUID.class), any(UUID.class)))
+                .thenReturn(Optional.empty());
+
+        service.deleteVariants(List.of(late, early), caller);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(variantRepository);
+        order.verify(variantRepository).findByIdAndProviderIdForUpdate(early, ProviderIds.CALLER);
+        order.verify(variantRepository).findByIdAndProviderIdForUpdate(late, ProviderIds.CALLER);
+    }
+
+    @Test
+    void theBulkCreateAnswersTheClassifiedCollisionWhenTheViolationSurfacesInsideTheLoop() {
+        // The 2026-11-08 #808 round-22 review (Minor · Data Integrity &
+        // Integration): the violation can surface INSIDE the loop — an
+        // earlier item's pending insert is auto-flushed by a LATER
+        // item's SKU precheck (FlushMode.AUTO flushes before any query
+        // over product_variants), so the guarded flush() after the loop
+        // never sees it. The in-loop catch owns the same discrimination
+        // (this index only) and the same whole-batch rewrite: every item
+        // answers the collision honestly, the ones past the failure
+        // included — and the flush itself is never reached.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        when(productRepository.findById(parent.getId())).thenReturn(Optional.of(parent));
+        when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-A"))
+                .thenReturn(0L);
+        when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "SKU-B"))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement; SQL n/a; constraint [uq_product_variants_provider_sku]"));
+        org.mockito.Mockito.lenient().when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        List<ProductVariantBulkOutcome> outcomes;
+        try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
+
+            outcomes = service.bulkCreateVariants(parent.getId(), List.of(
+                    new ProductVariantCreateCommand(null, "SKU-A", "A", 100L),
+                    new ProductVariantCreateCommand(null, "SKU-B", "B", 200L),
+                    new ProductVariantCreateCommand(null, "SKU-C", "C", 300L)),
+                    caller, "IGNORE_FAILED");
+        }
+
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes).allSatisfy(outcome -> {
+            assertThat(outcome.success()).isFalse();
+            assertThat(outcome.errors()).singleElement()
+                    .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                    .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+        });
+        // The collision was answered IN the loop, never by the flush.
+        verify(variantRepository, never()).flush();
+    }
+
+    @Test
     void bulkUpdateRefusesAVariantOfAnotherProductAsThePerRowNotFound() {
         // The shard review (2026-11-01, Minor · Data Integrity): the Saleor
         // product argument is a binding ownership claim — an item whose row

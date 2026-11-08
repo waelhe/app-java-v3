@@ -365,6 +365,34 @@ class AttributeValueWriteServiceTest {
     }
 
     @Test
+    void deleteAnswersThePostRefreshLastKnownProjection() {
+        // The 2026-11-08 #808 round-22 review (Minor · Data Integrity &
+        // Integration): the last-known projection is built AFTER the
+        // under-lock refresh — a translation that committed while this
+        // call waited on the definition lock is the name the delete
+        // ACTUALLY removes, and the success payload answers THAT name
+        // (never the stale pre-lock snapshot). The refresh mock here
+        // plays the reload: it mutates the row the way the
+        // authoritative re-read would.
+        CatalogAttributeDefinition parent = choiceParent();
+        CatalogAttributeOption existing = CatalogAttributeOption.create(
+                parent.getId(), "gone-val", "Gone", null, 2);
+        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            existing.revise("Replaced Under The Lock", existing.getNameAr());
+            return null;
+        }).when(entityManager).refresh(existing,
+                jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+
+        AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.value().name()).isEqualTo("Replaced Under The Lock");
+        verify(options).delete(existing);
+    }
+
+    @Test
     void bulkDeleteAnswersTheHonestCount() {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption first = CatalogAttributeOption.create(parent.getId(), "first", "First", null, 0);

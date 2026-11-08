@@ -711,6 +711,76 @@ class AttributeWriteServiceTest {
     }
 
     @Test
+    void bulkUpdateLocksTheDefinitionsInSortedOrderBeforeTheItems() {
+        // The 2026-11-08 #808 round-22 review (Minor · Stability &
+        // Availability): the per-item findByIdForUpdate inside the
+        // CALLER's list order let two concurrent bulk updates naming
+        // overlapping definitions in opposite orders deadlock — the
+        // locks now come in ONE sorted pass first (the
+        // deleteAttributes / deleteAttributeValues law).
+        CatalogAttributeDefinition first = row("first-attr", "First");
+        CatalogAttributeDefinition second = row("second-attr", "Second");
+        when(repository.findByIdForUpdate(any(UUID.class))).thenReturn(java.util.Optional.empty());
+
+        service.bulkUpdateAttributes(java.util.Arrays.asList(
+                new AttributeBulkUpdateItem(second.getId(), new AttributeUpdateCommand("Second!", null)),
+                new AttributeBulkUpdateItem(first.getId(), new AttributeUpdateCommand("First!", null))),
+                "IGNORE_FAILED");
+
+        // Each id is locked TWICE (the sorted pre-pass, then the per-item
+        // re-lock inside updateAttribute — free under the same
+        // transaction): the captured sequence's PREFIX is the sorted
+        // pre-pass — that prefix is what two concurrent batches
+        // serialize on.
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(first.getId(), second.getId())
+                .sorted().toList();
+        org.mockito.ArgumentCaptor<UUID> locked = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(repository, org.mockito.Mockito.times(4)).findByIdForUpdate(locked.capture());
+        assertThat(locked.getAllValues()).startsWith(sorted.get(0), sorted.get(1));
+    }
+
+    @Test
+    void bulkCreateClassifiesAnInLoopCollisionAsTheWholeBatchRollback() {
+        // The 2026-11-08 #808 round-22 review (the variant loop's
+        // auto-flush twin, proven on this loop by the same mechanism):
+        // an earlier item's pending insert is auto-flushed by a LATER
+        // item's findByCode precheck (FlushMode.AUTO over the same
+        // table), so the concurrent code collision surfaces INSIDE the
+        // loop — past the guarded flush()'s every catch — and the raw
+        // exception aborted the batch. The in-loop catch owns the same
+        // discrimination (this index only) and the same whole-batch
+        // rewrite: every item answers the collision honestly, the ones
+        // past the failure included.
+        when(repository.findByCode("bulk-one")).thenReturn(java.util.Optional.empty());
+        when(repository.findByCode("collide")).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "uq_catalog_attribute_definitions_code_live"));
+        when(repository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        java.util.List<com.marketplace.catalog.spi.AttributeBulkOutcome> outcomes;
+        try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
+
+            outcomes = service.bulkCreateAttributes(List.of(
+                    new AttributeCreateCommand("Bulk One", "bulk-one", CatalogAttributeType.TEXT),
+                    new AttributeCreateCommand("Colliding", "collide", CatalogAttributeType.TEXT),
+                    new AttributeCreateCommand("Never Reached", "never", CatalogAttributeType.TEXT)),
+                    "IGNORE_FAILED");
+        }
+
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes).allSatisfy(outcome -> {
+            assertThat(outcome.success()).isFalse();
+            assertThat(outcome.errors()).singleElement()
+                    .extracting(AttributeMutationError::code)
+                    .isEqualTo(AttributeMutationErrorCode.ALREADY_EXISTS);
+        });
+    }
+
+    @Test
     void unknownErrorPolicyRefusesEveryItemWithoutAnyWrite() {
         // The wave-19 #808 review (Minor): an unknown (misspelt or
         // lower-cased) policy name is the classified INVALID refusal for

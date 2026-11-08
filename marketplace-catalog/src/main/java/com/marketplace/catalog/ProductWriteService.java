@@ -321,6 +321,26 @@ public class ProductWriteService implements ProductWriteSpi {
         // own. The per-product cascade's own advisory re-take inside the
         // loop is free (pg_advisory_xact_lock is re-entrant within the
         // transaction).
+        //
+        // The 2026-11-08 #808 round-22 review (additional comment,
+        // unverified · heavy lift — the documented residual): the
+        // projection is a NON-locking read, so a membership APPEND that
+        // commits after the pass can still surface inside
+        // deleteMembershipsOf as a late advisory take under the
+        // already-held product row locks, outside the sorted pass — and
+        // a rival bulk delete whose own pre-pass saw that new collection
+        // can meet it in the opposite order (one whole delete rolls
+        // back at the database's deadlock detector). The window needs a
+        // commit landing in the projection-to-lock interval AND a rival
+        // holding the late collection — and the blast radius is exactly
+        // the documented caller-order stance the B7 residual below
+        // owns: one whole rolled-back transaction, never a stranded
+        // reservation, retried by the caller. Closing it completely
+        // would take a catalog-wide coarse lock (serializing every bulk
+        // writer — a new degradation the concurrency design does not
+        // accept) or reordering the append path (reopening the races
+        // the round-20/21 fixes closed). Accepted as the documented
+        // residual, listed for the owner's decision log.
         for (UUID collectionId : collectionProducts
                 .findDistinctCollectionIdsByProductIdsAndProvider(
                         ids.stream().filter(java.util.Objects::nonNull).toList(), caller)

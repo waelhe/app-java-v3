@@ -131,12 +131,18 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
      * delete refuses.
      *
      * <p>The 2026-11-08 #808 round-21 review (Minor · Stability &amp;
-     * Availability, additional comment): the roster's lock order is the
-     * row ID — the module's ONE deterministic variant-row lock order
-     * (the bulk variant delete locks the same rows in sorted-UUID
-     * order; the previous SKU order let a product delete and a bulk
-     * variant delete hold one variant each and wait for the other's —
-     * the database's own deadlock abort). The display order was never
+     * Availability, additional comment) locked the roster in the row-ID
+     * order; the 2026-11-08 #808 round-22 review corrected the law it
+     * claimed: this query locks the rows in the DATABASE's own UUID
+     * order (PostgreSQL compares uuid by memcmp, unsigned bytes), and
+     * the Java-side bulk passes must sort by the same order — the
+     * {@code ProductVariantWriteService#VARIANT_LOCK_ORDER} hex-string
+     * comparator. Java's natural UUID order (signed-long halves) is a
+     * DIFFERENT order on half of all UUIDs, so the round-8/round-21
+     * claim that both sides used "one sorted-UUID order" was never
+     * actually true — a product delete's roster and a bulk variant
+     * delete could still hold one variant each and wait for the other's
+     * (the database's own deadlock abort). The display order was never
      * load-bearing here: the guard scans every row and the cascade
      * deletes the same set either way.</p>
      */

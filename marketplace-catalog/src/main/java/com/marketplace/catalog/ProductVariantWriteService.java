@@ -74,6 +74,26 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
     private static final int SKU_MAX_LENGTH = 100;
     private static final int NAME_MAX_LENGTH = 200;
 
+    /**
+     * The 2026-11-08 #808 round-22 review (Minor · Stability &amp;
+     * Availability): the module's variant-row LOCK ORDER — the
+     * database's own UUID order (PostgreSQL compares uuid values by
+     * memcmp, unsigned bytes), which is exactly what the roster read
+     * {@code findByProductIdOrderByIdAscForUpdate} locks in via its
+     * {@code ORDER BY id}. Java's natural UUID order is NOT the same
+     * order: {@link UUID#compareTo} compares the halves as SIGNED
+     * longs, so every UUID whose first byte is &gt;= 0x80 (half of all
+     * random UUIDs) sorts to the FRONT in Java and to the BACK in the
+     * database — a Java-side pass in the natural order and the roster's
+     * SQL order are two DIFFERENT orders on the same rows, and the
+     * round-21 "one deterministic order" law both claim was never
+     * actually met. Every Java-side pass that locks variant rows sorts
+     * by the canonical lowercase hex string — byte for byte the
+     * database's own memcmp order.
+     */
+    private static final java.util.Comparator<UUID> VARIANT_LOCK_ORDER =
+            java.util.Comparator.comparing(UUID::toString);
+
     private final ProductVariantRepository variantRepository;
     private final ProductRepository productRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -333,13 +353,17 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         // The 2026-11-07 #808 round-8 review (Minor · Stability): the row
         // locks come in ONE sorted, deduplicated, null-free pass (two
         // concurrent bulk deletes naming overlapping ids in opposite
-        // orders can never deadlock — the same UUID order every bulk
-        // delete in this module established), and the caller's identity
+        // orders can never deadlock), and the caller's identity
         // is resolved ONCE for the whole batch (the per-row ownership
         // filter reuses it — the ProductWriteService.deleteProducts
-        // precedent).
+        // precedent). The 2026-11-08 #808 round-22 review: the pass sorts
+        // in the DATABASE's own UUID order (VARIANT_LOCK_ORDER) — the
+        // roster read's ORDER BY is a memcmp order Java's natural
+        // sorting does not reproduce, and the round-8/round-21 passes
+        // silently used two different orders on the same rows.
         UUID caller = currentUserProvider.getCurrentUserId(authentication);
-        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).distinct().sorted().toList()) {
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).distinct()
+                .sorted(VARIANT_LOCK_ORDER).toList()) {
             // Unknown or stranger ids are skipped — the honest affected
             // count answers only what the caller owns and the registry
             // itself deleted (never a fabricated count, never an
@@ -389,10 +413,52 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
             // Self-invocation joins THIS transaction (the bulk boundary
             // owns the authorization and the policy); the single-item
             // ladder's own validation answers per item.
-            ProductVariantMutationResult result = createVariant(
-                    new ProductVariantCreateCommand(productId, command.sku(), command.name(),
-                            command.priceMinor()),
-                    authentication);
+            ProductVariantMutationResult result;
+            try {
+                result = createVariant(
+                        new ProductVariantCreateCommand(productId, command.sku(), command.name(),
+                                command.priceMinor()),
+                        authentication);
+            } catch (org.springframework.dao.DataIntegrityViolationException violation) {
+                // The 2026-11-08 #808 round-22 review (Minor · Data
+                // Integrity & Integration): the violation can surface
+                // INSIDE the loop, BEFORE the guarded flush — an earlier
+                // item's pending insert is auto-flushed by a LATER
+                // item's SKU precheck (FlushMode.AUTO flushes before
+                // any query over product_variants, and
+                // countSkuReservationsIncludingDeleted reads it), so a
+                // SKU claim committed after the earlier item's precheck
+                // aborted the batch here with the raw constraint error.
+                // The same discrimination the flush catch owns (this
+                // index only; every other violation keeps its own
+                // propagation) and the same whole-batch rewrite: the
+                // statement failure already aborted the transaction
+                // (PostgreSQL's own law — no per-item isolation inside
+                // it exists to assume), so the rollback is marked first
+                // and EVERY item answers the collision honestly, the
+                // ones past the failure included.
+                if (violation.getMessage() == null
+                        || !violation.getMessage().contains("uq_product_variants_provider_sku")) {
+                    throw violation;
+                }
+                org.springframework.transaction.interceptor.TransactionAspectSupport
+                        .currentTransactionStatus().setRollbackOnly();
+                ProductVariantMutationError collision = new ProductVariantMutationError(
+                        "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                        "The SKU was committed concurrently in this seller's namespace — the batch"
+                                + " rolled back whole");
+                List<ProductVariantBulkOutcome> rewritten = new ArrayList<>(commands.size());
+                for (ProductVariantBulkOutcome outcome : outcomes) {
+                    rewritten.add(outcome.success()
+                            ? new ProductVariantBulkOutcome(null, List.of(collision))
+                            : new ProductVariantBulkOutcome(null,
+                                    appendError(outcome.errors(), collision)));
+                }
+                while (rewritten.size() < commands.size()) {
+                    rewritten.add(new ProductVariantBulkOutcome(null, List.of(collision)));
+                }
+                return rewritten;
+            }
             outcomes.add(new ProductVariantBulkOutcome(result.variant(), result.errors()));
         }
         try {
@@ -459,6 +525,31 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                 outcomes.add(new ProductVariantBulkOutcome(null, List.of(policyError)));
             }
             return outcomes;
+        }
+        // The 2026-11-08 #808 round-22 review (Minor · Stability &
+        // Availability, the bulkUpdateAttributes class on the variant
+        // writers): the row locks come in ONE sorted pass BEFORE the
+        // per-item loop — the previous shape took each item's
+        // ownedRowForUpdate inside the CALLER's list order, so two
+        // concurrent bulk updates naming overlapping variants in
+        // opposite orders could deadlock (each holding one row and
+        // waiting for the other's), and a bulk update racing the
+        // product delete's roster read could deadlock the same way (the
+        // roster locks in the database's own ORDER BY). The pass locks
+        // OWNED rows only (a skipped foreign row never locks — the
+        // deleteVariants precedent), in the module's variant lock order
+        // (VARIANT_LOCK_ORDER, the database's own UUID byte order); the
+        // per-item re-lock inside updateVariant is free (this
+        // transaction already holds the rows), and the items still
+        // process and answer in the caller's own order.
+        UUID bulkCaller = currentUserProvider.getCurrentUserId(authentication);
+        for (UUID id : items.stream()
+                .filter(item -> item != null && item.id() != null)
+                .map(ProductVariantBulkUpdateItem::id)
+                .distinct()
+                .sorted(VARIANT_LOCK_ORDER)
+                .toList()) {
+            ownedRowForUpdate(id, bulkCaller);
         }
         for (ProductVariantBulkUpdateItem item : items) {
             // The 2026-11-06 #808 round-3 review (Minor · Stability &amp;

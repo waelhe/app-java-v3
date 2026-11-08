@@ -485,6 +485,7 @@ public class AttributeWriteService implements AttributeWriteSpi {
             // and the save rides THIS batch's own transaction (never the
             // single path's executor, whose REQUIRES_NEW would escape the
             // batch's own atomicity).
+            try {
             NewAttribute candidate = validateNewAttribute(command);
             if (!candidate.valid()) {
                 outcomes.add(new AttributeBulkOutcome(null, candidate.errors()));
@@ -494,6 +495,41 @@ public class AttributeWriteService implements AttributeWriteSpi {
                     CatalogAttributeDefinition.create(candidate.code(), candidate.name(), null,
                             candidate.valueType(), null));
             outcomes.add(new AttributeBulkOutcome(toView(created), List.of()));
+            } catch (DataIntegrityViolationException violation) {
+                // The 2026-11-08 #808 round-22 review (the variant loop's
+                // auto-flush twin, proven on this loop by the same
+                // mechanism): the violation can surface INSIDE the loop —
+                // an earlier item's pending insert is auto-flushed by a
+                // LATER item's findByCode precheck (FlushMode.AUTO
+                // flushes before any query over the same table), so a
+                // code claim committed after the earlier item's precheck
+                // aborts the batch here, past the guarded flush()'s
+                // every catch, with the raw constraint error. The same
+                // discrimination and whole-batch rewrite the flush catch
+                // owns: the statement failure already aborted the
+                // transaction (PostgreSQL's own law — no per-item
+                // isolation inside it to assume), so the rollback is
+                // marked first and EVERY item answers the collision
+                // honestly, the ones past the failure included.
+                if (!isAttributeCodeConflict(violation)) {
+                    throw violation;
+                }
+                org.springframework.transaction.interceptor.TransactionAspectSupport
+                        .currentTransactionStatus().setRollbackOnly();
+                AttributeMutationError collision = new AttributeMutationError(
+                        "slug", AttributeMutationErrorCode.ALREADY_EXISTS,
+                        "An attribute with the slug was committed concurrently — the batch rolled back whole");
+                List<AttributeBulkOutcome> rewritten = new ArrayList<>(commands.size());
+                for (AttributeBulkOutcome outcome : outcomes) {
+                    rewritten.add(outcome.success()
+                            ? new AttributeBulkOutcome(null, List.of(collision))
+                            : new AttributeBulkOutcome(null, appendError(outcome.errors(), collision)));
+                }
+                while (rewritten.size() < commands.size()) {
+                    rewritten.add(new AttributeBulkOutcome(null, List.of(collision)));
+                }
+                return rewritten;
+            }
         }
         try {
             // The flush lands the pending inserts INSIDE the boundary — a
@@ -553,6 +589,26 @@ public class AttributeWriteService implements AttributeWriteSpi {
                 outcomes.add(new AttributeBulkOutcome(null, List.of(policyError)));
             }
             return outcomes;
+        }
+        // The 2026-11-08 #808 round-22 review (Minor · Stability &
+        // Availability): the definition locks come in ONE sorted pass
+        // BEFORE the per-item loop — the previous shape took each item's
+        // findByIdForUpdate inside the CALLER's list order, so two
+        // concurrent bulk updates naming overlapping definitions in
+        // opposite orders could deadlock (each holding one row and
+        // waiting for the other's). The same natural-UUID order the
+        // module's definition writers already own (deleteAttributes and
+        // deleteAttributeValues' shared pass); the per-item re-lock
+        // inside updateAttribute is free (this transaction already holds
+        // the rows), and the items still process and answer in the
+        // caller's own order.
+        for (UUID id : items.stream()
+                .map(AttributeBulkUpdateItem::id)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList()) {
+            attributeDefinitionRepository.findByIdForUpdate(id);
         }
         for (AttributeBulkUpdateItem item : items) {
             AttributeMutationResult result = updateAttribute(item.id(), item.fields());

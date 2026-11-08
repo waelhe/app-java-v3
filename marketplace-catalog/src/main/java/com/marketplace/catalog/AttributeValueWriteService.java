@@ -291,7 +291,6 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
         }
         CatalogAttributeOption row = addressed.get();
-        AttributeValueView lastKnown = toValueView(row);
         // The 2026-11-06 #808 round review (Major · Data Integrity &
         // Integration): the parent read takes the definition row's own
         // FOR-UPDATE lock — the delete's existsByOptionId probe and a
@@ -342,6 +341,14 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         // reloads the authoritative row first (the OrdersService
         // confirmFromPayment precedent).
         entityManager.refresh(row, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        // The 2026-11-08 #808 round-22 review (Minor · Data Integrity &
+        // Integration): the last-known projection rides the POST-refresh
+        // row — built before the definition lock, the pre-lock snapshot
+        // could carry a name a concurrent translation already replaced
+        // while this call waited; the refresh just reloaded the
+        // authoritative state, and the success payload answers the name
+        // ACTUALLY deleted (never the stale pre-lock rendering).
+        AttributeValueView lastKnown = toValueView(row);
         AttributeView parent = toAttributeView(parentRow.get());
         // The 2026-11-06 #808 round review (Major · Data Integrity &
         // Integration): a variant value referencing the option blocks the

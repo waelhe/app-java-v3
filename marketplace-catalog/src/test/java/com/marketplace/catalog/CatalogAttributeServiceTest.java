@@ -138,9 +138,18 @@ class CatalogAttributeServiceTest {
 
         service.removeOption(victim.getId());
 
-        org.mockito.InOrder order = org.mockito.Mockito.inOrder(definitions, options);
+        // The 2026-11-08 #808 round-22 review (nitpick): the under-lock
+        // contract pins the WHOLE ladder — the definition lock, the
+        // honest existence re-check, the refresh-under-lock
+        // (PESSIMISTIC_WRITE, the round-21 stale-@Version closure), and
+        // only then the delete. A reorder that swaps the refresh and
+        // the delete (or drops the refresh) must fail here, not ride a
+        // green suite silently.
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(definitions, options, entityManager);
         order.verify(definitions).findByIdForUpdate(parent.getId());
         order.verify(options).existsById(victim.getId());
+        order.verify(entityManager).refresh(victim,
+                jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         order.verify(options).delete(victim);
     }
 
