@@ -204,6 +204,16 @@ public class AttributeValueWriteService implements AttributeValueWriteSpi {
         // before the amendment decides on it.
         Optional<CatalogAttributeDefinition> parent =
                 attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId());
+        // The option re-reads its existence under the lock FIRST (the
+        // delete paths' own re-check discipline): a concurrent delete of
+        // THIS option that committed while this call waited on the lock
+        // would otherwise answer the refresh's raw
+        // EntityNotFoundException instead of the honest NOT_FOUND.
+        if (!attributeOptionRepository.existsById(row.getId())) {
+            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
+                    "id", AttributeMutationErrorCode.NOT_FOUND,
+                    "No attribute value found for the id")));
+        }
         entityManager.refresh(row, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         if (parent.isEmpty()) {
             // The 2026-11-06 #808 round review (Minor · Functional
