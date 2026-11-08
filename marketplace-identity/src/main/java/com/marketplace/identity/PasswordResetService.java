@@ -247,6 +247,20 @@ public class PasswordResetService {
         // the token's account is gone (the consumption rolls back with the
         // transaction: nothing half-spent, the honest retry contract).
         userDetailsManager.loadUserByUsername(username);
+        // The 2026-11-08 #810 round-6 review (Minor · Security & Privacy):
+        // the rotation serializes with the email-change request's
+        // verify-then-issue window on the SAME per-user advisory auth-state
+        // lock the M2 family rides (marketplace.user-auth:<id>,
+        // transaction-scoped). Without it, a concurrent requestChange that
+        // already verified the OLD password could ISSUE a fresh
+        // EMAIL_CHANGE right after the invalidateOutstanding below ran —
+        // the minted right would outlive the rotation that should have
+        // killed it. The users row carries the lock's stable id key; a
+        // redeemed token without a projection row locks nothing (no
+        // EMAIL_CHANGE right can exist for such an account — the request
+        // leg requires the row before it issues).
+        userRepository.findBySubject(username)
+                .ifPresent(row -> userRepository.lockUserAuth(row.getId().toString()));
         // Row 46 (agent findings 2026-10-26): the PASSWORD COLUMN ONLY — the
         // authority and status snapshot loaded above is read for the
         // existence gate and DISCARDED, never replayed: an admin's role

@@ -292,10 +292,10 @@ class CustomerDataFetcherDgsTest {
                                 consumerView(second, "customer-two@example.com")), index -> {
                             if (index == 0) {
                                 return ScrollPosition.forward(Map.of(
-                                        "subject", "customer-one@example.com", "id", first));
+                                        "email", "customer-one@example.com", "id", first));
                             }
                             return ScrollPosition.forward(Map.of(
-                                    "subject", "customer-two@example.com", "id", second));
+                                    "email", "customer-two@example.com", "id", second));
                         }, true);
         when(identitySpi.scrollCustomers(any(org.springframework.security.core.Authentication.class),
                         any(UserAccountSort.class), any(), any(Limit.class)))
@@ -318,12 +318,12 @@ class CustomerDataFetcherDgsTest {
         assertThat(edges).hasSize(2);
         assertThat(edges.get(0).get("cursor"))
                 .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
-                        ScrollPosition.forward(Map.of("subject", "customer-one@example.com", "id", first)),
-                        "customers with the same sortBy", "subject", true)));
+                        ScrollPosition.forward(Map.of("email", "customer-one@example.com", "id", first)),
+                        "customers with the same sortBy", "email", true)));
         assertThat(edges.get(1).get("cursor"))
                 .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
-                        ScrollPosition.forward(Map.of("subject", "customer-two@example.com", "id", second)),
-                        "customers with the same sortBy", "subject", true)));
+                        ScrollPosition.forward(Map.of("email", "customer-two@example.com", "id", second)),
+                        "customers with the same sortBy", "email", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
         // The typed global ID the SHARED mapper emits — never a raw UUID.
@@ -398,6 +398,54 @@ class CustomerDataFetcherDgsTest {
         verify(identitySpi, never()).scrollCustomers(
                 any(org.springframework.security.core.Authentication.class),
                 any(UserAccountSort.class), any(), any(Limit.class));
+    }
+
+    /**
+     * The 2026-11-08 round-5 follow-up (CI-measured on the candidate head):
+     * the NULL-email cursor round-trips through the gate — an OIDC account
+     * with no email claim keeps a NULL email column, and the null-aware
+     * email scroll places the null block at the scroll's own end, so a
+     * page ending inside that block emits a cursor whose email key carries
+     * the GENUINE null. The follow-up page must pass the gate with the
+     * null PRESERVED (never the literal string "null", never a refusal):
+     * the rebuilt position hands Spring Data the null boundary its
+     * null-aware keyset predicate turns into the {@code IS NULL AND id > ?}
+     * prefix leg.
+     */
+    @Test
+    void aNullEmailCursorRoundTripsThroughTheGateWithTheNullPreserved() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID boundaryId = UUID.randomUUID();
+        // Map.of cannot carry a null value — the emitted null-block cursor
+        // is a HashMap-keyed forward position, exactly as the gate's own
+        // rebuild produces.
+        Map<String, Object> nullEmailKeys = new java.util.HashMap<>();
+        nullEmailKeys.put("email", null);
+        nullEmailKeys.put("id", boundaryId);
+        String nullEmailCursor = cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                ScrollPosition.forward(nullEmailKeys),
+                "customers with the same sortBy", "email", true));
+        when(identitySpi.scrollCustomers(any(org.springframework.security.core.Authentication.class),
+                        any(UserAccountSort.class), any(), any(Limit.class)))
+                .thenAnswer(invocation -> new UserAccountPage(
+                        Window.from(List.of(), index -> ScrollPosition.forward(Map.of()), false), 0));
+
+        dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($after: String) { customers(first: 2, after: $after) { totalCount } }",
+                "data.customers", Map.of("after", nullEmailCursor));
+
+        // The gate admitted its own stamped cursor and the rebuilt position
+        // carries the null boundary verbatim: the email key is PRESENT with
+        // a null value (the null-aware predicate's own contract).
+        ArgumentCaptor<org.springframework.data.domain.KeysetScrollPosition> position =
+                ArgumentCaptor.forClass(org.springframework.data.domain.KeysetScrollPosition.class);
+        verify(identitySpi).scrollCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                any(UserAccountSort.class), position.capture(), any(Limit.class));
+        org.springframework.data.domain.KeysetScrollPosition rebuilt = position.getValue();
+        assertThat(rebuilt.getKeys()).containsKey("email");
+        assertThat(rebuilt.getKeys().get("email")).isNull();
+        assertThat(rebuilt.getKeys().get("id")).isEqualTo(boundaryId);
     }
 
     /**

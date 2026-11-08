@@ -42,7 +42,25 @@ public interface CustomerTypeRepository extends JpaRepository<CustomerType, UUID
             "select t from CustomerType t where t.id = :id")
     Optional<CustomerType> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
 
-    Optional<CustomerType> findByDefaultTrue();
+    /**
+     * The one-default probe — the row the create/update swaps read before
+     * clearing the standing default (the B10 clears-before-set law).
+     *
+     * <p><b>The derivation's own law (CI-measured on the candidate head,
+     * 2026-11-08):</b> Spring Data derives the property from the method
+     * name, and the entity's JPA attribute is {@code defaultType} (the
+     * field name — @Id sits on the field, so the whole metamodel is
+     * field-accessed). The former {@code findByDefaultTrue} named a
+     * property that does not exist ("default"), so the FIRST real
+     * invocation answered {@code PropertyReferenceException} — masked as
+     * INT-001 — a latent derivation bug no unit test could see (the mocks
+     * stub the method without deriving it) and no integration test had
+     * reached (the default-swap paths only execute when a caller passes
+     * {@code isDefault}, which none did until the round-5 first-row fix
+     * forced the first type default). The rename names the real attribute:
+     * {@code defaultType} + the {@code True} keyword.</p>
+     */
+    Optional<CustomerType> findByDefaultTypeTrue();
 
     boolean existsBySlug(String slug);
 

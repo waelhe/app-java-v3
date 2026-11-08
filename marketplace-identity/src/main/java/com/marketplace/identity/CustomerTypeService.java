@@ -86,7 +86,7 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
             // TRUE — the unique violation killed every default swap on
             // create. The saveAndFlush writes the clear NOW; the insert
             // lands after it.
-            typeRepository.findByDefaultTrue().ifPresent(previous -> {
+            typeRepository.findByDefaultTypeTrue().ifPresent(previous -> {
                 previous.markDefault(false);
                 typeRepository.saveAndFlush(previous);
             });
@@ -134,7 +134,7 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
                 // of the previous default writes NOW and the new default's
                 // update lands after it, never against V250's partial
                 // unique index.
-                typeRepository.findByDefaultTrue()
+                typeRepository.findByDefaultTypeTrue()
                         .filter(previous -> !previous.getId().equals(id))
                         .ifPresent(previous -> {
                             previous.markDefault(false);

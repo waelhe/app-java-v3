@@ -236,4 +236,37 @@ class AccountSelfServiceTokenServiceTest {
                 com.marketplace.shared.api.AccountCredentialsRotated.class));
     }
 
+    /**
+     * The 2026-11-08 #810 round-6 review (Minor · Security & Privacy): the
+     * verify-then-rotate window rides the per-user advisory auth-state
+     * lock — the rotation must serialize with the email-change request's
+     * verify-then-issue window, or an EMAIL_CHANGE right minted under the
+     * OLD password could outlive this rotation's invalidateOutstanding.
+     */
+    @Test
+    void changePasswordTakesTheAuthStateLockBeforeTheVerification() {
+        when(userRepository.findBySubject(SUBJECT)).thenReturn(Optional.of(userRow));
+        when(userDetailsManager.loadUserByUsername(SUBJECT))
+                .thenReturn((UserDetails) org.springframework.security.core.userdetails.User
+                        .withUsername(SUBJECT).password("{bcrypt}old")
+                        .authorities("ROLE_CONSUMER").build());
+        when(encoder.getObject()).thenReturn(passwordEncoder);
+        when(passwordEncoder.matches("old", "{bcrypt}old")).thenReturn(true);
+        when(passwordEncoder.encode("new-password-1")).thenReturn("{bcrypt}new");
+        when(jdbcTemplate.update(any(String.class), any(), any(), any()))
+                .thenAnswer(invocation -> 1);
+
+        service.changePassword(caller, "old", "new-password-1");
+
+        // The serialization point: the account row resolves, the advisory
+        // lock lands BEFORE the login load and verification, and the
+        // outstanding-right kill rides inside the same serialized window.
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository,
+                userDetailsManager, authActionTokenService);
+        order.verify(userRepository).findBySubject(SUBJECT);
+        order.verify(userRepository).lockUserAuth(userRow.getId().toString());
+        order.verify(userDetailsManager).loadUserByUsername(SUBJECT);
+        order.verify(authActionTokenService).invalidateOutstanding(SUBJECT);
+    }
+
 }

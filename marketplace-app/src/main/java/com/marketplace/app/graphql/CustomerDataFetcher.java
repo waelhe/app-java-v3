@@ -200,7 +200,13 @@ public class CustomerDataFetcher {
      */
     private KeysetScrollPosition keysetPosition(String after, UserAccountSort sort) {
         java.util.function.Function<Object, Object> sortValue = switch (sort.field()) {
-            case EMAIL -> KeysetCursorGate::textValue;
+            // The 2026-11-08 round-5 follow-up (CI-measured on the candidate
+            // head): the EMAIL key is the NULLABLE form — the email column
+            // is NULL for an OIDC account with no email claim, and the
+            // owner's null-aware scroll sorts nullsLast/nullsFirst, so a
+            // page ending inside the null block emits a cursor whose email
+            // key carries the genuine null.
+            case EMAIL -> KeysetCursorGate::nullableTextValue;
             case CREATED_AT, LAST_MODIFIED_AT -> KeysetCursorGate::instantValue;
         };
         return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sortProperty(sort), sortValue,
@@ -210,14 +216,18 @@ public class CustomerDataFetcher {
     /** The executed sort's owning property — the cursor's fingerprint axis. */
     private static String sortProperty(UserAccountSort sort) {
         return switch (sort.field()) {
-            // The 2026-11-06 #810 round review (Major): the EMAIL-vocabulary
-            // cursor fingerprints the SUBJECT axis — the column the owner's
-            // scroll actually sorts by (the always-present identifier; the
-            // email column is nullable for OIDC accounts without an email
-            // claim, and a nullable keyset key drops rows). The cursor stays
-            // opaque to clients; the fingerprint must match the executed
-            // key or the gate would refuse its own follow-up cursors.
-            case EMAIL -> "subject";
+            // The 2026-11-06 #810 round review re-keyed the EMAIL
+            // vocabulary onto the SUBJECT column (a nullable keyset key
+            // drops rows under NATIVE null handling). The 2026-11-08
+            // round-5 fix closed the defect IN THE PREDICATE instead — the
+            // owner's scroll now sorts the EMAIL column with explicit
+            // null-aware handling (nullsLast/nullsFirst + the id
+            // tiebreaker's IS NULL prefix leg) — so the fingerprint MUST
+            // name the executed key again: the email column. A fingerprint
+            // that names any other axis makes the gate refuse the scroll's
+            // own follow-up cursors (CI-measured on the candidate head:
+            // every customers follow-up page answered VAL-001).
+            case EMAIL -> "email";
             case CREATED_AT -> "createdAt";
             case LAST_MODIFIED_AT -> "updatedAt";
         };

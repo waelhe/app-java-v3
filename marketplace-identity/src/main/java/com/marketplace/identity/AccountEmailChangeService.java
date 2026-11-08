@@ -106,13 +106,31 @@ public class AccountEmailChangeService {
         if (target.equalsIgnoreCase(subject)) {
             throw new IllegalArgumentException("The new email address equals the current one");
         }
+        // The 2026-11-08 #810 round-6 review (Minor · Security & Privacy):
+        // the verify-then-issue window serializes with every secret
+        // rotation. The rotation surfaces (PasswordResetService.
+        // completeReset, AccountSelfServiceTokenService.changePassword)
+        // kill the outstanding EMAIL_CHANGE rights when they rotate — but
+        // a request that verified the OLD password could still ISSUE a
+        // fresh right AFTER the rotation's invalidation ran (read-verify …
+        // rotate-and-invalidate … issue: the minted right outlived the
+        // secret regime that authorized it, and its confirm leg would move
+        // the login to the requester's address). The SAME per-user
+        // advisory auth-state lock the M2 family rides
+        // (marketplace.user-auth:<id>, transaction-scoped) closes the
+        // window from BOTH sides: either this verify-and-issue commits
+        // first and the waiting rotation's invalidateOutstanding kills the
+        // just-minted right, or the rotation commits first and the
+        // verification below reads the NEW hash — the old password fails
+        // with the classified denial.
+        User user = userRepository.findBySubject(subject)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No account for the authenticated subject: " + subject));
+        userRepository.lockUserAuth(user.getId().toString());
         UserDetails stored = requireLogin(subject);
         if (!encoder.getObject().matches(rawPassword, stored.getPassword())) {
             throw new BadCredentialsException("Password verification failed");
         }
-        User user = userRepository.findBySubject(subject)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "No account for the authenticated subject: " + subject));
         // B22 (IDP-04 — the 2026-11-03 adversarial review, review-pr-806):
         // the pending pair moves ONLY when a live link is actually issued.
         // issue()'s replacement rule already consumes the prior token when

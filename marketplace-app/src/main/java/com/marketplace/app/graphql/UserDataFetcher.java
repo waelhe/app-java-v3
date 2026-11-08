@@ -227,7 +227,11 @@ public class UserDataFetcher {
      */
     private KeysetScrollPosition keysetPosition(String after, UserAccountSort sort) {
         java.util.function.Function<Object, Object> sortValue = switch (sort.field()) {
-            case EMAIL -> KeysetCursorGate::textValue;
+            // The 2026-11-08 round-5 follow-up: the roster scrolls the WHOLE
+            // identity store, and an OIDC-provisioned staff account can keep
+            // a NULL email column too — the same nullable form the customers
+            // twin rides (the null-aware scroll + the null-tolerant gate).
+            case EMAIL -> KeysetCursorGate::nullableTextValue;
             case CREATED_AT, LAST_MODIFIED_AT -> KeysetCursorGate::instantValue;
         };
         return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sortProperty(sort), sortValue,

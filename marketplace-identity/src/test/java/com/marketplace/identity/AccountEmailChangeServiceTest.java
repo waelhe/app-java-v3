@@ -171,14 +171,33 @@ class AccountEmailChangeServiceTest {
         verify(eventPublisher, times(2)).publishEvent(any(Object.class));
     }
 
+    /**
+     * The 2026-11-08 #810 round-6 review (Minor · Security & Privacy): the
+     * verification rides the per-user advisory auth-state lock — the
+     * verify-then-issue window must serialize with every secret rotation
+     * (the rotation's invalidateOutstanding must not run between this
+     * leg's password verification and its token issue, or the minted right
+     * would outlive the secret regime that authorized it). The lock is
+     * taken BEFORE the login row is loaded; the unverifiable caller still
+     * answers the classified BadCredentials, and never reaches the issue.
+     */
     @Test
-    void theRequestLegRefusesAnUnverifiableCaller() {
+    void theRequestLegVerifiesThePasswordUnderTheAuthStateLock() {
+        when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
         when(userDetailsManager.loadUserByUsername(OLD_SUBJECT)).thenReturn(loginRow());
         when(passwordEncoder.matches("wrong", "{bcrypt}hash")).thenReturn(false);
 
         assertThatThrownBy(() -> service.requestChange(caller, NEW_EMAIL, "wrong"))
                 .isInstanceOf(BadCredentialsException.class);
-        verify(userRepository, never()).findBySubject(any());
+
+        // The serialization point: the account row's id resolves first, the
+        // advisory lock lands BEFORE the login load, and the issue never
+        // runs for an unverifiable caller.
+        InOrder order = inOrder(userRepository, userDetailsManager, authActionTokenService);
+        order.verify(userRepository).findBySubject(OLD_SUBJECT);
+        order.verify(userRepository).lockUserAuth(userRow.getId().toString());
+        order.verify(userDetailsManager).loadUserByUsername(OLD_SUBJECT);
+        verify(authActionTokenService, never()).issue(any(), any(), any());
     }
 
     @Test

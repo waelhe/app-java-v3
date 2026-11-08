@@ -82,6 +82,23 @@ final class KeysetCursorGate {
         return String.valueOf(value);
     }
 
+    /**
+     * The NULLABLE text form — the EMAIL vocabulary's own normalizer (the
+     * 2026-11-08 #810 round-5 follow-up, CI-measured on the candidate head:
+     * the OIDC account with no email claim keeps a NULL email column, and
+     * the email-keyed scroll sorts {@code nullsLast}/{@code nullsFirst} so
+     * the null block sits at the scroll's own end — a page ending inside
+     * that block emits a cursor whose email key carries the null). A null
+     * stays null: Spring Data's null-aware keyset predicate (the explicit
+     * {@code NullHandling} the owner's Sort carries) turns a null boundary
+     * into the {@code IS NULL AND id > ?} prefix leg — the same law the
+     * repository's dynamic-sort javadoc documents. {@code String.valueOf}
+     * would corrupt the null into the literal string "null".
+     */
+    static Object nullableTextValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
     /** Numeric sort properties bind as their long form. */
     static Object longValue(Object value) {
         return value instanceof Number number ? number.longValue() : Long.parseLong(String.valueOf(value));
@@ -164,9 +181,22 @@ final class KeysetCursorGate {
                         "id", uuidValue(idRaw)));
             }
             Object sortRaw = keyset.getKeys().get(sortProperty);
-            return ScrollPosition.forward(Map.of(
-                    sortProperty, sortValue.apply(sortRaw),
-                    "id", uuidValue(idRaw)));
+            // The rebuild is NULL-TOLERANT (the 2026-11-08 round-5
+            // follow-up, CI-measured on the candidate head): a nullable
+            // sort key (the EMAIL vocabulary's null email) must ride the
+            // rebuilt position as a GENUINE null — Map.of rejects null
+            // values outright, so the normalized pair lands in a
+            // LinkedHashMap exactly as the emitted cursor carried it. The
+            // caller's own normalizer still runs first (the typed-value
+            // contract above); only the EMAIL vocabulary's nullable form
+            // answers null. The id tiebreaker keeps its own non-null
+            // contract (uuidValue throws on anything else — the classified
+            // refusal).
+            Object normalized = sortValue.apply(sortRaw);
+            java.util.Map<String, Object> rebuilt = new LinkedHashMap<>();
+            rebuilt.put(sortProperty, normalized);
+            rebuilt.put("id", uuidValue(idRaw));
+            return ScrollPosition.forward(rebuilt);
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException(
                     "after must be a forward keyset cursor emitted by " + scrollId, exception);

@@ -159,6 +159,18 @@ public class AccountSelfServiceTokenService {
         if (!PasswordPolicy.withinSharedPolicy(newPassword)) {
             throw PasswordPolicy.violation();
         }
+        // The 2026-11-08 #810 round-6 review (Minor · Security & Privacy):
+        // the verify-then-rotate window serializes with the email-change
+        // request's verify-then-issue window on the SAME per-user advisory
+        // auth-state lock the M2 family rides (marketplace.user-auth:<id>,
+        // transaction-scoped) — without it, a concurrent requestChange that
+        // already verified the OLD password could ISSUE a fresh EMAIL_CHANGE
+        // right after this rotation's invalidateOutstanding ran, and the
+        // minted right would outlive the rotation. The users row carries the
+        // lock's stable id key; a caller without a projection row locks
+        // nothing (no EMAIL_CHANGE right can exist for such an account).
+        userRepository.findBySubject(subject)
+                .ifPresent(row -> userRepository.lockUserAuth(row.getId().toString()));
         UserDetails stored;
         try {
             stored = userDetailsManager.loadUserByUsername(subject);

@@ -276,6 +276,41 @@ class PasswordResetServiceTest {
         assertThat(rotated.getValue().username()).isEqualTo(EMAIL);
     }
 
+    /**
+     * The 2026-11-08 #810 round-6 review (Minor · Security & Privacy): the
+     * rotation rides the per-user advisory auth-state lock BEFORE the
+     * credential write and the outstanding-right kill — the rotation must
+     * serialize with the email-change request's verify-then-issue window,
+     * or a right minted under the OLD password could outlive the
+     * invalidateOutstanding that should have killed it.
+     */
+    @Test
+    void completeReset_takesTheAuthStateLockBeforeTheRotationWrites() {
+        User user = member();
+        AuthActionToken token = AuthActionToken.issue(
+                EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "c".repeat(64), NOW.plus(TTL));
+        when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.PASSWORD_RESET))
+                .thenReturn(token);
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(
+                org.springframework.security.core.userdetails.User.withUsername(EMAIL)
+                        .password("{noop}old-secret").authorities("ROLE_CONSUMER")
+                        .build());
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
+
+        service.completeReset("raw-token", "the-new-password");
+
+        // The serialization point: the lock lands after the account's
+        // existence gate resolves the username, and BEFORE the password
+        // column write and the outstanding-right kill.
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository, jdbcTemplate,
+                authActionTokenService);
+        order.verify(userRepository).findBySubject(EMAIL);
+        order.verify(userRepository).lockUserAuth(user.getId().toString());
+        order.verify(jdbcTemplate).update(eq(PasswordResetService.UPDATE_PASSWORD_ONLY),
+                org.mockito.ArgumentMatchers.anyString(), eq(EMAIL));
+        order.verify(authActionTokenService).invalidateOutstanding(EMAIL);
+    }
+
     @Test
     void completeReset_aDisabledAccountIsNeverTouchedByTheCredentialRotation() {
         // Row 46's other face: the reset redeems a token, not a ban — an

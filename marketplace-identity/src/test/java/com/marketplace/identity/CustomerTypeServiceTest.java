@@ -53,7 +53,7 @@ class CustomerTypeServiceTest {
     @Test
     void createWithDefaultFlushesTheClearedHolderFirst() {
         CustomerType previous = CustomerType.create("Old", "old", true);
-        when(typeRepository.findByDefaultTrue()).thenReturn(Optional.of(previous));
+        when(typeRepository.findByDefaultTypeTrue()).thenReturn(Optional.of(previous));
 
         service.create(admin, "Fresh", "fresh", true);
 
@@ -61,7 +61,7 @@ class CustomerTypeServiceTest {
         // insert lands after it — the partial unique index never sees two
         // live defaults.
         InOrder order = inOrder(typeRepository);
-        order.verify(typeRepository).findByDefaultTrue();
+        order.verify(typeRepository).findByDefaultTypeTrue();
         order.verify(typeRepository).saveAndFlush(previous);
         order.verify(typeRepository).save(any(CustomerType.class));
         assertThat(previous.isDefault()).isFalse();
@@ -81,7 +81,7 @@ class CustomerTypeServiceTest {
         CustomerType row = CustomerType.create("Next", "next", false);
         CustomerType previous = CustomerType.create("Old", "old", true);
         when(typeRepository.findById(id)).thenReturn(Optional.of(row));
-        when(typeRepository.findByDefaultTrue()).thenReturn(Optional.of(previous));
+        when(typeRepository.findByDefaultTypeTrue()).thenReturn(Optional.of(previous));
 
         service.update(admin, id, null, null, true);
 
@@ -224,7 +224,7 @@ class CustomerTypeServiceTest {
         CustomerType row = CustomerType.create("Second", "second", false);
         CustomerType previous = CustomerType.create("First", "first", true);
         when(typeRepository.findById(id)).thenReturn(Optional.of(row));
-        when(typeRepository.findByDefaultTrue()).thenReturn(Optional.of(previous));
+        when(typeRepository.findByDefaultTypeTrue()).thenReturn(Optional.of(previous));
         when(typeRepository.saveAndFlush(previous)).thenAnswer(invocation -> {
             assertThat(previous.isDefault()).as("the cleared default is written first").isFalse();
             assertThat(row.isDefault()).as("the new default has not flipped yet").isFalse();
