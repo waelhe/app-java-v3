@@ -148,4 +148,23 @@ class EmailServiceTest {
                 .satisfies(ex -> assertThat(ex.getMessage()).contains("***@مثال.شبكة"))
                 .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("مستخدم@"));
     }
+
+    /**
+     * The 2026-11-09 #807 round-4 review (Minor · Security &amp; Privacy):
+     * the ANGLE-BRACKET twin — {@code <victim@example.com> (Jane Smith)}
+     * masked the address inside the brackets but the parenthesized name
+     * AFTER the closing bracket rode the log verbatim. The name group now
+     * skips the bracket and the name never crosses.
+     */
+    @Test
+    void send_theFailurePathNeverCarriesTheNameAfterTheAngleBracketedAddress() {
+        when(mailSender.createMimeMessage())
+                .thenThrow(new RuntimeException("550 <victim@example.com> (Jane Smith)... user unknown"));
+
+        assertThatThrownBy(() -> emailService.send("victim@example.com", "Welcome", "email/welcome", Map.of()))
+                .isInstanceOf(EmailSendException.class)
+                .hasMessageContaining("v***@example.com> (***)")
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("Jane Smith"))
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("victim@example.com"));
+    }
 }

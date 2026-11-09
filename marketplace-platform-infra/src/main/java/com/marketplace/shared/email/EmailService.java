@@ -139,21 +139,20 @@ public class EmailService {
     /**
      * Every address-shaped token in a diagnostic message — the scrub
      * target. The 2026-11-09 #807 round-2 review added the RFC 5322
-     * QUOTED local form; the round-3 review (Minor · Security &amp;
-     * Privacy) closed the two residuals its sibling left: (a) the
-     * parenthesized display-name tail ({@code victim@example.com (Jane
-     * Smith)} — the address masked, the name rode the log verbatim) now
-     * rides the SAME replacement as its address (the name never crosses);
-     * (b) the atom/domain classes were ASCII-only, so an
-     * internationalized address ({@code مستخدم@مثال.شبكة}) matched
-     * nothing and rode whole — the classes are now Unicode runs bounded
-     * by whitespace and the common address delimiters ({@code <>,;()})
-     * instead of ASCII letters. The masked rendering keeps the first
-     * character and the domain (the operator's forensic pair), and is
-     * idempotent over its own output.
+     * QUOTED local form; the round-3 review closed the parenthesized
+     * display-name tail and the ASCII-only classes (Unicode runs bounded
+     * by whitespace and the address delimiters now); the round-4 review
+     * (Minor · Security &amp; Privacy) closed the ANGLE-BRACKET twin: the
+     * SMTP text's {@code <victim@example.com> (Jane Smith)} renders the
+     * address inside angle brackets with the parenthesized name AFTER
+     * the closing bracket — the name group now skips the bracket so the
+     * name never crosses into the log or the exception. The masked
+     * rendering keeps the first character and the domain (the operator's
+     * forensic pair), and is idempotent over its own output.
      */
     private static final java.util.regex.Pattern EMAIL_TOKEN =
-            java.util.regex.Pattern.compile("((\"[^\"]*\"|[^\\s@\"'<(]+)@[^\\s@,;<>\\)]+)(\\s*\\([^)]*\\))?");
+            java.util.regex.Pattern.compile(
+                    "((\"[^\"]*\"|[^\\s@\"'<(]+)@[^\\s@,;<>\\)]+)(\\s*>\\s*)?(\\s*\\([^)]*\\))?");
 
     /**
      * The logging-safe rendering of one recipient value. The RFC 5322
@@ -192,10 +191,11 @@ public class EmailService {
      * tokens ({@code u***@x.com}) carry no matching local-part characters
      * before the {@code @} and pass through unchanged.
      *
-     * <p>The 2026-11-09 #807 round-3 review: a matched token's optional
-     * display-name tail ({@code victim@example.com (Jane Smith)}) is
-     * replaced together with its address — the parenthesized name never
-     * crosses into the log or the exception.</p>
+     * <p>The 2026-11-09 #807 rounds 3 and 4: a matched token's optional
+     * closing angle bracket and display-name tail ({@code
+     * <victim@example.com> (Jane Smith)} or {@code victim@example.com
+     * (Jane Smith)}) are replaced together with its address — the
+     * bracket survives, the name never crosses.</p>
      */
     private static String scrub(String message) {
         if (message == null) {
@@ -205,7 +205,10 @@ public class EmailService {
         StringBuilder scrubbed = new StringBuilder();
         while (matcher.find()) {
             String replacement = mask(matcher.group(1));
-            if (matcher.group(2) != null) {
+            if (matcher.group(3) != null) {
+                replacement = replacement + ">";
+            }
+            if (matcher.group(4) != null) {
                 replacement = replacement + " (***)";
             }
             matcher.appendReplacement(scrubbed,
