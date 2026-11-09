@@ -651,7 +651,19 @@ class UncoveredRootsSupplyIntegrationTest {
                         .execute(),
                 "customerTypeUpdate.customerType.id", Negative.CONSUMER_DENIED));
         table.add(new Supply("customerTypeDelete",
-                () -> ctx(seedCustomerType()),
+                () -> {
+                    // The 2026-11-09 #807 round-3 CI proof: the leak fix
+                    // unmasked this supply's hidden dependency on the LEAKED
+                    // state — the delete target must NOT be the registry's
+                    // default (the FIRST type in an empty registry is
+                    // marked default whatever the caller said, and the
+                    // delete answers CONFLICT). A GUARD type is seeded
+                    // first (it takes the default mark); the target stays
+                    // deletable — both registered for cleanup by the
+                    // seeder itself.
+                    seedCustomerType();
+                    return ctx(seedCustomerType());
+                },
                 (t, c) -> t.document("""
                                 mutation($id: ID!) {
                                   customerTypeDelete(id: $id) {

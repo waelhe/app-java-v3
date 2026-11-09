@@ -180,28 +180,15 @@ public class EmailVerificationService {
         // the LEGACY fallback: the REST registration path historically
         // stored mixed-case subjects, and those rows must keep matching.
         //
-        // The 2026-11-09 #807 round (Minor · Functional Correctness): when
-        // BOTH rows exist (the case-sensitive primary key admits the legacy
-        // mixed-case row AND the normalized one), the normalized-first
-        // resolution stranded the legacy account — a PENDING legacy row
-        // under a verified normalized row answered the silent skip forever,
-        // and the pending account never received its link. The resolution
-        // now prefers the PENDING account: the normalized form first (the
-        // round-5 law), then the legacy form when only it is the pending
-        // one. The post-lock state guard below remains the authority —
-        // this resolution is the addressing choice, never the eligibility
-        // verdict itself.
-        //
-        // The 2026-11-09 #807 round-2 review (Minor · Functional
-        // Correctness): when BOTH rows are pending, the round-5 order armed
-        // the NORMALIZED row while the requester's own mixed-case link arms
-        // the address they asked about — the requested account stayed
-        // disabled forever (the round's own stranded-account defect,
-        // mirrored). Among pending rows the MATCHING subject now wins:
-        // subject pending → subject (the exact row the requester named),
-        // else the normalized row when it alone is pending, else the
-        // normalized row as before (the finished case — the post-lock
-        // guard decides).
+        // The 2026-11-09 #807 round-3 review (Minor · Performance): the
+        // round-2 shape kept the normalized row's ADVISORY pending read
+        // after the subject check refused — `pendingVerification(normalized)
+        // ? normalized : normalized` answers the SAME value either way, so
+        // the read was dead weight (one extra token query per both-rows
+        // request). The resolution is the two-way choice alone: the
+        // MATCHING subject when it is the pending one, else the normalized
+        // row — and the post-lock state guard below remains the
+        // eligibility authority for whichever row the addressing chose.
         String resolved;
         if (normalized.equals(subject)) {
             resolved = userDetailsManager.userExists(normalized) ? normalized : null;
@@ -209,8 +196,7 @@ public class EmailVerificationService {
             boolean normalizedExists = userDetailsManager.userExists(normalized);
             boolean subjectExists = userDetailsManager.userExists(subject);
             if (normalizedExists && subjectExists) {
-                resolved = pendingVerification(subject) ? subject
-                        : pendingVerification(normalized) ? normalized : normalized;
+                resolved = pendingVerification(subject) ? subject : normalized;
             } else {
                 resolved = normalizedExists ? normalized : subjectExists ? subject : null;
             }

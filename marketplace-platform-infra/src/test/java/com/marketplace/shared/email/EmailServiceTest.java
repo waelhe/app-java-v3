@@ -113,4 +113,39 @@ class EmailServiceTest {
                 .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("private mailbox"))
                 .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("\"private mailbox\"@example.com"));
     }
+
+    /**
+     * The 2026-11-09 #807 round-3 review (Minor · Security &amp; Privacy):
+     * the SMTP failure text's parenthesized display-name tail rode the log
+     * verbatim while its address masked — the tail now rides the SAME
+     * replacement (the name never crosses).
+     */
+    @Test
+    void send_theFailurePathNeverCarriesTheParenthesizedDisplayName() {
+        when(mailSender.createMimeMessage())
+                .thenThrow(new RuntimeException("550 victim@example.com (Jane Smith)... user unknown"));
+
+        assertThatThrownBy(() -> emailService.send("victim@example.com", "Welcome", "email/welcome", Map.of()))
+                .isInstanceOf(EmailSendException.class)
+                .hasMessageContaining("v***@example.com (***)")
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("Jane Smith"))
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("victim@example.com"));
+    }
+
+    /**
+     * The same round: the atom and domain classes were ASCII-only — an
+     * internationalized address matched nothing and rode the diagnostic
+     * whole. The Unicode runs (bounded by whitespace and the address
+     * delimiters) reach the mask like every other shape.
+     */
+    @Test
+    void send_theFailurePathMasksTheInternationalizedAddress() {
+        when(mailSender.createMimeMessage())
+                .thenThrow(new RuntimeException("550 <مستخدم@مثال.شبكة>... user unknown"));
+
+        assertThatThrownBy(() -> emailService.send("مستخدم@مثال.شبكة", "Welcome", "email/welcome", Map.of()))
+                .isInstanceOf(EmailSendException.class)
+                .satisfies(ex -> assertThat(ex.getMessage()).contains("***@مثال.شبكة"))
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("مستخدم@"));
+    }
 }
