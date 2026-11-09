@@ -342,8 +342,13 @@ public class PlatformTokenGrantService {
         // only the already-minted stateless access token's own 900s TTL.
         if (!currentAuthorityNames(principal).containsAll(roles)) {
             authorizationService().remove(issuedRow);
+            // The sets ride the WARN (operator forensics: WHICH authority
+            // vanished between the authentication and the wall read) —
+            // never the thrown message (the client surface reveals
+            // nothing about the store's state).
             log.warn("Platform password grant revoked at issue: a role was revoked"
-                    + " while the grant raced (userId={})", user == null ? null : user.id());
+                    + " while the grant raced (userId={}): granted={} current={}",
+                    user == null ? null : user.id(), roles, currentAuthorityNames(principal));
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "The sign-in could not complete — sign in again");
         }
