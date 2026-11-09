@@ -92,6 +92,22 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
         // (reject/cancel notes — the shared commercial record the
         // retention decisions already keep), not the subject's authored
         // text; the buyer-authored reason is the purged surface.
+        //
+        // (2-b) The AUTHORSHIP wall (the 2026-11-09 candidate F1 finding,
+        // P2 — Security & Privacy / Data Integrity): V300/V301's
+        // cancel_author exists precisely so the purge can tell WHO
+        // wrote the cancel reason, and this adapter is the column's
+        // intended reader. A reason authored by the SELLER
+        // (cancelForSeller) or an ADMIN (cancelAsAdmin/bulkCancelAsAdmin)
+        // on a row whose consumer_id is the BUYER is a third party's
+        // authored text on the shared commercial record — the buyer's
+        // erasure right never owned it (the same retention decision the
+        // returns' resolution_note already carries). The purge keeps
+        // SELLER/ADMIN reasons — live rows AND audit mirrors alike — and
+        // erases only the CONSUMER-authored reasons plus the legacy NULL
+        // population (V300's own comment: the pre-attribution rows keep
+        // the standing purge behavior — the buyer-facing self-cancel was
+        // the platform's dominant path).
         int ordersAddress = jdbcTemplate.update(
                 "UPDATE orders SET ship_to_address = ?, version = version + 1 "
                         + "WHERE consumer_id = ? AND ship_to_address IS NOT NULL "
@@ -107,11 +123,13 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
         int ordersCancelReason = jdbcTemplate.update(
                 "UPDATE orders SET cancel_reason = ?, version = version + 1 "
                         + "WHERE consumer_id = ? AND cancel_reason IS NOT NULL "
-                        + "AND cancel_reason <> ?",
+                        + "AND cancel_reason <> ? "
+                        + "AND (cancel_author IS NULL OR cancel_author = 'CONSUMER')",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int ordersCancelReasonAudit = jdbcTemplate.update(
                 "UPDATE orders_aud SET cancel_reason = ? WHERE consumer_id = ? "
-                        + "AND cancel_reason IS NOT NULL AND cancel_reason <> ?",
+                        + "AND cancel_reason IS NOT NULL AND cancel_reason <> ? "
+                        + "AND (cancel_author IS NULL OR cancel_author = 'CONSUMER')",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int returnsReason = jdbcTemplate.update(
                 "UPDATE order_returns SET reason = ?, version = version + 1 "

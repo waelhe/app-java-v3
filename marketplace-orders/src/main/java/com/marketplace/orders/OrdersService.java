@@ -86,6 +86,27 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
 
     private static final int MAX_LINE_QUANTITY = 1000;
 
+    /**
+     * The cart's distinct-line bound (the 2026-11-09 candidate F3 finding,
+     * P3 — Resource amplification): the per-line quantity cap alone left
+     * the NUMBER of distinct lines unbounded, while every checkout-surface
+     * read (findCheckout/addLines/updateLines/deleteLines) re-prices every
+     * representable line through the pricing port — an authenticated
+     * caller could accumulate an arbitrarily wide cart and amplify every
+     * request into a per-line cross-module pricing fan-out. The bound rides
+     * the same measured calibration family the GraphQL bulk list bound
+     * already carries (marketplace.graphql.bulk.max-list-items, default
+     * 200 — "conservative until measured traffic", G-R6): 200 distinct
+     * lines bound the worst-case pricing fan-out to the same per-request
+     * SPI-work budget the platform already deems acceptable, and a single
+     * bounded addLines call (≤200 items) still fits an empty cart. The
+     * merge path (an existing line's quantity bump) adds NO line and is
+     * never rejected by this bound — only the new-distinct-line branch
+     * checks it, at the single funnel both the REST cart surface and the
+     * GraphQL checkout surface flow through (addCartItem).
+     */
+    private static final int MAX_CART_LINES = 200;
+
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final OrderRepository orderRepository;
@@ -214,9 +235,26 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
                     line.updateQuantity(line.getQuantity() + quantity);
                     return line;
                 })
-                .orElseGet(() -> cartItemRepository.save(
-                        CartItem.of(cart.getId(), productId, variantId, quantity,
-                                unitAmountMinor, currency)));
+                .orElseGet(() -> {
+                    // The F3 bound (2026-11-09, P3 — Resource amplification):
+                    // a NEW distinct line is the only shape that widens the
+                    // cart, so it is the only shape the distinct-line bound
+                    // gates — the merge branch above never adds a line and
+                    // must stay admissible at any cart width (raising an
+                    // existing line's quantity is the buyer's right). The
+                    // count rides the derived count query (Spring Data JPA's
+                    // documented query-method keyword) — no entity loading,
+                    // and the cart_id index (V113's idx_cart_items_cart)
+                    // answers it without a scan.
+                    if (cartItemRepository.countByCartId(cart.getId()) >= MAX_CART_LINES) {
+                        throw new BadRequestException("The cart already carries "
+                                + MAX_CART_LINES + " distinct lines — remove a line before "
+                                + "adding another product");
+                    }
+                    return cartItemRepository.save(
+                            CartItem.of(cart.getId(), productId, variantId, quantity,
+                                    unitAmountMinor, currency));
+                });
     }
 
     @Transactional

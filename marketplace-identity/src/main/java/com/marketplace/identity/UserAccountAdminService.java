@@ -409,15 +409,34 @@ public class UserAccountAdminService implements com.marketplace.identity.spi.Use
             throw new ResourceNotFoundException(
                     "No authentication account for user: " + user.getId());
         }
-        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
-                .withUsername(normalized)
-                .password(stored.getPassword())
-                .authorities(stored.getAuthorities())
-                .accountExpired(!stored.isAccountNonExpired())
-                .accountLocked(!stored.isAccountNonLocked())
-                .credentialsExpired(!stored.isCredentialsNonExpired())
-                .disabled(!stored.isEnabled())
-                .build());
+        // The F4 twin (the 2026-11-09 candidate finding, P3): this
+        // administrative move carries the SAME check-then-act window the
+        // confirmChange leg just closed — the exists-probe above and this
+        // INSERT race a concurrent registration (or another move) for the
+        // same address, and the loser died on the login store's username
+        // uniqueness as an unclassified 500. The SAME one classifier the
+        // bulk path already carries (bulkUpdateCustomers's
+        // DataIntegrityViolationException law, GlobalExceptionHandler
+        // .isUniqueViolation) answers the authored ConflictException here
+        // too; a non-uniqueness integrity failure stays the storage error
+        // it is, raw message internal.
+        try {
+            userDetailsManager.createUser(org.springframework.security.core.userdetails.User
+                    .withUsername(normalized)
+                    .password(stored.getPassword())
+                    .authorities(stored.getAuthorities())
+                    .accountExpired(!stored.isAccountNonExpired())
+                    .accountLocked(!stored.isAccountNonLocked())
+                    .credentialsExpired(!stored.isCredentialsNonExpired())
+                    .disabled(!stored.isEnabled())
+                    .build());
+        } catch (org.springframework.dao.DataIntegrityViolationException failure) {
+            if (com.marketplace.shared.api.GlobalExceptionHandler.isUniqueViolation(failure)) {
+                throw new ConflictException(
+                        "The email address already owns an account: " + normalized);
+            }
+            throw failure;
+        }
         // V112's FK leg: every token row for the old subject still
         // references the login row — the history purges BEFORE the row
         // dies (the Envers DEL revisions keep the redemption audit

@@ -264,6 +264,83 @@ class AccountEmailChangeServiceTest {
         verify(userDetailsManager, never()).deleteUser(any());
     }
 
+    /**
+     * The F4 race leg (the 2026-11-09 candidate finding, P3 — Functional
+     * Correctness / error taxonomy): the exists-probe and the login-row
+     * INSERT are a check-then-act pair — the losing side of a real
+     * concurrent race (a second confirmation or a fresh registration for
+     * the SAME address) passes the probe and dies on the username
+     * uniqueness at createUser. The taxonomy's own conflict answers the
+     * loser — the SAME one classifier the bulk path carries
+     * (bulkUpdateCustomers's DataIntegrityViolationException law) — and
+     * the move never half-happens: the old login row survives for its
+     * owner's next attempt (the whole transaction rolls back with the
+     * thrown conflict, the consumed right revokes with it — the
+     * documented rollback semantics, unchanged).
+     */
+    @Test
+    void theConfirmLegClassifiesTheUniqueRaceAsTheAuthoredConflict() {
+        userRow.requestEmailChange(NEW_EMAIL);
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.of(OLD_SUBJECT));
+        when(authActionTokenService.consume("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(redeemedToken());
+        when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
+        // The probe passes — the racing writer has not committed yet.
+        when(userRepository.existsBySubject(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.userExists(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.loadUserByUsername(OLD_SUBJECT)).thenReturn(loginRow());
+        // ... and the INSERT loses the race at the login store's username
+        // uniqueness (pgjdbc's own SQLSTATE rides the cause chain).
+        org.mockito.Mockito.doThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "createUser; dup key",
+                        new java.sql.SQLIntegrityConstraintViolationException(
+                                "duplicate key value violates unique constraint "
+                                        + "\"auth_users_pkey\"",
+                                "23505")))
+                .when(userDetailsManager).createUser(any(UserDetails.class));
+
+        assertThatThrownBy(() -> service.confirmChange(caller, "the-token"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("The new email address already owns an account");
+
+        // The move never half-happened: the old login row is still alive
+        // and the shared aftermath never ran for a failed move.
+        verify(userDetailsManager, never()).deleteUser(any());
+        verify(userService, never()).loginIdentityMoved(any());
+    }
+
+    /**
+     * The F4 classifier's negative leg: a NON-uniqueness integrity failure
+     * at the same INSERT (a storage-level fault) is NOT dressed up as a
+     * client conflict — it stays the storage error it is (the raw message
+     * never reaches the client; the taxonomy's 500 family owns it).
+     */
+    @Test
+    void theConfirmLegLeavesANonUniqueIntegrityFailureUnclassified() {
+        userRow.requestEmailChange(NEW_EMAIL);
+        when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(Optional.of(OLD_SUBJECT));
+        when(authActionTokenService.consume("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))
+                .thenReturn(redeemedToken());
+        when(userRepository.findBySubject(OLD_SUBJECT)).thenReturn(Optional.of(userRow));
+        when(userRepository.existsBySubject(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.userExists(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.loadUserByUsername(OLD_SUBJECT)).thenReturn(loginRow());
+        org.mockito.Mockito.doThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "createUser; not-null",
+                        new java.sql.SQLIntegrityConstraintViolationException(
+                                "null value in column \"password\" violates not-null constraint",
+                                "23502")))
+                .when(userDetailsManager).createUser(any(UserDetails.class));
+
+        assertThatThrownBy(() -> service.confirmChange(caller, "the-token"))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        verify(userDetailsManager, never()).deleteUser(any());
+    }
+
     @Test
     void theConfirmLegRefusesARightWithoutAPendingPair() {
         when(authActionTokenService.accountOf("the-token", AuthActionTokenPurpose.EMAIL_CHANGE))

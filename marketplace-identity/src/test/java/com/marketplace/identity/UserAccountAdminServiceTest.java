@@ -173,6 +173,44 @@ class UserAccountAdminServiceTest {
         verify(userDetailsManager, never()).deleteUser(anyString());
     }
 
+    /**
+     * The F4 administrative twin (the 2026-11-09 candidate finding, P3):
+     * the move's exists-probe and login-row INSERT carry the SAME
+     * check-then-act window the confirmChange leg closed — the losing
+     * side of a race with a concurrent registration (or another move) now
+     * answers the authored ConflictException through the SAME one
+     * classifier the bulk path carries, instead of an unclassified 500;
+     * the move never half-happens (the old login row survives).
+     */
+    @Test
+    void updateCustomerClassifiesTheUniqueRaceAsTheAuthoredConflict() {
+        when(userRepository.findById(CUSTOMER_ID)).thenReturn(Optional.of(customerRow));
+        // The probe passes — the racing writer has not committed yet.
+        when(userRepository.existsBySubject(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.userExists(NEW_EMAIL)).thenReturn(false);
+        when(userDetailsManager.loadUserByUsername(CUSTOMER_EMAIL)).thenReturn(loginRow(CUSTOMER_EMAIL));
+        // ... and the INSERT loses the race at the login store's username
+        // uniqueness (pgjdbc's SQLSTATE 23505 rides the cause chain).
+        org.mockito.Mockito.doThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "createUser; dup key",
+                        new java.sql.SQLIntegrityConstraintViolationException(
+                                "duplicate key value violates unique constraint "
+                                        + "\"auth_users_pkey\"",
+                                "23505")))
+                .when(userDetailsManager).createUser(any(UserDetails.class));
+
+        assertThatThrownBy(() -> service.updateCustomer(admin, CUSTOMER_ID,
+                new UserWriteFields(NEW_EMAIL, "NewName", null, null)))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("already owns an account");
+
+        // The move never half-happened: the old login row is still alive
+        // and the shared aftermath never ran.
+        verify(userDetailsManager, never()).deleteUser(anyString());
+        verify(userService, never()).loginIdentityMoved(any());
+    }
+
     @Test
     void updateCustomerRefusesTheWrongRolesSurface() {
         when(userRepository.findById(STAFF_ID)).thenReturn(Optional.of(staffRow));

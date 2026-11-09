@@ -25,6 +25,17 @@ public interface CartItemRepository extends JpaRepository<CartItem, UUID> {
 
     List<CartItem> findByCartId(UUID cartId);
 
+    /**
+     * The cart's distinct-line population count (the 2026-11-09 candidate
+     * F3 bound, MAX_CART_LINES): a derived COUNT query — Spring Data JPA's
+     * documented query-method keyword ({@code countBy}), no entity
+     * loading — answered by V113's {@code idx_cart_items_cart} without a
+     * table scan. The new-distinct-line branch of {@code addCartItem}
+     * reads it before widening the cart; the merge branch (a quantity bump
+     * on an existing line) never adds a line and never reads it.
+     */
+    long countByCartId(UUID cartId);
+
     Optional<CartItem> findByCartIdAndProductId(UUID cartId, UUID productId);
 
     /**

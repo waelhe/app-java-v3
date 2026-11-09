@@ -146,13 +146,22 @@ class OrdersContentPurgeAdapterTest {
                 eq(AuthoredContentPurgePort.PURGED_MARKER));
 
         // The buyer's cancel reason purges — live (with the version
-        // advance) and audit mirror.
+        // advance) and audit mirror — but ONLY the buyer-authored (or
+        // legacy NULL) population: the AUTHORSHIP wall (the 2026-11-09
+        // candidate F1 finding) pins the predicate on both statements —
+        // SELLER/ADMIN reasons are a third party's authored text on the
+        // shared commercial record and stay (the same retention decision
+        // resolution_note already carries).
         verify(jdbcTemplate).update(
-                contains("UPDATE orders SET cancel_reason = ?, version = version + 1"),
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("UPDATE orders SET cancel_reason = ?, version = version + 1")
+                                && sql.contains("(cancel_author IS NULL OR cancel_author = 'CONSUMER')")),
                 eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
                 eq(AuthoredContentPurgePort.PURGED_MARKER));
         verify(jdbcTemplate).update(
-                contains("UPDATE orders_aud SET cancel_reason = ?"),
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("UPDATE orders_aud SET cancel_reason = ?")
+                                && sql.contains("(cancel_author IS NULL OR cancel_author = 'CONSUMER')")),
                 eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
                 eq(AuthoredContentPurgePort.PURGED_MARKER));
 
@@ -168,6 +177,43 @@ class OrdersContentPurgeAdapterTest {
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql != null && sql.contains("UPDATE order_returns_aud SET reason = ?")
                                 && !sql.contains("resolution_note")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+    }
+
+    /**
+     * The F1 regression leg (the 2026-11-09 candidate finding, P2): the
+     * seller/admin-authored cancel reasons on the buyer's rows are a
+     * THIRD PARTY's authored text — the erasure right being exercised
+     * belongs to the buyer alone, so the retention predicate must guard
+     * the live statement AND the audit mirror alike. A statement that
+     * purges by consumer_id alone (the pre-F1 shape) erases the seller's
+     * own words under the buyer's erasure — this leg pins that the
+     * authorship predicate is present on BOTH cancel_reason statements,
+     * so the defect cannot silently return.
+     */
+    @Test
+    void purgeAuthoredTexts_retainsSellerAndAdminAuthoredCancelReasonsOnBothStatements() {
+        adapter.purgeAuthoredTexts(SUBJECT);
+
+        // Every cancel_reason-carrying statement the adapter issues must
+        // carry the authorship retention predicate — the live row's
+        // statement and the audit mirror's statement alike.
+        org.mockito.Mockito.verify(jdbcTemplate, org.mockito.Mockito.times(2)).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("cancel_reason")
+                                && sql.contains("(cancel_author IS NULL OR cancel_author = 'CONSUMER')")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+
+        // And the counterpart law: NO cancel_reason statement may purge by
+        // consumer_id alone — the pre-F1 shape (an UPDATE touching
+        // cancel_reason with NO cancel_author predicate anywhere) is the
+        // exact defect this leg exists to catch.
+        org.mockito.Mockito.verify(jdbcTemplate, org.mockito.Mockito.never()).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql != null && sql.contains("cancel_reason")
+                                && !sql.contains("cancel_author")),
                 eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
                 eq(AuthoredContentPurgePort.PURGED_MARKER));
     }

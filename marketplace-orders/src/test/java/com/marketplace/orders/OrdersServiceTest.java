@@ -1214,6 +1214,67 @@ class OrdersServiceTest {
         verify(cartItemRepository, never()).save(any());
     }
 
+    /**
+     * The F3 bound (the 2026-11-09 candidate finding, P3 — Resource
+     * amplification): the cart's distinct-line population is bounded, and
+     * the bound gates exactly the NEW-distinct-line branch — the merge
+     * branch never widens the cart and stays admissible at any width.
+     */
+    @Test
+    void addingANewDistinctLineBeyondTheCartLineBoundAnswersThe400Contract() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
+                .thenReturn(Optional.empty());
+        // The cart already carries the bound's full population: 200 lines.
+        when(cartItemRepository.countByCartId(cart.getId())).thenReturn(200L);
+
+        assertThatThrownBy(() -> service.addCartItem(consumer, product, variant, 1))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class)
+                .hasMessageContaining("distinct lines");
+
+        // The rejected line is never written — the amplification surface
+        // (every checkout read re-prices every line) stays bounded.
+        verify(cartItemRepository, never()).save(any());
+    }
+
+    /**
+     * The F3 bound's merge-leg law: a buyer raising an EXISTING line's
+     * quantity at a full cart is never rejected — the bound limits the
+     * cart's WIDTH (the per-line pricing fan-out), never the buyer's
+     * right to buy more of what is already there.
+     */
+    @Test
+    void raisingAnExistingLinesQuantityAtAFullCartStaysAdmissible() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        CartItem existing = CartItem.of(cart.getId(), product, variant, 1, 1750L, "SAR");
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
+                .thenReturn(Optional.of(existing));
+
+        CartItem result = service.addCartItem(consumer, product, variant, 2);
+
+        assertThat(result.getQuantity()).isEqualTo(3);
+        // The merge branch never consults the line-count bound and never
+        // writes a new row.
+        verify(cartItemRepository, never()).countByCartId(any());
+        verify(cartItemRepository, never()).save(any());
+    }
+
     // ------------------------------------------------------------------
     // ADR-0012 (the cart-integration slice): the variant lines' unit gates
     // ------------------------------------------------------------------

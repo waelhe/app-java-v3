@@ -211,15 +211,36 @@ public class AccountEmailChangeService {
             throw new ConflictException("The new email address already owns an account");
         }
         UserDetails stored = requireLogin(oldSubject);
-        userDetailsManager.createUser(org.springframework.security.core.userdetails.User
-                .withUsername(newEmail)
-                .password(stored.getPassword())
-                .authorities(stored.getAuthorities())
-                .accountExpired(!stored.isAccountNonExpired())
-                .accountLocked(!stored.isAccountNonLocked())
-                .credentialsExpired(!stored.isCredentialsNonExpired())
-                .disabled(!stored.isEnabled())
-                .build());
+        // The F4 leg (the 2026-11-09 candidate finding, P3 — Functional
+        // Correctness / error taxonomy): the exists-probe above and this
+        // INSERT are a check-then-act pair — two concurrent confirmations
+        // racing for the SAME new address (or a confirmation racing a
+        // fresh registration) both pass the probe, and the loser dies on
+        // the login store's username uniqueness HERE. The whole
+        // transaction rolls back correctly (the consumed right revokes
+        // with it — no corruption), but the loser used to surface an
+        // unclassified 500 instead of the taxonomy's own conflict. The
+        // SAME one classifier the bulk path already carries decides the
+        // verdict (UserAccountAdminService.bulkUpdateCustomers's
+        // DataIntegrityViolationException law): a uniqueness failure is
+        // the authored ConflictException; anything else stays the storage
+        // error it is (the raw message never reaches the client).
+        try {
+            userDetailsManager.createUser(org.springframework.security.core.userdetails.User
+                    .withUsername(newEmail)
+                    .password(stored.getPassword())
+                    .authorities(stored.getAuthorities())
+                    .accountExpired(!stored.isAccountNonExpired())
+                    .accountLocked(!stored.isAccountNonLocked())
+                    .credentialsExpired(!stored.isCredentialsNonExpired())
+                    .disabled(!stored.isEnabled())
+                    .build());
+        } catch (org.springframework.dao.DataIntegrityViolationException failure) {
+            if (com.marketplace.shared.api.GlobalExceptionHandler.isUniqueViolation(failure)) {
+                throw new ConflictException("The new email address already owns an account");
+            }
+            throw failure;
+        }
         // V112's FK leg (the CodeRabbit integrity round): EVERY token row
         // for the old subject — including the one this redemption just
         // consumed — still references auth_users(oldSubject), so the login
