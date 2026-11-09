@@ -116,24 +116,78 @@ public class EmailService {
             // operator's "which mailbox" question without the PII.
             log.info("Email sent: to={}, subject={}, template={}", mask(to), subject, template);
         } catch (Exception ex) {
-            log.error("Failed to send email: to={}, subject={}, template={}",
-                    mask(to), subject, template, ex);
-            // The exception MESSAGE carries the masked form too — the
-            // failure surfaces in the caller's logs and error handlers,
-            // which are log stores under the same discipline.
-            throw new EmailSendException("Failed to send email to " + mask(to), ex);
+            // The 2026-11-09 #807 round (Minor · Security & Privacy, two
+            // findings): the FAILURE path never carries the raw recipient
+            // either. The SMTP client's exception message commonly embeds
+            // the full address ("550 <user@example.com>... user unknown"),
+            // so (a) the ERROR log prints the failure CLASS plus the
+            // SCRUBBED message — never the raw throwable, whose logged
+            // header would echo the address verbatim — and (b) the
+            // EmailSendException carries the masked recipient plus the
+            // same scrubbed diagnostic summary in its own message, with no
+            // raw cause riding the chain into a caller's log store (the
+            // exception's own stack still identifies the failure site;
+            // the resilience annotations key on the exception TYPE, which
+            // is unchanged).
+            log.error("Failed to send email: to={}, subject={}, template={}, failure={}: {}",
+                    mask(to), subject, template, ex.getClass().getName(), scrub(ex.getMessage()));
+            throw new EmailSendException("Failed to send email to " + mask(to)
+                    + " — " + ex.getClass().getName() + ": " + scrub(ex.getMessage()));
         }
     }
 
-    /** The logging-safe rendering: the first character plus the domain. */
-    private static String mask(String address) {
-        if (address == null) {
+    /** Every address-shaped token in a diagnostic message — the scrub target. */
+    private static final java.util.regex.Pattern EMAIL_TOKEN =
+            java.util.regex.Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+");
+
+    /**
+     * The logging-safe rendering of one recipient value. The RFC 5322
+     * display form ({@code "Display Name <local@domain>"}) is parsed
+     * FIRST — the addr-spec between the angle brackets is the address;
+     * the display name is caller-controlled text that may itself contain
+     * {@code '@'} (the 2026-11-09 #807 round: the single-index masking
+     * then returned everything from the display name's {@code '@'}
+     * onward, echoing the FULL address into the success log). The
+     * extracted addr-spec must carry exactly one {@code '@'}, neither
+     * first nor last; anything else is not a parseable address and
+     * answers the fully-masked form — the input is never echoed.
+     */
+    private static String mask(String recipient) {
+        if (recipient == null) {
             return null;
         }
+        String address = recipient;
+        int open = recipient.lastIndexOf('<');
+        int close = recipient.lastIndexOf('>');
+        if (open >= 0 && close > open) {
+            address = recipient.substring(open + 1, close).trim();
+        }
         int at = address.indexOf('@');
-        if (at <= 0) {
+        if (at <= 0 || at != address.lastIndexOf('@') || at == address.length() - 1) {
             return "***";
         }
         return address.charAt(0) + "***" + address.substring(at);
+    }
+
+    /**
+     * Masks every address-shaped token in an arbitrary diagnostic
+     * message (the 2026-11-09 #807 round): the SMTP failure text carries
+     * the recipient inline, and the log store's discipline applies to the
+     * whole line, not just the formatted {@code to} field. Already-masked
+     * tokens ({@code u***@x.com}) carry no matching local-part characters
+     * before the {@code @} and pass through unchanged.
+     */
+    private static String scrub(String message) {
+        if (message == null) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = EMAIL_TOKEN.matcher(message);
+        StringBuilder scrubbed = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(scrubbed,
+                    java.util.regex.Matcher.quoteReplacement(mask(matcher.group())));
+        }
+        matcher.appendTail(scrubbed);
+        return scrubbed.toString();
     }
 }

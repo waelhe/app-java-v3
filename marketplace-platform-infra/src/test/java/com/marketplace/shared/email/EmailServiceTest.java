@@ -1,5 +1,6 @@
 package com.marketplace.shared.email;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -51,5 +52,42 @@ class EmailServiceTest {
         assertThatThrownBy(() -> emailService.send("test@example.com", "Welcome", "email/welcome", Map.of()))
                 .isInstanceOf(EmailSendException.class)
                 .hasMessageContaining("Failed to send email");
+    }
+
+    /**
+     * The 2026-11-09 #807 round (Minor · Security & Privacy): the SMTP
+     * client's failure message commonly embeds the full recipient
+     * address — the ERROR log and the thrown exception carry only the
+     * masked and scrubbed forms, never the raw one.
+     */
+    @Test
+    void send_theFailurePathNeverCarriesTheRawRecipient() {
+        when(mailSender.createMimeMessage())
+                .thenThrow(new RuntimeException("550 <victim@example.com>... user unknown"));
+
+        assertThatThrownBy(() -> emailService.send("victim@example.com", "Welcome", "email/welcome", Map.of()))
+                .isInstanceOf(EmailSendException.class)
+                .hasMessageContaining("v***@example.com")
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("victim@example.com"));
+    }
+
+    /**
+     * The 2026-11-09 #807 round (Minor · Security & Privacy): a display
+     * name containing {@code '@'} used to defeat the single-index masking
+     * — the "masked" value echoed everything from the name's {@code '@'}
+     * onward, including the full address. The RFC 5322 parse masks the
+     * angle-bracketed addr-spec alone, and the display name (caller
+     * text, itself PII-adjacent) is never echoed.
+     */
+    @Test
+    void send_aDisplayFormRecipientWithAnAtSignInTheNameIsMaskedWhole() {
+        when(mailSender.createMimeMessage()).thenThrow(new RuntimeException("Mail server down"));
+
+        assertThatThrownBy(() -> emailService.send("Sales @ Team <victim@example.com>",
+                "Welcome", "email/welcome", Map.of()))
+                .isInstanceOf(EmailSendException.class)
+                .hasMessageContaining("v***@example.com")
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("victim@example.com"))
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("Sales @ Team"));
     }
 }

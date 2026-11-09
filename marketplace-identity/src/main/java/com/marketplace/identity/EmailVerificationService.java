@@ -171,8 +171,39 @@ public class EmailVerificationService {
         // stored mixed-case subjects, and those rows must keep matching.
         String subject = email.trim();
         String normalized = subject.toLowerCase(java.util.Locale.ROOT);
-        String resolved = userDetailsManager.userExists(normalized) ? normalized
-                : userDetailsManager.userExists(subject) ? subject : null;
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the lookup resolves the SAME normalized subject
+        // registration stores (trim + lowercase) — resending with the
+        // ORIGINAL mixed-case address used to answer the silent no-op
+        // (userExists is case-sensitive on the exact row), leaving the
+        // account unverified with a 202. The verbatim trimmed form stays
+        // the LEGACY fallback: the REST registration path historically
+        // stored mixed-case subjects, and those rows must keep matching.
+        //
+        // The 2026-11-09 #807 round (Minor · Functional Correctness): when
+        // BOTH rows exist (the case-sensitive primary key admits the legacy
+        // mixed-case row AND the normalized one), the normalized-first
+        // resolution stranded the legacy account — a PENDING legacy row
+        // under a verified normalized row answered the silent skip forever,
+        // and the pending account never received its link. The resolution
+        // now prefers the PENDING account: the normalized form first (the
+        // round-5 law), then the legacy form when only it is the pending
+        // one. The post-lock state guard below remains the authority —
+        // this resolution is the addressing choice, never the eligibility
+        // verdict itself.
+        String resolved;
+        if (normalized.equals(subject)) {
+            resolved = userDetailsManager.userExists(normalized) ? normalized : null;
+        } else {
+            boolean normalizedExists = userDetailsManager.userExists(normalized);
+            boolean subjectExists = userDetailsManager.userExists(subject);
+            if (normalizedExists && subjectExists) {
+                resolved = pendingVerification(normalized) ? normalized
+                        : pendingVerification(subject) ? subject : normalized;
+            } else {
+                resolved = normalizedExists ? normalized : subjectExists ? subject : null;
+            }
+        }
         if (resolved == null) {
             log.info("Verification resend requested for an address with no login account — silent no-op");
             return;
@@ -186,15 +217,25 @@ public class EmailVerificationService {
         // ban-vs-verification invariant); either way this surface must not
         // mint a fresh redemption right for it. No row at all means the
         // hold never applied (grandfathered) — nothing to resend.
-        boolean pending = authActionTokenService
-                .latest(resolved, AuthActionTokenPurpose.EMAIL_VERIFICATION)
-                .map(token -> !token.isConsumed())
-                .orElse(false);
-        if (pending) {
+        if (pendingVerification(resolved)) {
             issueFor(resolved);
         } else {
             log.info("Verification resend skipped — the account is not pending: subject={}", resolved);
         }
+    }
+
+    /**
+     * The PENDING state of one login subject's verification right: a live
+     * (unconsumed) latest EMAIL_VERIFICATION token row. Shared by the
+     * resend's post-lock authority guard and the both-rows resolution the
+     * 2026-11-09 #807 round added (the resolution's advisory read — the
+     * guard under the lock decides).
+     */
+    private boolean pendingVerification(String loginSubject) {
+        return authActionTokenService
+                .latest(loginSubject, AuthActionTokenPurpose.EMAIL_VERIFICATION)
+                .map(token -> !token.isConsumed())
+                .orElse(false);
     }
 
     /**

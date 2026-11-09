@@ -127,6 +127,41 @@ class EmailVerificationServiceTest {
         verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
     }
 
+    /**
+     * The 2026-11-09 #807 round (Minor · Functional Correctness): when BOTH
+     * case-form rows exist (the case-sensitive primary key admits the
+     * legacy mixed-case row AND the normalized one), the normalized-first
+     * resolution used to strand the PENDING legacy account forever — the
+     * normalized (verified) row won the resolution and answered the silent
+     * skip. The resolution now prefers the PENDING account: the legacy row
+     * when only it is the pending one.
+     */
+    @Test
+    void resend_thePendingLegacyRowWinsWhenBothCaseFormsExist() {
+        String legacy = "Member@Example.com";
+        when(userDetailsManager.userExists(EMAIL)).thenReturn(true);   // the normalized row
+        when(userDetailsManager.userExists(legacy)).thenReturn(true);  // the legacy row
+        // The normalized row FINISHED (consumed latest) — the legacy row
+        // is the PENDING one.
+        when(authActionTokenService.latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(true)));
+        when(authActionTokenService.latest(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject(legacy))
+                .thenReturn(Optional.of(User.create(legacy, legacy, "Member", UserRole.CONSUMER)));
+        when(authActionTokenService.issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "legacy-fresh-token", NOW.plus(TTL))));
+
+        service.resend(legacy);
+
+        // The PENDING legacy account is re-armed — the fresh right and the
+        // mail event ride the legacy subject, never the verified
+        // normalized one.
+        verify(authActionTokenService).issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL);
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+    }
+
     @Test
     void resend_aConsumedLatestRowIsSkipped_theBanAndFinishedStatesRefuse() {
         // The invariant's own guard: a consumed latest row means finished —
