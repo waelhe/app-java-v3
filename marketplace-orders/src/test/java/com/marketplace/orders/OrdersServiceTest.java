@@ -1273,6 +1273,53 @@ class OrdersServiceTest {
         // writes a new row.
         verify(cartItemRepository, never()).countByCartId(any());
         verify(cartItemRepository, never()).save(any());
+        // The R3-01 law (round-3, 2026-11-10): the merge branch also never
+        // takes the cart-row serialization lock — the lock arms exactly on
+        // the widening shape; a non-widening add must stay contention-free.
+        verify(entityManager, never()).lock(any(), any());
+    }
+
+    /**
+     * The R3-01 serialization (the 2026-11-10 round-3 adversarial review,
+     * P3 — Data Integrity/Concurrency): the distinct-line bound is enforced
+     * ATOMICALLY. The widening branch takes the cart row FOR UPDATE — the
+     * official {@code jakarta.persistence.EntityManager#lock} API, the same
+     * JPA lock family confirmFromPayment's refresh-under-lock already uses —
+     * BEFORE the count read. A count read before the lock is the
+     * check-then-act window the finding proved (N concurrent
+     * distinct-product adds on a 199-line cart all read 199 and all pass);
+     * with the lock first, the waiter's count reads the committed truth.
+     */
+    @Test
+    void theWideningBranchLocksTheCartRowBeforeTheCountRead() {
+        Cart cart = Cart.activeFor(consumer);
+        UUID product = UUID.randomUUID();
+        UUID variant = UUID.randomUUID();
+        when(cartRepository.findByConsumerIdAndStatus(consumer, CartStatus.ACTIVE))
+                .thenReturn(Optional.of(cart));
+        when(productPricingPort.priceOfVariant(variant)).thenReturn(
+                new ProductPricingPort.VariantPrice(variant, product, seller, 1750L, "SAR",
+                        ProductPricingPort.StorefrontState.ACTIVE,
+                        ProductPricingPort.StorefrontState.ACTIVE));
+        when(cartItemRepository.findByCartIdAndProductIdAndVariantId(cart.getId(), product, variant))
+                .thenReturn(Optional.empty());
+        when(cartItemRepository.countByCartId(cart.getId())).thenReturn(5L);
+        when(cartItemRepository.save(any()))
+                .thenReturn(CartItem.of(cart.getId(), product, variant, 1, 1750L, "SAR"));
+
+        service.addCartItem(consumer, product, variant, 1);
+
+        // The ordering law: lock the row, THEN read the count under it —
+        // the serialized bound's own causal order (the count feeds the
+        // accept/reject decision, so it must read the post-lock truth).
+        org.mockito.InOrder serialized = inOrder(entityManager, cartItemRepository);
+        serialized.verify(entityManager).lock(cart,
+                jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        serialized.verify(cartItemRepository).countByCartId(cart.getId());
+        // The lock's object is exactly the caller's ACTIVE cart row — not
+        // some other row the transaction may hold.
+        verify(entityManager).lock(org.mockito.ArgumentMatchers.eq(cart),
+                org.mockito.ArgumentMatchers.eq(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE));
     }
 
     // ------------------------------------------------------------------

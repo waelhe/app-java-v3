@@ -246,6 +246,37 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
                     // documented query-method keyword) — no entity loading,
                     // and the cart_id index (V113's idx_cart_items_cart)
                     // answers it without a scan.
+                    //
+                    // The R3-01 serialization (the 2026-11-10 round-3
+                    // adversarial review, P3 — Data Integrity/Concurrency):
+                    // the bound above was check-then-act with NOTHING
+                    // serializing it — the module's only pessimistic lock
+                    // sits on ORDER rows (findByIdForUpdate), the cart lookup
+                    // reads unlocked, and no DB constraint can bound a COUNT
+                    // (uq_cart_items_cart_product dedupes the SAME product
+                    // only, V113). N concurrent distinct-product adds on a
+                    // 199-line cart each read 199 and all pass — the cart
+                    // lands at 199+N and the documented bound is violated for
+                    // exactly one burst. The fix is the row lock the bound
+                    // always implied: jakarta.persistence.EntityManager#lock
+                    // (the official API for locking an already-managed
+                    // entity) takes the cart row FOR UPDATE, so a concurrent
+                    // add-line transaction queues behind it and its count
+                    // reads the committed truth — under the connection's
+                    // READ_COMMITTED default (no isolation override anywhere
+                    // in the project) the statement-after-lock-wait sees the
+                    // just-committed inserts and the 201st line is rejected.
+                    // The in-file precedent is confirmFromPayment's own
+                    // refresh(order, PESSIMISTIC_WRITE) — the same
+                    // JPA-documented lock family. Deadlock posture: a single
+                    // lock (the cart row), taken by the one widening shape
+                    // only; place() takes no cart lock, so no lock-order
+                    // cycle exists. The cart-creation race itself stays
+                    // guarded where it always was — the partial-unique
+                    // ix_carts_consumer_active (V113) — so the lock arms
+                    // only after the row exists.
+                    entityManager.lock(cart,
+                            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
                     if (cartItemRepository.countByCartId(cart.getId()) >= MAX_CART_LINES) {
                         throw new BadRequestException("The cart already carries "
                                 + MAX_CART_LINES + " distinct lines — remove a line before "
