@@ -231,6 +231,27 @@ public interface IdentitySpi {
     boolean loginAccountEnabled(String subject);
 
     /**
+     * The login store's own CURRENT effective authorities for a subject —
+     * the SAME {@code UserDetails} authorities the authentication chain
+     * reads at sign-in (the direct authorities union the role-derived
+     * ones, the V188 assembly), never a stale projection. The
+     * 2026-11-08 #806 round-9 review's role-revocation race: a role
+     * revoked between the password grant's {@code authenticate()} and its
+     * authorization {@code save()} leaves the raced row carrying the
+     * revoked role — and the refresh leg re-mints from the stored roles
+     * attribute until the family-age cap — so the grant must re-verify
+     * the roles AFTER its save (the same post-save wall shape
+     * {@link #loginAccountEnabled} carries for the disable race) and drop
+     * the raced row. A subject with no login row answers the EMPTY set
+     * (nothing may be granted for it).
+     *
+     * @param subject the login identifier (the principal name)
+     * @return the current effective authority names (the login chain's
+     *         own vocabulary, {@code ROLE_} prefixes intact); never null
+     */
+    java.util.Set<String> loginEffectiveAuthorities(String subject);
+
+    /**
      * P1 (the Saleor {@code user} root): the account projection by the
      * native UUID behind the typed global ID. Saleor requires
      * MANAGE_STAFF/MANAGE_USERS/MANAGE_ORDERS — enforced here as the

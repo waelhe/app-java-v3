@@ -222,6 +222,19 @@ public class CmsPageAdminService implements CmsPageSpi {
         return pageRepository.findBySlug(slug).map(this::toView);
     }
 
+    /**
+     * The READ-roots authorization gate (the 2026-11-08 #806 round-9
+     * review — see the SPI contract): the SAME ADMIN verdict every read
+     * body carries, exposed so the transport can enforce it BEFORE its
+     * own early returns (an empty page for {@code first: 0} used to leak
+     * a success-shaped connection past the gate the scroll bodies alone
+     * enforced).
+     */
+    @Override
+    public void requireReadAccess(Authentication caller) {
+        requireAdmin(caller);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public PageWindow scrollPages(Authentication caller, String sortField, boolean ascending,

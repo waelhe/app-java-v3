@@ -88,6 +88,20 @@ public interface CmsPageSpi {
 
     Optional<PageView> findPageBySlug(Authentication caller, String slug);
 
+    /**
+     * The READ-roots authorization gate (the 2026-11-08 #806 round-9
+     * review, Minor · Functional Correctness): the transport's early
+     * returns (the documented empty page for {@code first: 0}) must run
+     * the SAME ADMIN verdict the {@link #scrollPages}/{@link #scrollPageTypes}
+     * bodies enforce — otherwise a non-admin caller reads the outcome by
+     * the value of {@code first} alone. The transport calls this BEFORE
+     * any early-return branch; it throws the owning use case's own
+     * classification when the caller lacks the capability.
+     *
+     * @param caller the transport's current authentication
+     */
+    void requireReadAccess(Authentication caller);
+
     PageWindow scrollPages(Authentication caller, String sortField, boolean ascending,
                            KeysetScrollPosition position, Limit limit);
 

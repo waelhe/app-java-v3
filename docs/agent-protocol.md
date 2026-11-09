@@ -211,7 +211,16 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    GitHub Actions run on the observed base SHA (its run link cited in
    the PR) or the locally recorded Stage-3 output when local execution
    is available — docs/METHODOLOGY.md's BEFORE/AFTER/DELTA table cites
-   whichever source produced each number → 4. create a remote branch from the
+   whichever source produced each number. When NO completed run exists
+   on the observed base SHA and local execution is unavailable, the
+   BEFORE is obtained by running the SAME test set remotely: dispatch
+   the repository's own workflow on that base SHA (a pushed baseline
+   branch from the base SHA with the identical suite — GitHub Actions
+   as the executor, never a hand-rolled substitute), and when the
+   LATEST completed run sits on a DIFFERENT SHA that does not include
+   the affected code, a comparable completed run on the SAME base SHA
+   is the acceptable BEFORE — never a number transplanted from a
+   different code state (the 2026-11-08 #806 round-9 review) → 4. create a remote branch from the
    observed GitHub base SHA → 5. implement on that branch with the
    AGENTS.md §0.2 declaration and the official supported APIs/extension
    points → 6. add regression pins and run relevant tests. Run local

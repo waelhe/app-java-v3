@@ -286,6 +286,7 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
     }
 
     /** The {@code customerTypes} read root — the forward-only keyset scroll. */
+    @Override
     @Transactional(readOnly = true)
     public com.marketplace.identity.spi.CustomerTypeSpi.CustomerTypePage scroll(Authentication caller, com.marketplace.identity.spi.CustomerTypeSpi.CustomerTypeSort sort,
                                    KeysetScrollPosition position, Limit limit,
@@ -431,6 +432,18 @@ public class CustomerTypeService implements com.marketplace.identity.spi.Custome
         return name.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("^-+|-+$", "");
+    }
+
+    /**
+     * The READ-roots authorization gate (the 2026-11-08 #806 round-9
+     * review — see the SPI contract): the SAME ADMIN verdict every read
+     * body carries, exposed so the transport can enforce it BEFORE its
+     * own early returns (a non-positive {@code first} answering an empty
+     * page to a non-admin caller leaked the outcome by page size).
+     */
+    @Override
+    public void requireReadAccess(Authentication caller) {
+        requireAdmin(caller);
     }
 
     private static void requireAdmin(Authentication caller) {

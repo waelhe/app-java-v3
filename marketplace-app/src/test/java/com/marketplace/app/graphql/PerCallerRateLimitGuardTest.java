@@ -323,6 +323,41 @@ class PerCallerRateLimitGuardTest {
     }
 
     /**
+     * The 2026-11-08 #806 round-9 review (Major · Security & Privacy,
+     * Quick win): the window-aware ceiling must reject EQUALITY too — a
+     * caller budget of 15/30s inside an account budget of 30/60s yields a
+     * per-window ceiling of 15×2 = 30, EXACTLY the account budget. The
+     * equality leaves the owner ZERO headroom: one address alone consumes
+     * every permit of the account window and locks the owner out. The
+     * error message's own "must strictly exceed" demanded the >= all
+     * along; the old > let the equality through.
+     */
+    @Test
+    void aCallerCeilingEqualToTheAccountBudgetIsRejectedAtConstruction() {
+        RateLimiterRegistry shared = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG,
+                        RateLimiterConfig.custom()
+                                .limitForPeriod(15)
+                                .limitRefreshPeriod(Duration.ofSeconds(30))
+                                .timeoutDuration(Duration.ZERO)
+                                .build())
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG,
+                        RateLimiterConfig.custom()
+                                .limitForPeriod(30)
+                                .limitRefreshPeriod(Duration.ofMinutes(1))
+                                .timeoutDuration(Duration.ZERO)
+                                .build())
+                .build();
+        ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(shared);
+        when(provider.getObject()).thenReturn(shared);
+
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(provider, absentProvider(), 1000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("per-caller ceiling");
+    }
+
+    /**
      * The 2026-11-05 #806 round-3 review (Major · Security & Privacy): the
      * address-key and account-key families carry SEPARATE bounded stores —
      * under the single shared store, a max-tracked-callers of 1 made an
@@ -408,6 +443,78 @@ class PerCallerRateLimitGuardTest {
         DataFetchingEnvironment eleventh = internalMeshEnvironment(
                 "203.0.113.10, 198.51.100.1", "203.0.113.10", VICTIM_EMAIL);
         assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
+    }
+
+    /**
+     * A data fetcher environment whose request arrives from a PRIVATE-MESH
+     * peer (RFC 1918) carrying a PUBLIC-looking Host — the round-9 attack
+     * shape: the internal caller rotates a non-internal Host to reach the
+     * public branch and its self-controlled X-Real-IP.
+     */
+    private static DataFetchingEnvironment meshPeerWithPublicHost(
+            String forgedRealIp, String email) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.0.0.1");
+        request.setServerName("app-java-v3-production.up.railway.app");
+        request.addHeader("X-Real-IP", forgedRealIp);
+        return environmentFor(request, email);
+    }
+
+    /**
+     * The 2026-11-08 #806 round-9 review (Major · Security & Privacy,
+     * Heavy lift): the internal path is settled by the socket PEER
+     * address (the private-mesh standard — RFC 1918/ULA), never by the
+     * Host header alone. A private-mesh caller sending a PUBLIC-looking
+     * Host used to fall into the X-Real-IP branch and rotate a fresh
+     * budget per request through the self-controlled header; under the
+     * peer discriminator the SAME socket peer keys ONE budget whatever
+     * the Host and the forged header say. Ten requests, each with a
+     * DIFFERENT forged X-Real-IP, from one private peer: the eleventh
+     * rejects.
+     */
+    @Test
+    void aPrivateMeshPeerWithAForgedPublicHostStillKeysTheSocketPeer() {
+        PerCallerRateLimitGuard guard = guardWithDefaults();
+        for (int attempt = 0; attempt < 10; attempt++) {
+            DataFetchingEnvironment forged = meshPeerWithPublicHost(
+                    "203.0.113." + attempt, VICTIM_EMAIL);
+            guard.acquirePermit(forged, SURFACE);
+        }
+        DataFetchingEnvironment eleventh = meshPeerWithPublicHost(
+                "203.0.113.10", VICTIM_EMAIL);
+        assertThatThrownBy(() -> guard.acquirePermit(eleventh, SURFACE))
+                .isInstanceOf(RequestNotPermitted.class);
+    }
+
+    /**
+     * The peer discriminator's IPv6 leg: a ULA mesh peer (fc00::/7 — the
+     * documented private-mesh standard's IPv6 half) is internal exactly
+     * like an RFC 1918 peer, whatever Host it sends — the forged
+     * X-Real-IP rotation dies on the same socket-peer budget.
+     */
+    @Test
+    void anUlaMeshPeerIsInternalWhateverTheHostSays() {
+        PerCallerRateLimitGuard guard = guardWithDefaults();
+        MockHttpServletRequest first = new MockHttpServletRequest();
+        first.setRemoteAddr("fd00:db8::1");
+        first.setServerName("app-java-v3-production.up.railway.app");
+        first.addHeader("X-Real-IP", "203.0.113.50");
+        guard.acquirePermit(environmentFor(first, VICTIM_EMAIL), SURFACE);
+        // The SAME ULA peer with a rotated forged X-Real-IP: one budget.
+        for (int attempt = 0; attempt < 9; attempt++) {
+            MockHttpServletRequest rotated = new MockHttpServletRequest();
+            rotated.setRemoteAddr("fd00:db8::1");
+            rotated.setServerName("attacker-" + attempt + ".example.com");
+            rotated.addHeader("X-Real-IP", "203.0.113." + attempt);
+            guard.acquirePermit(environmentFor(rotated, VICTIM_EMAIL), SURFACE);
+        }
+        MockHttpServletRequest eleventh = new MockHttpServletRequest();
+        eleventh.setRemoteAddr("fd00:db8::1");
+        eleventh.setServerName("app-java-v3-production.up.railway.app");
+        eleventh.addHeader("X-Real-IP", "198.51.100.99");
+        assertThatThrownBy(() -> guard.acquirePermit(
+                environmentFor(eleventh, VICTIM_EMAIL), SURFACE))
                 .isInstanceOf(RequestNotPermitted.class);
     }
 
@@ -621,6 +728,51 @@ class PerCallerRateLimitGuardTest {
         PerCallerRateLimitGuard guard = new PerCallerRateLimitGuard(
                 provider, propertiesDeclaringSurface(SURFACE), 1000);
         assertThat(guard).isNotNull();
+    }
+
+    /**
+     * The 2026-11-08 #806 round-9 review (Minor · Functional Correctness),
+     * verified against the INSTALLED resilience4j 2.4.0 bytecode: an
+     * {@code instances} entry initializes its limiter but never registers
+     * its config ({@code AbstractRegistry.computeIfAbsent} stores the ENTRY
+     * alone — the configurations map is written only by
+     * {@code addConfiguration}, which the auto-configuration calls for
+     * {@code configs} entries alone). {@code getConfiguration} — the
+     * guard's ONLY config path — therefore cannot see an instances-placed
+     * budget override: the operator's value would be silently ignored and
+     * the guard would run the family-wide values. The startup fails fast
+     * with the configs-only law.
+     */
+    @Test
+    void aBudgetOverrideUnderInstancesIsRejectedAtStartup() {
+        RateLimiterRegistry shared = RateLimiterRegistry.custom()
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_CALLER_CONFIG, config(10))
+                .addRateLimiterConfig(PerCallerRateLimitGuard.PER_ACCOUNT_CONFIG, config(30))
+                .build();
+        ObjectProvider<RateLimiterRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(shared);
+        when(provider.getObject()).thenReturn(shared);
+
+        io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties
+                properties = mock(io.github.resilience4j.springboot.ratelimiter.autoconfigure
+                .RateLimiterProperties.class);
+        java.util.Map<String, io.github.resilience4j.common.ratelimiter.configuration
+                .CommonRateLimiterConfigurationProperties.InstanceProperties> instances =
+                new java.util.HashMap<>();
+        instances.put(PerCallerRateLimitGuard.PER_CALLER_CONFIG + "-" + SURFACE,
+                new io.github.resilience4j.common.ratelimiter.configuration
+                        .CommonRateLimiterConfigurationProperties.InstanceProperties());
+        when(properties.getConfigs()).thenReturn(java.util.Map.of());
+        when(properties.getInstances()).thenReturn(instances);
+        when(properties.getLimiters()).thenReturn(java.util.Map.of());
+        ObjectProvider<io.github.resilience4j.springboot.ratelimiter.autoconfigure.RateLimiterProperties>
+                propsProvider = mock(ObjectProvider.class);
+        when(propsProvider.getIfAvailable()).thenReturn(properties);
+
+        assertThatThrownBy(() -> new PerCallerRateLimitGuard(provider, propsProvider, 1000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("instances")
+                .hasMessageContaining("configs");
     }
 
     /**

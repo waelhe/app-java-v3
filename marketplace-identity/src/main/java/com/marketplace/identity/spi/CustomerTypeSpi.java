@@ -48,6 +48,20 @@ public interface CustomerTypeSpi {
 
     Optional<CustomerTypeView> find(Authentication caller, UUID id);
 
+    /**
+     * The READ-roots authorization gate (the 2026-11-08 #806 round-9
+     * review, Minor · Functional Correctness): the transport's early
+     * returns (an empty page for a non-positive {@code first}) must run
+     * the SAME ADMIN verdict the {@link #scroll} and {@link #find} bodies
+     * enforce — otherwise a non-admin caller reads the outcome by the
+     * value of {@code first} alone. The transport calls this BEFORE any
+     * early-return branch; it throws the owning use case's own
+     * classification when the caller lacks the capability.
+     *
+     * @param caller the transport's current authentication
+     */
+    void requireReadAccess(Authentication caller);
+
     CustomerTypePage scroll(Authentication caller, CustomerTypeSort sort,
                             KeysetScrollPosition position, Limit limit, String search);
 }

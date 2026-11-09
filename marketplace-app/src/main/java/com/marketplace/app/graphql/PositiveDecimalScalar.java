@@ -119,28 +119,29 @@ public final class PositiveDecimalScalar implements Coercing<BigDecimal, Double>
      * is also valid for valueToLiteral, and the literals returned are
      * valid for parseLiteral") — the same #806-review lesson
      * {@code UuidScalar.valueToLiteral} recorded: the inherited default
-     * threw {@code UnsupportedOperationException}. The literal is the
-     * exact BigDecimal the engine's own FloatValue carries — the wire's
-     * own representation, lossless.
+     * threw {@code UnsupportedOperationException}.
+     *
+     * <p><b>The full parseValue conversion path</b> (the 2026-11-08 #806
+     * round-9 review, two Minors): the delegation goes through the SAME
+     * {@link #toDecimal} parse {@code parseValue} runs — a String value
+     * ({@code "1.25"}) parses exactly like a variables value, closing the
+     * contract gap the raw-variables path ({@code
+     * createExecutableNormalizedOperationWithRawVariables}) would hit; and
+     * a {@code Number} converts through its exact decimal text — {@code
+     * 9007199254740993L} stays {@code ...993}, where the previous double
+     * step ({@code FloatValue.of(number.doubleValue())}) silently lost the
+     * last digit. The literal is the exact BigDecimal riding the engine's
+     * own {@link FloatValue} — the wire's own representation, lossless.</p>
      */
     @Override
     public Value<?> valueToLiteral(Object input,
                                    GraphQLContext graphQLContext,
                                    Locale locale) {
-        if (input instanceof BigDecimal value) {
-            if (value.signum() < 0) {
-                throw new CoercingParseValueException("PositiveDecimal requires a nonnegative value");
-            }
-            return new FloatValue(value);
+        BigDecimal parsed = toDecimal(input);
+        if (parsed.signum() < 0) {
+            throw new CoercingParseValueException("PositiveDecimal requires a nonnegative value");
         }
-        if (input instanceof Number number) {
-            double asDouble = number.doubleValue();
-            if (asDouble < 0) {
-                throw new CoercingParseValueException("PositiveDecimal requires a nonnegative value");
-            }
-            return FloatValue.of(asDouble);
-        }
-        throw new CoercingParseValueException("PositiveDecimal requires a decimal value");
+        return new FloatValue(parsed);
     }
 
     /** The pin's {@code str(value) → Decimal(value)} parse path. */

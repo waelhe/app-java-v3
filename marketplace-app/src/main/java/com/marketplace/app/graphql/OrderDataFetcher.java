@@ -171,6 +171,12 @@ public class OrderDataFetcher {
 
         OrderSort sort = toOwnerSort(sortBy);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
+        // The 2026-11-08 #806 round-9 review (Minor · Functional
+        // Correctness): the cursor gate runs BEFORE the empty-page early
+        // return — an admin sending first: 0 with a malformed after cursor
+        // must answer the cursor's VAL-001 verdict, never a success-shaped
+        // empty page that hides the validation failure.
+        KeysetScrollPosition position = keysetPosition(after, sort);
         if (requested <= 0) {
             // The shard review (Minor · Security & Privacy, 2026-11-01):
             // the empty page answered BEFORE the ADMIN decision — fixed
@@ -185,7 +191,6 @@ public class OrderDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort);
         OrderPage page = orderReadSpi.scrollOrders(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
         return toConnection(page, position, sort);

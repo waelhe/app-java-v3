@@ -77,13 +77,16 @@ regexes = [
 # channel binds the real key through the environment (the property's own
 # comment in every carrier file documents the AccountPseudonymization
 # IntegrationTest precedent). The allow is the COMPLETE string-literal
-# element, anchored line-start to line-end, with the value strictly shaped
-# (lowercase alphanumerics and dashes, ending in -key — the fixture family's
-# own convention: it-pseudonymization-key, it-self-deletion-key,
-# it-mail-leg-journey-key, b4-supply-pseudonymization-key) and the optional
-# -- command-arg prefix (the launch-arg carrier line). Measured against the
-# family's 8 carrier lines: all exempted; an appended AWS key on the same
-# line, a sk_live value, a ghp_ token, or a mixed-case value all stay
-# DETECTED (the $ anchor and the shape carry the whole burden).
-  '''^\s*"(?:--)?marketplace\.security\.pseudonymization\.subject-hmac-key=[a-z0-9]+(?:-[a-z0-9]+)*-key"\)?[,;]?\s*$'''
+# element, anchored line-start to line-end, with the value an EXACT
+# alternation of the four fixture values measured in the tree (the
+# 2026-11-08 #806 round-9 review: a generic lowercase-alphanumerics-and-
+# dashes shape ending in -key would also exempt a hypothetical production
+# HMAC key of that same shape; the measured fixture family is closed —
+# it-pseudonymization-key, it-self-deletion-key, it-mail-leg-journey-key,
+# b4-supply-pseudonymization-key) and the optional -- command-arg prefix
+# (the launch-arg carrier line). Measured against the family's 8 carrier
+# lines: all exempted; an appended AWS key on the same line, a sk_live
+# value, a ghp_ token, or any other -key value all stay DETECTED (the $
+# anchor and the exact alternation carry the whole burden).
+  '''^\s*"(?:--)?marketplace\.security\.pseudonymization\.subject-hmac-key=(?:it-pseudonymization-key|it-self-deletion-key|it-mail-leg-journey-key|b4-supply-pseudonymization-key)"\)?[,;]?\s*$'''
 ]

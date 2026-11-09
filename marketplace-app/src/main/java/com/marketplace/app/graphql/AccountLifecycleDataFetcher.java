@@ -237,8 +237,15 @@ public class AccountLifecycleDataFetcher {
             throw new IllegalArgumentException("A token is required");
         }
         accountLifecycleSpi.confirmEmailChange(currentAuthentication(), token);
+        // The 2026-11-08 #806 round-9 review (Minor · Functional
+        // Correctness): the sibling authenticated roots (requestEmailChange,
+        // accountUpdate, passwordChange) answer the caller's CURRENT account
+        // projection — confirmEmailChange answered a hard null, so a
+        // successful redemption still looked like a failure to the client.
+        // The projection is read AFTER the confirmation consumed the token,
+        // so the account it answers carries the NEW email address.
         return ConfirmEmailChange.newBuilder()
-                .user(null)
+                .user(currentUserOrNull())
                 .accountErrors(mappers.emptyAccountErrors())
                 .errors(mappers.emptyAccountErrors())
                 .build();

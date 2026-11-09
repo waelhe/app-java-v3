@@ -41,6 +41,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -496,6 +497,36 @@ class AgentOneMutationDgsTest {
     }
 
     /**
+     * The 2026-11-08 #806 round-9 review (Minor · Functional Correctness):
+     * a successful {@code confirmEmailChange} answers the caller's CURRENT
+     * account projection — the sibling authenticated roots'
+     * ({@code requestEmailChange} et al.) own shape — carrying the NEW
+     * email the redemption just landed, never the hard null that made a
+     * successful redemption look like a failure.
+     */
+    @Test
+    void confirmEmailChangeAnswersTheCurrentAccountWithTheNewEmail() {
+        actAs("agent-one@example.com", "CONSUMER");
+        when(identitySpi.findCurrentUserAccount(any())).thenReturn(Optional.of(new UserAccountView(
+                USER_ID, "next@example.com", false, true,
+                java.time.Instant.parse("2026-01-01T00:00:00Z"),
+                java.time.Instant.parse("2026-01-02T00:00:00Z"), java.util.Set.of("CONSUMER"))));
+
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { confirmEmailChange(token: "redemption-token") {
+                    user { email isActive }
+                    errors { code }
+                } }
+                """, "data.confirmEmailChange");
+
+        verify(accountLifecycleSpi).confirmEmailChange(any(), eq("redemption-token"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> user = (Map<String, Object>) payload.get("user");
+        assertThat(user).as("the redemption answers the caller's current account").isNotNull();
+        assertThat(user.get("email")).isEqualTo("next@example.com");
+    }
+
+    /**
      * The shard review (2026-11-01, Minor · Security): bcrypt's ceiling is
      * 72 UTF-8 BYTES, never 72 characters — a 40-character Arabic password
      * is ~80 bytes and passed the old character-only count. The byte
@@ -764,6 +795,35 @@ class AgentOneMutationDgsTest {
     }
 
     /**
+     * The 2026-11-08 #806 round-9 review (Minor · Functional Correctness):
+     * the ADMIN verdict precedes the EMPTY-PAGE early return — a
+     * non-admin caller sending {@code first: 0} answers the authorization
+     * denial (the SPI's own read gate), never the success-shaped empty
+     * connection that used to leak past the gate the scroll body alone
+     * enforced.
+     */
+    @Test
+    void customerTypesFirstZeroAnswersTheAdminDenialForANonAdminCaller() {
+        actAs("agent-one@example.com", "CONSUMER");
+        doThrow(new org.springframework.security.access.AccessDeniedException(
+                "Customer type administration requires the ADMIN capability"))
+                .when(customerTypeSpi).requireReadAccess(any());
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                query { customerTypes(first: 0) { edges { node { id } } } }
+                """, "data.customerTypes"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("ADMIN capability")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "AUTHZ-001")
+                        .containsEntry("category", "authz"));
+        verify(customerTypeSpi).requireReadAccess(any());
+        verify(customerTypeSpi, never()).scroll(any(), any(), any(), any(), any());
+    }
+
+    /**
      * The 2026-11-06 session-9 #806 final review (Minor · Security &
      * Privacy): the B24 shared authenticated-caller wall — an anonymous
      * token answers isAuthenticated() == true, so the customerType roots
@@ -804,6 +864,36 @@ class AgentOneMutationDgsTest {
                 query { pages(first: 5, search: "terms") { edges { node { id } } } }
                 """, "data.pages"))
                 .hasMessageContaining("search is not implemented");
+    }
+
+    /**
+     * The 2026-11-08 #806 round-9 review (Minor · Functional Correctness):
+     * the CMS read gate precedes the empty-page early return on BOTH
+     * scroll roots — a non-admin caller sending {@code first: 0} answers
+     * the authorization denial, never the success-shaped empty connection.
+     */
+    @Test
+    void cmsScrollRootsFirstZeroAnswerTheAdminDenialForANonAdminCaller() {
+        actAs("agent-one@example.com", "CONSUMER");
+        doThrow(new org.springframework.security.access.AccessDeniedException(
+                "CMS page administration requires the ADMIN capability"))
+                .when(cmsPageSpi).requireReadAccess(any());
+
+        for (String root : new String[] {"pages", "pageTypes"}) {
+            assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                    query { %s(first: 0) { edges { node { id } } } }
+                    """.formatted(root), "data." + root))
+                    .as("%s must answer the authorization denial, not the empty page", root)
+                    .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                    .hasMessageContaining("ADMIN capability")
+                    .satisfies(ex -> assertThat(
+                                    ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                            .getExtensions())
+                            .containsEntry("errorCode", "AUTHZ-001")
+                            .containsEntry("category", "authz"));
+        }
+        verify(cmsPageSpi, org.mockito.Mockito.times(2)).requireReadAccess(any());
+        org.mockito.Mockito.verifyNoMoreInteractions(cmsPageSpi);
     }
 
     @Test

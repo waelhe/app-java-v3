@@ -633,6 +633,44 @@ class AttributeMutationDataFetcherDgsTest {
     }
 
     /**
+     * The 2026-11-08 #806 round-9 review (Minor · Security & Privacy): a
+     * batch whose EVERY row is refused at the decode stage used to
+     * short-circuit past the owner — a non-ADMIN caller learned a
+     * classified zero-count response without the owning use case's role
+     * check ever running. The SPI now rides even with EMPTY items: the
+     * owner's authorization verdict surfaces, never the leaked outcome.
+     */
+    @Test
+    void anAllRefusedBulkBatchStillRidesTheOwnerForTheRoleVerdict() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        org.mockito.Mockito.doThrow(
+                        new org.springframework.security.access.AccessDeniedException(
+                                "Attribute administration requires the ADMIN capability"))
+                .when(attributeWriteSpi).bulkUpdateAttributes(anyList(), any());
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { attributeBulkUpdate(
+                        attributes: [{id: "not-a-global-id", fields: {name: "Bad"}}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    results { errors { path } }
+                } }
+                """, "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("ADMIN capability")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "AUTHZ-001")
+                        .containsEntry("category", "authz"));
+        // The owner WAS consulted — with the empty (all-refused) batch,
+        // exactly the shape the role check rides on.
+        verify(attributeWriteSpi).bulkUpdateAttributes(
+                argThat((List<AttributeBulkUpdateItem> items) -> items.isEmpty()),
+                eq("IGNORE_FAILED"));
+    }
+
+    /**
      * The sibling law: under the WHOLE-CALL policies (the default and
      * REJECT_EVERYTHING) the malformed id is still the whole call's
      * classified validation error — the batch never reaches the owner.

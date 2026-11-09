@@ -374,6 +374,13 @@ public class CmsPageDataFetcher {
                     "pages filter/where/search is not implemented on this platform yet");
         }
         rejectChannel(channel);
+        // The 2026-11-08 #806 round-9 review (Minor · Functional
+        // Correctness): the ADMIN verdict runs BEFORE the empty-page early
+        // return — the SPI's own read gate, so a non-admin caller answers
+        // the authorization denial whatever the value of first (previously
+        // first: 0 leaked a success-shaped empty connection past the gate
+        // the scroll body alone enforced).
+        cmsPageSpi.requireReadAccess(currentAuthentication());
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         // The 2026-11-04 #806 round (Minor · Functional Correctness): the
         // Relay connection spec — a NEGATIVE first is a client error, while
@@ -426,6 +433,10 @@ public class CmsPageDataFetcher {
             throw new IllegalArgumentException(
                     "pageTypes filter is not implemented on this platform yet");
         }
+        // The 2026-11-08 #806 round-9 review (Minor · Functional
+        // Correctness): the same read gate the pages root carries — the
+        // ADMIN verdict precedes the empty-page early return.
+        cmsPageSpi.requireReadAccess(currentAuthentication());
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         // The 2026-11-04 #806 round (Minor · Functional Correctness): the
         // Relay connection spec — a NEGATIVE first is a client error, while

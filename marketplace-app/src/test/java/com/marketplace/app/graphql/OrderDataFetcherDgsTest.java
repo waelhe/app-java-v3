@@ -562,6 +562,37 @@ class OrderDataFetcherDgsTest {
                         .containsEntry("errorCode", "VAL-001"));
     }
 
+    /**
+     * The 2026-11-08 #806 round-9 review (Minor · Functional Correctness):
+     * the cursor gate runs BEFORE the empty-page early return — an ADMIN
+     * sending {@code first: 0} with a malformed {@code after} cursor
+     * answers the cursor's VAL-001 verdict, never the success-shaped
+     * empty page that hides the validation failure.
+     */
+    @Test
+    void aMalformedCursorWithFirstZeroStillAnswersTheCursorVerdict() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        // A REAL cursor emitted by the OTHER sort (the STATUS keyset) —
+        // the house gate's own verdict shape, exactly like the sibling
+        // foreign-cursor test, combined here with the degenerate page.
+        String foreignCursor = cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
+                "status", "PLACED", "id", UUID.randomUUID())));
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
+                "query($after: String) { orders(first: 0, after: $after) { totalCount } }",
+                "$", Map.of("after", foreignCursor)))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("after must be a forward keyset cursor")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "VAL-001"));
+        // And the scroll never ran: the verdict is the gate's alone.
+        verify(orderReadSpi, never()).scrollOrders(
+                any(org.springframework.security.core.Authentication.class),
+                any(OrderSort.class), any(), any(Limit.class));
+    }
+
     /** The externalReference argument answers the explicit classified error — never silently ignored. */
     @Test
     void orderExternalReferenceLookupAnswersTheExplicitNotImplementedError() {

@@ -17,7 +17,6 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
@@ -51,6 +50,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -103,9 +104,6 @@ class PlatformTokenGrantServiceTest {
     /** The disabled leg's principal — the provider's pre-auth check shape. */
     private static final String DISABLED_PRINCIPAL = "rotation-agent-disabled@example.com";
 
-    /** The stubbed form of the constructor-cached dummy bcrypt hash. */
-    private static final String DUMMY_HASH = "{bcrypt}$2a$10$timingequalization-dummy-hash";
-
     private static JWKSource<SecurityContext> jwkSource;
     private static JwtDecoder jwtDecoder;
 
@@ -115,8 +113,13 @@ class PlatformTokenGrantServiceTest {
     /** The identity seam mock (the 2026-11-05 #806 round-3 disable-race pins flip its enabled truth). */
     private IdentitySpi identitySpi;
 
-    /** Verifies the timing-equalization burn (mock — the unit seam). */
-    private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+    /**
+     * The per-caller guard mock — the 2026-11-08 #806 round-9 account-budget
+     * pins verify its consumption; the default assembly wires NO guard (the
+     * package-slice shape: a context without the guard skips the budget
+     * exactly as it skips the annotated limiters).
+     */
+    private PerCallerRateLimitGuard guard;
 
     @BeforeAll
     static void keyMaterial() throws Exception {
@@ -139,6 +142,18 @@ class PlatformTokenGrantServiceTest {
 
     /** The service assembly, over a swappable rotation store (B26's sequencing proof). */
     private PlatformTokenGrantService newService(RefreshTokenRotationStore store) {
+        return newService(store, null);
+    }
+
+    /**
+     * The full service assembly with the per-caller guard — the [20]
+     * account-budget pins pass a mock; every other test passes null (the
+     * package-slice shape: a context without the guard skips the budget
+     * exactly as it skips the annotated limiters).
+     */
+    private PlatformTokenGrantService newService(
+            RefreshTokenRotationStore store, PerCallerRateLimitGuard perCallerGuard) {
+        guard = perCallerGuard;
         RegisteredClient publicClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId(PUBLIC_CLIENT_ID)
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
@@ -169,10 +184,6 @@ class PlatformTokenGrantServiceTest {
         when(authenticationConfiguration.getAuthenticationManager())
                 .thenReturn(authenticationManager);
 
-        // The constructor-cached dummy hash (bean-init shape, stubbed).
-        when(passwordEncoder.encode(PlatformTokenGrantService.DUMMY_COMPARISON_SECRET))
-                .thenReturn(DUMMY_HASH);
-
         identitySpi = mock(IdentitySpi.class);
         when(identitySpi.findCurrentUserAccount(any())).thenReturn(Optional.of(
                 new UserAccountView(UUID.randomUUID(), PRINCIPAL, false, true,
@@ -181,6 +192,12 @@ class PlatformTokenGrantServiceTest {
         // enabled truth — true for the happy paths, flipped by the
         // disable-race pins below.
         when(identitySpi.loginAccountEnabled(PRINCIPAL)).thenReturn(true);
+        // The 2026-11-08 #806 round-9 harness pin (the role wall): the
+        // login store's CURRENT effective authorities — the happy path
+        // matches the authenticated set; the role-revocation pin below
+        // flips it to a reduced set.
+        when(identitySpi.loginEffectiveAuthorities(PRINCIPAL))
+                .thenReturn(Set.of("ROLE_CONSUMER"));
 
         return new PlatformTokenGrantService(
                 provider(authenticationConfiguration),
@@ -191,7 +208,7 @@ class PlatformTokenGrantServiceTest {
                 provider(AuthorizationServerSettings.builder()
                         .issuer("https://auth.example.com").build()),
                 provider(jwtDecoder),
-                provider(passwordEncoder),
+                provider(perCallerGuard),
                 identitySpi,
                 "marketplace-api",
                 PUBLIC_CLIENT_ID,
@@ -536,22 +553,114 @@ class PlatformTokenGrantServiceTest {
     }
 
     /**
-     * The 2026-11-04 adversarial delta review (timing oracle): a disabled
-     * account's grant must burn ONE dummy comparison against the
-     * constructor-cached bcrypt hash — the OWASP equalization, so the
-     * disabled leg costs the same ~1 bcrypt the unknown-email/wrong-password
-     * legs cost — and then rethrow the SAME DisabledException (the grant
-     * flow itself untouched, the failure unchanged on the wire).
+     * The 2026-11-08 #806 round-9 review (Major · Security & Privacy,
+     * verified against the INSTALLED spring-security-core 7.1.2 bytecode):
+     * the disabled leg carries NO extra dummy comparison — the deleted
+     * burn made the disabled rejection cost TWO bcrypt comparisons against
+     * ONE for an unknown email (an inverted timing oracle, the opposite of
+     * the OWASP equalization it claimed). The provider's own
+     * {@code alwaysPerformAdditionalChecksOnUser=true} default already
+     * burns the comparison BEFORE the account-state refusal, so the
+     * service just rethrows — and structurally, the service no longer
+     * even carries a PasswordEncoder collaborator (the constructor shed
+     * it with the burn). The unit pin: the disabled leg answers the
+     * provider's own DisabledException, nothing else runs.
      */
     @Test
-    void aDisabledAccountBurnsTheDummyComparisonBeforeRethrowing() {
+    void aDisabledAccountRethrowsTheProviderRefusalWithNoExtraBurn() {
         assertThatThrownBy(() -> service.grant(DISABLED_PRINCIPAL, PASSWORD))
                 .isInstanceOf(DisabledException.class);
+        assertThat(authorizationStore.size())
+                .as("the pre-auth refusal never wrote a row")
+                .isZero();
+    }
 
-        // The burn: exactly one matches() over the FIXED constant against
-        // the constructor-cached hash — never real caller data.
-        verify(passwordEncoder).matches(
-                PlatformTokenGrantService.DUMMY_COMPARISON_SECRET, DUMMY_HASH);
+    // -------------------------------------------------------------------
+    // The role wall (the 2026-11-08 #806 round-9 review, Major)
+    // -------------------------------------------------------------------
+
+    @Test
+    void theGrantLosesItsRowWhenARoleWasRevokedUnderTheSave() {
+        // The revocation lands between authenticate() and the post-save
+        // wall: the login store's CURRENT authorities no longer carry the
+        // authenticated set. The raced row is revoked and the caller
+        // answers the same classified refusal a retry would resolve —
+        // the stored roles attribute never outlives the revocation.
+        assertThat(authorizationStore.size()).isZero();
+        when(identitySpi.loginEffectiveAuthorities(PRINCIPAL))
+                .thenReturn(java.util.Set.of());
+
+        assertThatThrownBy(() -> service.grant(PRINCIPAL, PASSWORD))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessage("The sign-in could not complete — sign in again");
+        assertThat(authorizationStore.size())
+                .as("the raced grant's row must not survive the role revocation")
+                .isZero();
+    }
+
+    // -------------------------------------------------------------------
+    // The account budget after authentication (the 2026-11-08 #806
+    // round-9 review, Major): only a SUCCESSFUL password check consumes
+    // the account's budget — the multi-address lockout dies.
+    // -------------------------------------------------------------------
+
+    @Test
+    void theAccountBudgetIsConsumedOnlyAfterThePasswordCheck() {
+        PerCallerRateLimitGuard guardMock = mock(PerCallerRateLimitGuard.class);
+        service = newService(rotationStore, guardMock);
+
+        // A WRONG-password attempt: the check throws before the
+        // consumption — the victim's account budget stays untouched.
+        assertThatThrownBy(() -> service.grant(PRINCIPAL, "wrong-password"))
+                .isInstanceOf(BadCredentialsException.class);
+        verify(guardMock, never()).acquireAccountPermitForKey(any(), any());
+
+        // The disabled leg: the provider's pre-auth refusal, never a
+        // consumption.
+        assertThatThrownBy(() -> service.grant(DISABLED_PRINCIPAL, PASSWORD))
+                .isInstanceOf(DisabledException.class);
+        verify(guardMock, never()).acquireAccountPermitForKey(any(), any());
+
+        // The CORRECT sign-in consumes exactly ONE account permit, keyed
+        // by the AUTHENTICATED principal on the annotation's own surface.
+        service.grant(PRINCIPAL, PASSWORD);
+        verify(guardMock, times(1))
+                .acquireAccountPermitForKey(PRINCIPAL, "graphqlTokenMutation");
+    }
+
+    // -------------------------------------------------------------------
+    // The projection read before the rotation (the 2026-11-08 #806
+    // round-9 review, Minor): a projection failure must never orphan the
+    // rotation — the presented token stays retryable.
+    // -------------------------------------------------------------------
+
+    @Test
+    void aProjectionFailureBeforeTheRotationLeavesTheTokenRetryable() {
+        PlatformTokenGrantService.IssuedTokens granted = service.grant(PRINCIPAL, PASSWORD);
+        String presented = granted.refreshToken();
+
+        // The identity read throws (the store failing under the read):
+        // the failure lands BEFORE the rotation consumed the presented
+        // value — the client's stored token is still live.
+        when(identitySpi.findCurrentUserAccount(any()))
+                .thenThrow(new RuntimeException("identity read failed"));
+        assertThatThrownBy(() -> service.refresh(presented))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("identity read failed");
+
+        // The projection store recovers (the transient read failure
+        // passed) — the presented token STILL rotates: the failure was
+        // non-destructive (previously the rotation had already consumed
+        // it, the successor was lost, and the grace window expired into
+        // a family revocation forcing a full re-login). doReturn-when:
+        // the plain when() form would INVOKE the mock under the still-
+        // active thenThrow stub during its own stubbing call.
+        org.mockito.Mockito.doReturn(Optional.of(new UserAccountView(
+                UUID.randomUUID(), PRINCIPAL, false, true,
+                Instant.now().minusSeconds(3600), Instant.now(), Set.of("CONSUMER"))))
+                .when(identitySpi).findCurrentUserAccount(any());
+        PlatformTokenGrantService.IssuedTokens retried = service.refresh(presented);
+        assertThat(retried.refreshToken()).isNotBlank();
     }
 
     // -------------------------------------------------------------------

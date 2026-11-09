@@ -337,10 +337,15 @@ public class AttributeMutationDataFetcher {
                 rowRefusals[i] = List.of(decodeRefusalError(i, decodeRefusal));
             }
         }
-        List<AttributeBulkOutcome> outcomes = items.isEmpty()
-                ? List.of()
-                : attributeWriteSpi.bulkUpdateAttributes(
-                        items, errorPolicy == null ? null : errorPolicy.name());
+        // The 2026-11-08 #806 round-9 review (Minor · Security & Privacy):
+        // the SPI rides EVEN when every row was refused at the decode stage
+        // (items empty) — the owning use case's @PreAuthorize role check is
+        // the authorization gate, and short-circuiting an all-refused batch
+        // answered a classified zero-count response to a caller the gate
+        // would have denied. The empty-items path is inert in the service
+        // (empty in, empty out); only the gate runs.
+        List<AttributeBulkOutcome> outcomes = attributeWriteSpi.bulkUpdateAttributes(
+                items, errorPolicy == null ? null : errorPolicy.name());
         List<AttributeBulkUpdateResult> results = new ArrayList<>(size);
         int count = 0;
         int itemIndex = 0;

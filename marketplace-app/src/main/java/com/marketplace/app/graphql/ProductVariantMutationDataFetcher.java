@@ -343,11 +343,15 @@ public class ProductVariantMutationDataFetcher {
                 rowRefusals[i] = List.of(decodeRefusalError(i, decodeRefusal));
             }
         }
-        List<ProductVariantBulkOutcome> outcomes = items.isEmpty()
-                ? List.of()
-                : variantWriteSpi.bulkUpdateVariants(
-                        productId, items, currentAuthentication(),
-                        errorPolicy == null ? null : errorPolicy.name());
+        // The 2026-11-08 #806 round-9 review (Minor · Security & Privacy):
+        // the SPI rides EVEN when every row was refused at the decode stage
+        // — the owning use case's role check is the authorization gate, and
+        // short-circuiting an all-refused batch answered a classified
+        // zero-count response to a caller the gate would have denied. The
+        // empty-items path is inert in the service; only the gate runs.
+        List<ProductVariantBulkOutcome> outcomes = variantWriteSpi.bulkUpdateVariants(
+                productId, items, currentAuthentication(),
+                errorPolicy == null ? null : errorPolicy.name());
         List<ProductVariantBulkResult> results = new ArrayList<>(size);
         int count = 0;
         int itemIndex = 0;

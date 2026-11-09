@@ -297,6 +297,54 @@ class CheckoutDataFetcherTest {
         verifyNoInteractions(checkoutSpi);
     }
 
+    /**
+     * The 2026-11-08 #806 round-9 review (Minor · Functional Correctness):
+     * ONLY the cart-lines unique index (the merge race's own backstop —
+     * V222's {@code uq_cart_items_cart_product}) classifies as the line
+     * conflict; every OTHER integrity violation is RETHROWN for the
+     * resolver's own classification.
+     */
+    @Test
+    void linesAddClassifiesOnlyTheCartLinesUniqueIndexAsTheMergeRaceConflict() {
+        UUID token = UUID.randomUUID();
+        String variantId = variantGlobalId(UUID.randomUUID());
+        List<Map<String, Object>> lines = List.of(Map.of("quantity", 1, "variantId", variantId));
+        when(checkoutSpi.addLines(eq(token), anyList(), any()))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                        "insert into cart_items ... Duplicate key value violates unique constraint"
+                                + " \"uq_cart_items_cart_product\""));
+
+        Map<String, Object> result = fetcher.checkoutLinesAdd(null, null, environmentWithToken(token),
+                lines);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> errors = (List<Map<String, Object>>) result.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("code", "INVALID");
+        assertThat(errors.get(0)).containsEntry("field", "lines");
+        assertThat((String) errors.get(0).get("message")).contains("conflicting state");
+    }
+
+    /** The sibling law: an integrity violation OUTSIDE the cart-lines
+     *  unique index — the 23503 FK failure of a cart deleted concurrently
+     *  under the add — is rethrown, never mislabeled as the client's line
+     *  conflict. */
+    @Test
+    void linesAddRethrowsIntegrityViolationsOutsideTheCartLinesUniqueIndex() {
+        UUID token = UUID.randomUUID();
+        String variantId = variantGlobalId(UUID.randomUUID());
+        List<Map<String, Object>> lines = List.of(Map.of("quantity", 1, "variantId", variantId));
+        org.springframework.dao.DataIntegrityViolationException fkViolation =
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "insert into cart_items ... violates foreign key constraint"
+                                + " \"fk_cart_items_carts\" on table \"carts\"");
+        when(checkoutSpi.addLines(eq(token), anyList(), any())).thenThrow(fkViolation);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> fetcher.checkoutLinesAdd(
+                        null, null, environmentWithToken(token), lines))
+                .isSameAs(fkViolation);
+    }
+
     @Test
     void tokenAloneOnLinesUpdateDelegatesWithTheNativeUuid() {
         UUID token = UUID.randomUUID();

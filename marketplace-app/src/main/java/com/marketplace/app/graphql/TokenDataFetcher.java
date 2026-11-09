@@ -35,10 +35,15 @@ import tools.jackson.databind.json.JsonMapper;
  * {@code graphqlTokenVerify} 50/min, {@code graphqlTokenDeactivate}
  * 10/min), and the per-caller guard keys a 10/min fail-fast budget per
  * caller address ({@code perCallerGrant}); {@code tokenCreate} adds the
- * ACCOUNT-keyed budget ({@code perAccount = true} — strictly exceeding
- * the address budget, so one address can only consume a third of an
- * account's budget and the legitimate owner keeps login headroom while
- * distributed stuffing stays capped). The aspect order is deliberate:
+ * ACCOUNT-keyed budget (strictly exceeding the address budget, so one
+ * address can only consume a third of an account's budget and the
+ * legitimate owner keeps login headroom while distributed stuffing
+ * stays capped) — consumed by the grant service AFTER the password
+ * check, keyed by the authenticated principal (the 2026-11-08 #806
+ * round-9 review: consuming it from the unverified email argument
+ * before verification let a multi-address attacker lock the victim's
+ * correct sign-in out; failed attempts never burn the account budget
+ * now). The aspect order is deliberate:
  * {@code @PerCallerBudget} (order 100) runs BEFORE resilience4j's
  * {@code RateLimiterAspect} (405), so the caller's own budget is
  * consumed before the JVM ceiling is ever consulted.</p>
@@ -87,9 +92,17 @@ public class TokenDataFetcher {
     // RateLimiterAspect (405), so the caller's own budget is consumed BEFORE
     // the shared graphqlTokenMutation permit: a rejected flood can no longer
     // burn the shared budget for every other caller (the exact starvation
-    // the review demonstrated). perAccount adds the credential-stuffing
-    // budget keyed by the normalized email hash.
-    @PerCallerBudget(surface = "graphqlTokenMutation", perAccount = true)
+    // the review demonstrated).
+    //
+    // The 2026-11-08 #806 round-9 review (Major · Security & Privacy): the
+    // account-keyed credential-stuffing budget is NOT declared here — this
+    // root AUTHENTICATES, so its account budget is consumed by the grant
+    // service AFTER the password check (acquireAccountPermitForKey keyed by
+    // the authenticated principal). The unverified email argument must never
+    // burn the victim's account budget: a multi-address attacker could lock
+    // the victim's correct sign-in out before any password check ran (the
+    // per-account law on @PerCallerBudget).
+    @PerCallerBudget(surface = "graphqlTokenMutation")
     @RateLimiter(name = "graphqlTokenMutation")
     public CreateToken tokenCreate(@InputArgument String audience,
                                    @InputArgument String email,

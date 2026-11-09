@@ -76,6 +76,13 @@ public class VoucherMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.VoucherCreate)
     @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherCreate voucherCreate(@InputArgument VoucherInput input) {
+        // The 2026-11-08 #806 round-9 review (Minor · Security & Privacy):
+        // the ADMIN verdict runs BEFORE the input validation and the money
+        // conversion — the owning use case's own gate, so a non-ADMIN
+        // caller answers the authorization denial whatever the input shape
+        // (previously a FIXED value without currency answered the validation
+        // error without the ADMIN guard ever running).
+        voucherWriteSpi.requireWriteAccess();
         if (input == null) {
             throw new IllegalArgumentException("voucherCreate requires a non-null input");
         }
@@ -106,6 +113,11 @@ public class VoucherMutationDataFetcher {
     public VoucherUpdate voucherUpdate(@InputArgument String externalReference,
                                        @InputArgument String id,
                                        @InputArgument VoucherInput input) {
+        // The 2026-11-08 #806 round-9 review (Minor · Security & Privacy):
+        // the ADMIN verdict precedes every validation and the ID decode —
+        // the same law voucherCreate carries (the update's FIXED-no-currency
+        // shape answered validation before the ADMIN guard ran).
+        voucherWriteSpi.requireWriteAccess();
         if (input == null) {
             throw new IllegalArgumentException("voucherUpdate requires a non-null input");
         }
@@ -142,6 +154,10 @@ public class VoucherMutationDataFetcher {
     @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherDelete voucherDelete(@InputArgument String externalReference,
                                        @InputArgument String id) {
+        // The 2026-11-08 #806 round-9 review (Minor · Security & Privacy):
+        // the same law the create/update roots carry — the ADMIN verdict
+        // precedes the argument validation and the ID decode.
+        voucherWriteSpi.requireWriteAccess();
         if (externalReference != null) {
             throw new IllegalArgumentException(
                     "voucherDelete externalReference is not implemented on this platform yet");
@@ -165,6 +181,10 @@ public class VoucherMutationDataFetcher {
     @DgsMutation(field = DgsConstants.MUTATION.VoucherBulkDelete)
     @RateLimiter(name = "graphqlVoucherMutation")
     public VoucherBulkDelete voucherBulkDelete(@InputArgument List<String> ids) {
+        // The 2026-11-08 #806 round-9 review (Minor · Security & Privacy):
+        // the same law every voucher write root carries — the ADMIN verdict
+        // precedes the bounded-list validation and the ID decoding.
+        voucherWriteSpi.requireWriteAccess();
         properties.requireBoundedList(ids, "voucherBulkDelete");
         if (ids == null || ids.isEmpty()) {
             throw new IllegalArgumentException("voucherBulkDelete requires a non-empty list of ids");

@@ -26,6 +26,19 @@ import java.lang.annotation.Target;
  * the SHA-256 of the normalized email argument (the credential-stuffing
  * defense — one attacker distributing attempts across many addresses
  * still has one budget per victim account).</p>
+ *
+ * <p><b>The per-account law (the 2026-11-08 #806 round-9 review, Major
+ * · Security &amp; Privacy):</b> {@link #perAccount()} is for ANONYMOUS
+ * email-argument roots ONLY — a root with no verification to wait for,
+ * where the bounded send itself is the defense. An AUTHENTICATED
+ * surface must NOT declare it: consuming the account budget from the
+ * UNVERIFIED email argument before the surface's own verification lets
+ * an attacker with a few addresses burn the victim's account budget and
+ * lock the victim's correct request out before any password check. The
+ * authenticated surface's owning use case consumes the account budget
+ * itself, AFTER its verification, through
+ * {@link PerCallerRateLimitGuard#acquireAccountPermitForKey} keyed by
+ * the authenticated principal (the password grant's contract).</p>
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
@@ -38,6 +51,10 @@ public @interface PerCallerBudget {
 
     /** Additionally consume a permit keyed by the hash of the request's
      *  normalized email argument (the account-level credential-stuffing
-     *  budget). Only meaningful on roots carrying an email argument. */
+     *  budget). ANONYMOUS email-argument roots only — an authenticated
+     *  surface consumes its account budget in the owning use case AFTER
+     *  verification (see the class javadoc's per-account law; the
+     *  password grant consumes through acquireAccountPermitForKey).
+     *  Only meaningful on roots carrying an email argument. */
     boolean perAccount() default false;
 }

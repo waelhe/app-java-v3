@@ -266,6 +266,13 @@ public class CustomerTypeDataFetcher {
                         sortProperty(sort), sortValueFunction(sort),
                         SCROLL_ID, sort.ascending());
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
+        // The 2026-11-08 #806 round-9 review (Minor · Functional
+        // Correctness): the ADMIN verdict runs BEFORE the empty-page early
+        // return — the SPI's own read gate, so a non-admin caller answers
+        // the authorization denial whatever the value of first (previously
+        // first: 0 leaked a success-shaped empty connection past the gate
+        // the scroll body alone enforced).
+        customerTypeSpi.requireReadAccess(currentAuthentication());
         if (requested <= 0) {
             return CustomerTypeCountableConnection.newBuilder()
                     .edges(List.of())

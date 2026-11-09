@@ -16,6 +16,16 @@ import java.util.UUID;
  * the same {@code @PreAuthorize} mechanism the module's own discount
  * reads established.
  *
+ * <p><b>The transport calls {@link #requireWriteAccess()} BEFORE its own
+ * argument validation</b> (the 2026-11-08 #806 round-9 review, Minor ·
+ * Security &amp; Privacy): the {@code @PreAuthorize} guards ride the
+ * write methods themselves, so a validation failure answered BEFORE the
+ * method was ever invoked — a non-ADMIN caller learned the validation
+ * verdict (and the validation answered as the denial) without the
+ * authorization gate ever running. The exposed gate runs the SAME
+ * {@code hasRole('ADMIN')} verdict the write methods carry, before any
+ * transport-level validation or ID decoding.</p>
+ *
  * <p><b>The result contract is the Saleor payload-error shape's own
  * domain mapping</b> (the registered "Mutation payload errors" ADAPT
  * divergence): domain-level validation outcomes answer as
@@ -37,6 +47,16 @@ import java.util.UUID;
  */
 @NamedInterface("pricing-spi")
 public interface VoucherWriteSpi {
+
+    /**
+     * The write-roots authorization gate (the 2026-11-08 #806 round-9
+     * review): the SAME {@code hasRole('ADMIN')} verdict every write
+     * method carries, exposed so the transport can enforce it BEFORE its
+     * own argument validation and ID decoding — a validation failure must
+     * never answer for a caller the authorization gate would have denied
+     * before any validation ran.
+     */
+    void requireWriteAccess();
 
     /**
      * Creates one voucher policy row — the Saleor {@code voucherCreate}

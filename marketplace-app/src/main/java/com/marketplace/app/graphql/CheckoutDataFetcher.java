@@ -215,6 +215,20 @@ public class CheckoutDataFetcher {
             // for this root is a PAYLOAD error — CheckoutError under
             // `lines`, the same LINE_CONFLICT sentence the update path
             // answers for a conflicting line state.
+            //
+            // The 2026-11-08 #806 round-9 review (Minor · Functional
+            // Correctness): ONLY the cart-lines unique index classifies as
+            // the merge-race conflict — the index's own name is the
+            // discriminator (the catalog's established guard shape, the
+            // uq_product_variants_provider_sku pattern). Every OTHER
+            // integrity violation — the 23503 FK failure of a cart deleted
+            // concurrently under the add (fk_cart_items_carts), a NOT NULL,
+            // a CHECK — is RETHROWN for the resolver's own classification,
+            // never mislabeled as a client line conflict.
+            if (exception.getMessage() == null
+                    || !exception.getMessage().contains("uq_cart_items_cart_product")) {
+                throw exception;
+            }
             log.info("checkoutLinesAdd lost the concurrent uniqueness race — {}", exception.getMessage(), exception);
             return payload(null, List.of(error("lines", LINE_CONFLICT, "INVALID")), true, authentication);
         }

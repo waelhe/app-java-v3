@@ -1155,6 +1155,26 @@ public class UserService implements IdentitySpi {
         }
     }
 
+    /**
+     * The login store's own CURRENT effective authorities (the
+     * 2026-11-08 #806 round-9 review's role-revocation race — see the SPI
+     * contract). The framework manager is the same bean the authentication
+     * chain reads from, so the answer is the chain's own truth at the
+     * moment of the call — exactly what the grant's post-save role wall
+     * must compare against. A subject with no login row answers the empty
+     * set (nothing may be granted for it).
+     */
+    @Override
+    public java.util.Set<String> loginEffectiveAuthorities(String subject) {
+        try {
+            return userDetailsManager.loadUserByUsername(subject).getAuthorities().stream()
+                    .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        } catch (org.springframework.security.core.userdetails.UsernameNotFoundException absent) {
+            return java.util.Set.of();
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public java.util.Optional<com.marketplace.identity.spi.UserAccountView> findCurrentUserAccount(Authentication authentication) {

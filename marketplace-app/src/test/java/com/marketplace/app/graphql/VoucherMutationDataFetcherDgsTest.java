@@ -376,7 +376,46 @@ class VoucherMutationDataFetcherDgsTest {
         assertThat(errors).hasSize(1);
         assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
         assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
-        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
+    }
+
+    /**
+     * The 2026-11-08 #806 round-9 review (Minor · Security & Privacy): a
+     * NON-ADMIN caller sending a FIXED value WITHOUT currency — the exact
+     * shape that used to answer the money VALIDATION error before the
+     * owning use case (and its ADMIN gate) ever ran — now answers the
+     * AUTHORIZATION denial: the gate precedes every validation and every
+     * conversion, so the caller learns nothing about the input contract
+     * the gate would have denied them at.
+     */
+    @Test
+    void aNonAdminCallerAnswersTheAdminDenialBeforeAnyValidationRuns() {
+        authenticateAs("dgs-consumer-subject", "CONSUMER");
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException(
+                "MANAGE_DISCOUNTS requires the ADMIN capability"))
+                .when(voucherWriteSpi).requireWriteAccess();
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { voucherCreate(input: {
+                    code: "locked-code", discountValueType: FIXED,
+                    discountValue: 500.00
+                }) {
+                    errors { field code }
+                    voucher { id }
+                } }
+                """, "data.voucherCreate"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("ADMIN capability")
+                .satisfies(ex -> assertThat(
+                                ((com.netflix.graphql.dgs.exceptions.QueryException) ex).getErrors().get(0)
+                                        .getExtensions())
+                        .containsEntry("errorCode", "AUTHZ-001")
+                        .containsEntry("category", "authz"));
+        // The owner never saw the write: the gate refusal is the whole
+        // interaction.
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
     }
 
     /**
@@ -404,7 +443,8 @@ class VoucherMutationDataFetcherDgsTest {
         assertThat(errors).hasSize(1);
         assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
         assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
-        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
     }
 
     /**
@@ -454,7 +494,8 @@ class VoucherMutationDataFetcherDgsTest {
         List<Map<String, Object>> errors = (List<Map<String, Object>>) payload.get("errors");
         assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
         assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
-        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
     }
 
     /**
@@ -479,7 +520,8 @@ class VoucherMutationDataFetcherDgsTest {
         List<Map<String, Object>> errors = (List<Map<String, Object>>) payload.get("errors");
         assertThat(errors.get(0).get("field")).isEqualTo("discountValue");
         assertThat(errors.get(0).get("code")).isEqualTo("INVALID");
-        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
     }
 
     /**
@@ -501,6 +543,12 @@ class VoucherMutationDataFetcherDgsTest {
                 } }
                 """, "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class);
+        // The 2026-11-08 #806 round-9 review's legitimate exception: the
+        // SCALAR COERCION layer rejects the negative literal while parsing
+        // the document — the fetcher (and its authorization gate) never
+        // runs, so zero interactions is the honest verdict. The gate law
+        // covers what reaches the fetcher; a document that never parses
+        // reaches nothing.
         org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
     }
 
@@ -605,7 +653,8 @@ class VoucherMutationDataFetcherDgsTest {
                 """, "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("Invalid global ID");
-        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
     }
 
     /**
@@ -625,7 +674,8 @@ class VoucherMutationDataFetcherDgsTest {
                 """.formatted(voucherGlobalId(UUID.randomUUID())), "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("externalReference is not implemented");
-        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
     }
 
     /**
@@ -688,6 +738,7 @@ class VoucherMutationDataFetcherDgsTest {
                 """, "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
                 .hasMessageContaining("Invalid global ID");
-        org.mockito.Mockito.verifyNoInteractions(voucherWriteSpi);
+        verify(voucherWriteSpi).requireWriteAccess();
+        org.mockito.Mockito.verifyNoMoreInteractions(voucherWriteSpi);
     }
 }

@@ -68,10 +68,21 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
     /**
      * The reuse-detection ledger (V296): every completed rotation records
      * the CONSUMED value's SHA-256 under its authorization family — the
-     * oauth2_authorization row IS the family.
+     * oauth2_authorization row IS the family. The insert runs AFTER the
+     * full-row save and anchors {@code consumed_at} at the database's
+     * wall clock ({@code clock_timestamp()}) — NOT the column's
+     * {@code CURRENT_TIMESTAMP} default, which freezes at TRANSACTION
+     * START: a rotation whose commit is delayed past the grace window
+     * would otherwise anchor its own ledger row before the rotation was
+     * even visible, so the loser's immediate retry (landing milliseconds
+     * after the winner's commit) would already see the row as STALE and
+     * revoke the winning family (the 2026-11-08 #806 round-9 review).
+     * With the completion anchor, the 30-second grace window starts at
+     * the rotation's actual completion and absorbs the concurrent retry.
      */
     private static final String RECORD_CONSUMED_REFRESH_TOKEN =
-            "INSERT INTO consumed_refresh_tokens (authorization_id, token_hash) VALUES (?, ?)";
+            "INSERT INTO consumed_refresh_tokens (authorization_id, token_hash, consumed_at)"
+                    + " VALUES (?, ?, clock_timestamp())";
 
     /**
      * The theft-signal predicate: a consumed value presented again MORE
@@ -125,13 +136,16 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
             revokeFamilyIfConsumed(presentedRefreshToken);
             return false;
         }
-        // The consumption won: record the consumed value's hash in the
-        // family ledger (V296) and complete the rotation's full row (the
+        // The consumption won: complete the rotation's full row (the
         // successor pair's columns) on the same row lock, in the same
-        // transaction — all-or-nothing with the consumption itself.
+        // transaction — all-or-nothing with the consumption itself — and
+        // only THEN record the consumed value's hash in the family ledger
+        // (V296) with its consumed_at anchored at the database's wall
+        // clock AFTER the save: the grace window must start at the
+        // rotation's completion, never at the transaction's start.
+        authorizationService().save(rotated);
         jdbcTemplate.update(RECORD_CONSUMED_REFRESH_TOKEN,
                 rotated.getId(), sha256(presentedRefreshToken));
-        authorizationService().save(rotated);
         return true;
     }
 

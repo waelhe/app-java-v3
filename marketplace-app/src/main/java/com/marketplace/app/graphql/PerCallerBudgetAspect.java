@@ -9,9 +9,20 @@ import org.springframework.stereotype.Component;
 
 /**
  * The advice behind {@link PerCallerBudget} — consumes the caller's own
- * budget (and, when requested, the account's) BEFORE every other advice
- * on the method, most importantly BEFORE resilience4j's
+ * budget (and, on ANONYMOUS email-argument roots, the account's) BEFORE
+ * every other advice on the method, most importantly BEFORE resilience4j's
  * {@code @RateLimiter} advice acquires the shared platform permit.
+ *
+ * <p><b>The per-account leg is the anonymous shape only</b> (the
+ * 2026-11-08 #806 round-9 review's law on {@link PerCallerBudget}): the
+ * aspect consumes {@code perAccount} from the request's UNVERIFIED email
+ * argument — legitimate exactly when the root has no verification to
+ * wait for (the anonymous password-reset request, where the bounded
+ * send is the defense). An AUTHENTICATED surface never declares
+ * {@code perAccount}: its owning use case consumes the account budget
+ * after its own verification, keyed by the authenticated principal
+ * (the password grant's {@code acquireAccountPermitForKey}), so failed
+ * verification attempts can never burn the victim's account budget.</p>
  *
  * <p><b>Ordering (the wave-4 review's Major finding):</b> Spring AOP
  * composes advices by aspect order — the LOWER order runs on the OUTSIDE.

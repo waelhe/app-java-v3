@@ -86,6 +86,18 @@ public class VoucherWriteService implements VoucherWriteSpi {
                 org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    /**
+     * The write-roots authorization gate (the 2026-11-08 #806 round-9
+     * review — see the SPI contract): the SAME {@code hasRole('ADMIN')}
+     * verdict every write method carries, exposed so the transport can
+     * enforce it BEFORE its own argument validation and ID decoding.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireWriteAccess() {
+        // The @PreAuthorize guard IS the gate — no body needed.
+    }
+
     @Override
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional

@@ -246,11 +246,15 @@ public class ProductMutationDataFetcher {
                 rowRefusals[i] = List.of(decodeRefusalError(i, decodeRefusal));
             }
         }
-        List<ProductBulkOutcome> outcomes = commands.isEmpty()
-                ? List.of()
-                : productWriteSpi.bulkCreateProducts(
-                        commands, currentAuthentication(),
-                        errorPolicy == null ? null : errorPolicy.name());
+        // The 2026-11-08 #806 round-9 review (Minor · Security & Privacy):
+        // the SPI rides EVEN when every row was refused at the decode stage
+        // — the owning use case's role check is the authorization gate, and
+        // short-circuiting an all-refused batch answered a classified
+        // zero-count response to a caller the gate would have denied. The
+        // empty-commands path is inert in the service; only the gate runs.
+        List<ProductBulkOutcome> outcomes = productWriteSpi.bulkCreateProducts(
+                commands, currentAuthentication(),
+                errorPolicy == null ? null : errorPolicy.name());
         List<ProductBulkResult> results = new ArrayList<>(size);
         int count = 0;
         int commandIndex = 0;

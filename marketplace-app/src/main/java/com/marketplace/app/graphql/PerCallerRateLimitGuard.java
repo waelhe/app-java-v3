@@ -52,18 +52,28 @@ import java.util.function.Function;
  * in a DOCUMENTED contract, never in header parsing heuristics:</p>
  *
  * <ul>
- * <li><b>Internal path</b> (the ROOT request's Host ends with the Railway
- * private-DNS suffix {@code .railway.internal}): the key is the container's
- * socket peer address ({@code getRemoteAddr()}). The Railway platform
- * contract (staff-confirmed, docs.railway.com private networking): requests
- * over {@code *.railway.internal} SKIP the public edge and its header
- * sanitization — any service in the same project environment can send its
- * own forwarding headers, so {@code X-Forwarded-For}/{@code X-Real-IP} are
- * read NOWHERE on this path. The socket peer IS the caller's identity
- * inside the project-environment trust boundary (this deployment's one
- * private caller is its own edge BFF, whose relay target
+ * <li><b>Internal path</b> (the ROOT request's socket PEER address is a
+ * private-mesh address — RFC 1918 or ULA, the project's documented
+ * private-network standard; the documented private-DNS Host suffix
+ * {@code .railway.internal} stays as the belt): the key is the
+ * container's socket peer address ({@code getRemoteAddr()}). The Railway
+ * platform contract (staff-confirmed, docs.railway.com private networking):
+ * requests over {@code *.railway.internal} SKIP the public edge and its
+ * header sanitization — any service in the same project environment can
+ * send its own forwarding headers, so {@code X-Forwarded-For}/{@code
+ * X-Real-IP} are read NOWHERE on this path. The socket peer IS the
+ * caller's identity inside the project-environment trust boundary (this
+ * deployment's one private caller is its own edge BFF, whose relay target
  * {@code EDGE_BACKEND_URL=http://app-java-v3.railway.internal:8080} gives
- * those requests their internal Host).</li>
+ * those requests their internal Host). The peer is the PRIMARY
+ * discriminator (the 2026-11-08 #806 round-9 review, Major): a
+ * private-mesh caller that sends a NON-internal Host used to fall into
+ * the public branch and trust a self-controlled {@code X-Real-IP} —
+ * rotating fresh budgets at will. The peer address cannot be rotated
+ * from inside the mesh, so the private-mesh peer settles the path
+ * regardless of the Host header's shape; the Railway HTTP edge's own
+ * agents connect from the CGNAT space 100.64.0.0/10 — never RFC
+ * 1918/ULA — so the public edge never misclassifies as internal.</li>
  * <li><b>Public path</b> (everything reaching the listener through the
  * Railway HTTP edge): the key is {@code X-Real-IP} — the header Railway's
  * edge OVERWRITES on every public request and documents as "the client's
@@ -230,10 +240,27 @@ public class PerCallerRateLimitGuard {
                 collectBudgetSurface(PER_CALLER_CONFIG, entry.getKey(), surfaceNames);
                 collectBudgetSurface(PER_ACCOUNT_CONFIG, entry.getKey(), surfaceNames);
             }
+            // The 2026-11-08 #806 round-9 review (Minor · Functional
+            // Correctness, verified against the INSTALLED resilience4j
+            // 2.4.0 bytecode): RateLimiterRegistry.getConfiguration sees
+            // ONLY the `configs` map — the auto-configuration builds the
+            // registry's named configurations from `configs` alone
+            // (createRateLimiterRegistry), and an `instances` entry
+            // initializes its limiter through rateLimiter(name, config),
+            // whose AbstractRegistry.computeIfAbsent path stores the ENTRY
+            // but never the CONFIG (the configurations map is written only
+            // by addConfiguration). A budget-family key declared under
+            // `instances` is therefore silently INVISIBLE to both the
+            // runtime resolveConfig and this startup validation — the
+            // guard would run the family-wide values while the operator
+            // believes the override applies. Fail fast at startup: the
+            // budget families' keys belong under `configs` (and a silent
+            // misconfiguration is the exact always-evict class the
+            // max-tracked-callers check exists to prevent).
             for (java.util.Map.Entry<String, ?> entry
                     : declaredLimiters.getInstances().entrySet()) {
-                collectBudgetSurface(PER_CALLER_CONFIG, entry.getKey(), surfaceNames);
-                collectBudgetSurface(PER_ACCOUNT_CONFIG, entry.getKey(), surfaceNames);
+                requireNotAnInstancesBudgetEntry(PER_CALLER_CONFIG, entry.getKey());
+                requireNotAnInstancesBudgetEntry(PER_ACCOUNT_CONFIG, entry.getKey());
             }
             for (String surface : surfaceNames) {
                 // Every override in these families is a fail-fast budget:
@@ -279,10 +306,14 @@ public class PerCallerRateLimitGuard {
      * review, Major · Security &amp; Privacy): the account budget must
      * strictly exceed the caller budget AND the MOST one address can
      * obtain within one account window (callerLimit × ceil(accountWindow
-     * / callerWindow)) must stay within the account budget — otherwise
-     * one address alone exhausts an account's whole budget and locks the
-     * owner out. Shared by the family-wide startup check and every
-     * per-surface override check (the 2026-11-06 #806 round review).
+     * / callerWindow)) must stay STRICTLY BELOW the account budget —
+     * otherwise one address alone exhausts an account's whole budget and
+     * locks the owner out. The ceiling comparison is >= on purpose (the
+     * 2026-11-08 #806 round-9 review): a ceiling EQUAL to the budget
+     * still leaves the owner zero headroom — one address alone consumes
+     * every permit of the account window. Shared by the family-wide
+     * startup check and every per-surface override check (the
+     * 2026-11-06 #806 round review).
      */
     private static void requireWindowAwareAccountHeadroom(
             String configName, RateLimiterConfig callerConfig, RateLimiterConfig accountConfig) {
@@ -293,7 +324,7 @@ public class PerCallerRateLimitGuard {
         long callerCeilingPerAccountWindow =
                 callerConfig.getLimitForPeriod() * windowsPerAccountWindow;
         if (accountConfig.getLimitForPeriod() <= callerConfig.getLimitForPeriod()
-                || callerCeilingPerAccountWindow > accountConfig.getLimitForPeriod()) {
+                || callerCeilingPerAccountWindow >= accountConfig.getLimitForPeriod()) {
             throw new IllegalArgumentException(
                     "marketplace.graphql.per-caller-rate-limit: the " + configName
                             + " pair violates the lockout invariant — the account budget ("
@@ -338,6 +369,28 @@ public class PerCallerRateLimitGuard {
     }
 
     /**
+     * The instances-map rejection (the 2026-11-08 #806 round-9 review —
+     * see the constructor's full evidence block): a budget-family key
+     * under {@code resilience4j.rateLimiter.instances} is invisible to
+     * {@code RateLimiterRegistry.getConfiguration}, so the guard would
+     * silently ignore the operator's override. The startup fails fast —
+     * the override belongs under {@code configs}.
+     */
+    private static void requireNotAnInstancesBudgetEntry(String family, String instancesKey) {
+        if (instancesKey != null
+                && (instancesKey.equals(family) || instancesKey.startsWith(family + "-"))) {
+            throw new IllegalArgumentException(
+                    "marketplace.graphql.per-caller-rate-limit: the budget entry '" + instancesKey
+                            + "' is declared under resilience4j.rateLimiter.instances — budget"
+                            + " family overrides are visible to this guard ONLY under configs"
+                            + " (the registry's getConfiguration reads configs entries alone;"
+                            + " an instances entry initializes its limiter but never registers"
+                            + " the config, verified against resilience4j 2.4.0). Move the"
+                            + " entry to configs");
+        }
+    }
+
+    /**
      * Consumes one permit of the caller's own budget for the surface.
      *
      * @param environment the data fetcher's environment (the DGS request
@@ -348,16 +401,17 @@ public class PerCallerRateLimitGuard {
      *                             limiters raise
      */
     public void acquirePermit(DataFetchingEnvironment environment, String surface) {
-        acquirePermitForKey(environment, surface, "-caller:" + remoteAddressKey(environment),
+        acquirePermitForKey(surface, "-caller:" + remoteAddressKey(environment),
                 PER_CALLER_CONFIG, DEFAULT_PER_CALLER_CONFIG, perCallerRegistry);
     }
 
     /**
      * Consumes one permit of the ACCOUNT's own budget for the surface —
-     * the wave-4 review (Minor · Security & Privacy): the address key is
-     * alone, so an attacker distributing attempts across many addresses
-     * faces no limit per victim account (credential stuffing). The key
-     * is the SHA-256 of the NORMALIZED email argument (trimmed, then
+     * the ANONYMOUS email-argument shape (the wave-4 review, Minor ·
+     * Security &amp; Privacy): the address key is alone, so an attacker
+     * distributing attempts across many addresses faces no limit per
+     * victim account (credential stuffing, mailbox flooding). The key is
+     * the SHA-256 of the NORMALIZED email argument (trimmed, then
      * lower-cased with {@link Locale#ROOT} — the identity owner's own
      * account-lookup normalization, {@code UserAccountAdminService}'s
      * {@code trim().toLowerCase(Locale.ROOT)}; the JVM-default-locale
@@ -368,9 +422,23 @@ public class PerCallerRateLimitGuard {
      * controlled key longer than the digest, and the store reveals
      * nothing about the attempted accounts.
      *
+     * <p><b>This shape is for ANONYMOUS roots only</b> (the
+     * 2026-11-08 #806 round-9 review, Major · Security &amp; Privacy):
+     * the email ARGUMENT is unverified input, so consuming the account
+     * budget from it BEFORE the root's own work lets an attacker with a
+     * few addresses burn the victim's account budget and lock the
+     * victim's own legitimate request out before any verification runs.
+     * An anonymous root (e.g. the password-reset request) has NO
+     * verification to wait for — the email argument is the honest key
+     * there, and the bounded send is the defense itself. An AUTHENTICATED
+     * surface (e.g. the password grant) consumes its account budget
+     * through {@link #acquireAccountPermitForKey} AFTER authentication —
+     * keyed by the authenticated principal, never by the unverified
+     * argument.</p>
+     *
      * <p><b>The account budget rides its OWN {@code perAccountGrant}
      * configuration, NEVER the address budget's {@code perCallerGrant}
-     * (the wave-4 #806 review's second-cycle Major · Security & Privacy
+     * (the wave-4 #806 review's second-cycle Major · Security &amp; Privacy
      * finding).</b> Sharing the address budget's 10/min let ONE address
      * burn the victim's ACCOUNT budget — ten {@code tokenCreate} calls
      * with the victim's email — after which the victim's own login from
@@ -407,7 +475,46 @@ public class PerCallerRateLimitGuard {
         // (perAccountGrant-<surface>) — exactly the pair the startup
         // validation checks — while the "-account" suffix stays on the
         // INSTANCE key only (the account family's own namespacing).
-        acquirePermitForKey(environment, surface, "-account:" + accountKey,
+        acquirePermitForKey(surface, "-account:" + accountKey,
+                PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG, perAccountRegistry);
+    }
+
+    /**
+     * Consumes one permit of the ACCOUNT's own budget for the surface —
+     * the AUTHENTICATED shape (the 2026-11-08 #806 round-9 review, Major
+     * · Security &amp; Privacy): the key is the SHA-256 of the NORMALIZED
+     * email the owning use case passes AFTER its own verification (e.g.
+     * the password grant consumes this only once the password check
+     * succeeded — the authenticated principal, never the unverified
+     * email argument). Failed verification attempts therefore never burn
+     * the account's budget: an attacker distributing attempts across
+     * many addresses can no longer lock the victim's CORRECT sign-in out
+     * before the password check — the exact pre-authentication lockout
+     * the review demonstrated — while the per-ADDRESS budget and the
+     * shared platform ceiling still cap the attempt flood itself, and
+     * successful grants stay capped per-account through this method.
+     *
+     * <p>Same key derivation and same {@code perAccountGrant}
+     * configuration as the anonymous shape — one account, one budget,
+     * both consumption points keyed identically (the authenticated
+     * principal IS the account's normalized email).</p>
+     *
+     * @param email  the AUTHENTICATED account identifier (the principal
+     *               name — verified by the caller before this call)
+     * @param surface the surface name — the account instances ride
+     *                {@code <surface>-account:<sha256>} keys with the
+     *                SEPARATE {@code perAccountGrant} config
+     * @throws RequestNotPermitted the account's own budget is exhausted
+     */
+    public void acquireAccountPermitForKey(String email, String surface) {
+        // Null only in a context that never authenticates a principal —
+        // nothing to budget (the same fail-safe direction the anonymous
+        // shape takes on a missing argument).
+        String accountKey = accountKeyOfEmail(email);
+        if (accountKey == null) {
+            return;
+        }
+        acquirePermitForKey(surface, "-account:" + accountKey,
                 PER_ACCOUNT_CONFIG, DEFAULT_PER_ACCOUNT_CONFIG, perAccountRegistry);
     }
 
@@ -439,7 +546,7 @@ public class PerCallerRateLimitGuard {
      * (the full application context), else the guard's own programmatic
      * default of that family.
      */
-    private void acquirePermitForKey(DataFetchingEnvironment environment, String surface, String keySuffix,
+    private void acquirePermitForKey(String surface, String keySuffix,
                                      String configName, RateLimiterConfig fallback,
                                      RateLimiterRegistry familyRegistry) {
         // The keyed budgets ride the yml's configs when the shared registry
@@ -481,10 +588,28 @@ public class PerCallerRateLimitGuard {
      * argument (lower-cased, trimmed) — or null when this request carries
      * no email argument. Handles both the flat argument shape (the
      * {@code tokenCreate(email: ...)} root) and the nested-input shape
-     * ({@code input.email} / {@code input.emailAddress}).
+     * ({@code input.email} / {@code input.emailAddress}). The
+     * normalization itself is {@link #accountKeyOfEmail} — the ONE
+     * derivation both consumption shapes share.
      */
     private static String accountKeyOf(DataFetchingEnvironment environment) {
         String email = argumentEmail(environment);
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return accountKeyOfEmail(email);
+    }
+
+    /**
+     * The account budget key of an EMAIL VALUE (the shared derivation of
+     * both consumption shapes): the SHA-256 hex of the normalized address
+     * (trimmed, then lower-cased with {@link Locale#ROOT} — the identity
+     * owner's own account-lookup normalization). Null for a blank value.
+     * The authenticated shape passes the verified principal; the
+     * anonymous shape passes the email argument — one normalization, one
+     * key space, one budget per account.
+     */
+    static String accountKeyOfEmail(String email) {
         if (email == null || email.isBlank()) {
             return null;
         }
@@ -547,12 +672,15 @@ public class PerCallerRateLimitGuard {
      * Host/port/scheme resolution stays the FRAMEWORK wrapper's job; only
      * the SECURITY key's derivation reads the root.</p>
      *
-     * <p><b>Internal path:</b> the root's {@code getServerName()} is the
-     * raw Host as delivered (the wrapper never touches it) — on the
-     * Railway private mesh it is {@code app-java-v3.railway.internal}
-     * (the edge BFF's documented relay target). The key is the socket
+     * <p><b>Internal path:</b> the socket PEER is the private-mesh address
+     * (RFC 1918/ULA — see {@link #isRailwayInternalPath}); on the Railway
+     * private mesh it is e.g. {@code app-java-v3.railway.internal}'s mesh
+     * peer (the edge BFF's documented relay target). The key is the socket
      * peer; forwarded headers are not consulted at all (the platform does
-     * not sanitize headers on this path, so none of them can be trusted).</p>
+     * not sanitize headers on this path, so none of them can be trusted).
+     * The Host header alone never settles this path — a private-mesh
+     * caller rotating a public-looking Host must not reach the
+     * {@code X-Real-IP} branch (the 2026-11-08 #806 round-9 review).</p>
      *
      * <p><b>Public path:</b> the key is {@code X-Real-IP} — Railway's edge
      * overwrites it on every public request and documents it as the
@@ -588,20 +716,43 @@ public class PerCallerRateLimitGuard {
     }
 
     /**
-     * Whether the request arrived over the Railway PRIVATE mesh: the ROOT
-     * request's {@code getServerName()} — the raw Host header as delivered
-     * to the container, port-stripped per the Servlet spec — ends with
-     * {@code .railway.internal} (the platform's documented private-DNS
-     * suffix; this deployment's internal relay target is
+     * Whether the request arrived over the Railway PRIVATE mesh.
+     *
+     * <p><b>The PRIMARY discriminator is the socket PEER address</b> (the
+     * 2026-11-08 #806 round-9 review, Major · Security &amp; Privacy):
+     * the private-mesh address standard is RFC 1918 (10/8, 172.16/12,
+     * 192.168/16) plus IPv6 ULA (fc00::/7) — the same standard the
+     * deployment reference and {@link #budgetKeyOf}'s mesh note document.
+     * A private-mesh caller cannot rotate its socket peer (the mesh
+     * routes the caller's own address), so a caller inside the trust
+     * boundary is classified internal NO MATTER which Host header it
+     * sends — the previous Host-only rule let a mesh caller with a
+     * public-looking Host reach the {@code X-Real-IP} branch and rotate
+     * fresh budgets through the self-controlled header. The Railway HTTP
+     * edge's own agents connect from the CGNAT space 100.64.0.0/10 —
+     * outside RFC 1918/ULA — so genuine public edge traffic never
+     * misclassifies here.</p>
+     *
+     * <p><b>The private-DNS Host suffix stays as the belt</b> (documented
+     * belt-and-braces, never the sole key): the raw Host header as
+     * delivered to the container, port-stripped per the Servlet spec,
+     * ending with {@code .railway.internal} (the platform's documented
+     * private-DNS suffix; this deployment's internal relay target is
      * {@code app-java-v3.railway.internal}). Compared case-insensitively
      * under {@link Locale#ROOT} (hostnames are case-insensitive per RFC
      * 3986 §3.2.2; the wave-4 review taught never to case-map without an
-     * explicit locale). Public edge traffic carries the public domain —
-     * never this suffix — so the suffix is the documented, stable path
-     * discriminator the reviewer's policy asks for.
+     * explicit locale). A Host-only match grants NOTHING the peer rule
+     * would not: this branch keys the socket peer and reads no forwarded
+     * header, so a public-edge client spoofing the internal Host merely
+     * joins the edge agent's own peer-keyed budget — no fresh budgets,
+     * no bypass.</p>
      */
     private static boolean isRailwayInternalPath(
             jakarta.servlet.http.HttpServletRequest request) {
+        String peer = request.getRemoteAddr();
+        if (peer != null && isPrivateMeshAddress(peer)) {
+            return true;
+        }
         String host = request.getServerName();
         return host != null
                 && host.toLowerCase(Locale.ROOT).endsWith(".railway.internal");
@@ -685,6 +836,54 @@ public class PerCallerRateLimitGuard {
             ANY_IPV6 =
             org.springframework.security.util.matcher.InetAddressMatchers.fromIpAddress(
                     "::/0");
+
+    /**
+     * The private-mesh matchers behind {@link #isPrivateMeshAddress} (the
+     * 2026-11-08 #806 round-9 review): the project's documented
+     * private-network address standard — RFC 1918's three blocks plus
+     * IPv6 Unique Local Addresses (fc00::/7, RFC 4193) — through the SAME
+     * official Spring Security address machinery the literal gate uses.
+     * The Railway HTTP edge's agents connect from 100.64.0.0/10 (RFC
+     * 6598 shared/CGNAT space — outside every matcher here), so the
+     * public edge never matches.
+     */
+    private static final org.springframework.security.util.matcher.InetAddressMatcher
+            PRIVATE_RFC1918_10 =
+            org.springframework.security.util.matcher.InetAddressMatchers.fromIpAddress(
+                    "10.0.0.0/8");
+    private static final org.springframework.security.util.matcher.InetAddressMatcher
+            PRIVATE_RFC1918_172 =
+            org.springframework.security.util.matcher.InetAddressMatchers.fromIpAddress(
+                    "172.16.0.0/12");
+    private static final org.springframework.security.util.matcher.InetAddressMatcher
+            PRIVATE_RFC1918_192 =
+            org.springframework.security.util.matcher.InetAddressMatchers.fromIpAddress(
+                    "192.168.0.0/16");
+    private static final org.springframework.security.util.matcher.InetAddressMatcher
+            PRIVATE_ULA_FC00 =
+            org.springframework.security.util.matcher.InetAddressMatchers.fromIpAddress(
+                    "fc00::/7");
+
+    /**
+     * Whether the address is a PRIVATE-MESH literal — RFC 1918 or ULA —
+     * the internal-path discriminator {@link #isRailwayInternalPath} keys
+     * on (the 2026-11-08 #806 round-9 review). Same DNS-free validation
+     * contract as {@link #isIpLiteral}: Spring Security's parser rejects
+     * hostname-shaped values before any resolution, so a non-literal
+     * (tests, odd containers) simply answers {@code false} and never
+     * throws.
+     */
+    private static boolean isPrivateMeshAddress(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            return PRIVATE_RFC1918_10.matches(value) || PRIVATE_RFC1918_172.matches(value)
+                    || PRIVATE_RFC1918_192.matches(value) || PRIVATE_ULA_FC00.matches(value);
+        } catch (IllegalArgumentException notALiteral) {
+            return false;
+        }
+    }
 
     /**
      * Whether the value parses as an IP literal (either family) — the

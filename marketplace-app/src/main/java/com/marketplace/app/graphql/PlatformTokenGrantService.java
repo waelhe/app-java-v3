@@ -16,7 +16,6 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
@@ -108,11 +107,14 @@ public class PlatformTokenGrantService {
     private static final String ROLES_ATTRIBUTE = "platform.roles";
 
     /**
-     * The fixed input of the timing-equalization dummy comparison (the
-     * OWASP Authentication Cheat Sheet pattern — a constant, never
-     * caller data). Package-visible for the grant suite's verification.
+     * The account budget's surface name — the SAME surface
+     * {@code TokenDataFetcher.tokenCreate}'s {@code @PerCallerBudget}
+     * declares ({@code graphqlTokenMutation}), so the post-authentication
+     * account permit consumed here (the 2026-11-08 #806 round-9 review)
+     * rides the identical {@code perAccountGrant-graphqlTokenMutation}
+     * override point the guard's startup validation checks.
      */
-    static final String DUMMY_COMPARISON_SECRET = "platform.timing-equalization.dummy-secret";
+    private static final String ACCOUNT_BUDGET_SURFACE = "graphqlTokenMutation";
 
     /**
      * The shard review (Major · Security & Privacy, 2026-11-01 wave 2;
@@ -157,9 +159,8 @@ public class PlatformTokenGrantService {
     private final ObjectProvider<JWKSource<SecurityContext>> jwkSource;
     private final ObjectProvider<AuthorizationServerSettings> authorizationServerSettings;
     private final ObjectProvider<JwtDecoder> jwtDecoder;
-    private final ObjectProvider<PasswordEncoder> passwordEncoder;
-    private final String dummyBcrypt;
     private final IdentitySpi identitySpi;
+    private final ObjectProvider<PerCallerRateLimitGuard> perCallerRateLimitGuard;
     private final String audience;
     private final String publicClientId;
     private final java.time.Duration refreshFamilyMaxAge;
@@ -172,7 +173,7 @@ public class PlatformTokenGrantService {
             ObjectProvider<JWKSource<SecurityContext>> jwkSource,
             ObjectProvider<AuthorizationServerSettings> authorizationServerSettings,
             ObjectProvider<JwtDecoder> jwtDecoder,
-            ObjectProvider<PasswordEncoder> passwordEncoder,
+            ObjectProvider<PerCallerRateLimitGuard> perCallerRateLimitGuard,
             IdentitySpi identitySpi,
             @Value("${marketplace.security.jwt.audience:marketplace-api}") String audience,
             @Value("${marketplace.security.oauth2.public-client.client-id:"
@@ -186,14 +187,7 @@ public class PlatformTokenGrantService {
         this.jwkSource = jwkSource;
         this.authorizationServerSettings = authorizationServerSettings;
         this.jwtDecoder = jwtDecoder;
-        this.passwordEncoder = passwordEncoder;
-        // The 2026-11-04 review's timing equalization (see grant()): ONE
-        // bcrypt hash over the FIXED constant, computed once here at bean
-        // init — never per-request, never from caller input. Null only in
-        // package-slice contexts without the security stack, where no
-        // grant ever runs.
-        PasswordEncoder encoder = passwordEncoder.getIfAvailable();
-        this.dummyBcrypt = encoder == null ? null : encoder.encode(DUMMY_COMPARISON_SECRET);
+        this.perCallerRateLimitGuard = perCallerRateLimitGuard;
         this.identitySpi = identitySpi;
         this.audience = audience;
         this.publicClientId = publicClientId;
@@ -264,19 +258,31 @@ public class PlatformTokenGrantService {
                     new UsernamePasswordAuthenticationToken(email, password));
         } catch (DisabledException | LockedException | AccountExpiredException
                 | CredentialsExpiredException accountState) {
-            // The 2026-11-04 adversarial delta review (MAJOR — timing
-            // oracle): the account-state family fails the provider's
-            // PRE-authentication checks, so the disabled leg costs ~0
-            // bcrypt while unknown-email/wrong-password cost ~1 — a
-            // measurable account-status oracle on the sign-in surface.
-            // The OWASP mitigation (Authentication Cheat Sheet): burn ONE
-            // dummy comparison against the constructor-cached bcrypt hash
-            // so every rejection costs the same, then rethrow the SAME
-            // failure (the grant flow itself is untouched).
-            burnDummyPasswordComparison();
+            // The 2026-11-08 #806 round-9 review (Major · Security &
+            // Privacy, verified against the INSTALLED spring-security-core
+            // 7.1.2 bytecode): the DaoAuthenticationProvider's
+            // {@code alwaysPerformAdditionalChecksOnUser} defaults to TRUE,
+            // so the provider ALREADY runs the password comparison before
+            // refusing a disabled/locked/expired account. The extra dummy
+            // burn this catch used to carry made the disabled rejection
+            // cost TWO bcrypt comparisons against ONE for an unknown email
+            // — an inverted timing oracle (the opposite of the OWASP
+            // equalization it claimed to implement). The burn is deleted;
+            // the provider's own comparison IS the equalizer, and every
+            // rejection costs the same one bcrypt it always did.
             throw accountState;
         }
         String principal = authentication.getName();
+        // The 2026-11-08 #806 round-9 review (Major · Security & Privacy):
+        // the ACCOUNT budget is consumed HERE — after the password check
+        // succeeded, keyed by the AUTHENTICATED principal (never the
+        // unverified email argument the aspect's anonymous shape reads).
+        // Failed attempts therefore never burn the victim's account
+        // budget: a multi-address attacker can no longer lock the victim's
+        // correct sign-in out before any password check ran, while the
+        // per-address budget and the shared JVM ceiling still cap the
+        // attempt flood and successful grants stay capped per-account.
+        consumeAccountBudgetAfterAuthentication(principal, ACCOUNT_BUDGET_SURFACE);
         Set<String> roles = stripRolePrefix(authentication);
         Instant now = Instant.now();
         String accessToken = mintAccessToken(principal, roles, now);
@@ -317,6 +323,29 @@ public class PlatformTokenGrantService {
                     + " while the grant raced (userId={})", user == null ? null : user.id());
             throw new org.springframework.security.authentication.DisabledException(
                     "User is disabled");
+        }
+        // The 2026-11-08 #806 round-9 review (Major · Security & Privacy):
+        // the ROLE wall — the same post-save wall shape the disable wall
+        // carries. A role revoked between the authentication and this read
+        // would leave the raced row carrying the revoked role in its
+        // stored roles attribute (the identity owner's revocation deletes
+        // the principal's authorization rows in the same transaction, but
+        // a revocation committing BEFORE this grant's save leaves the
+        // raced row alive — the delete already ran), and every subsequent
+        // refresh would re-mint access tokens carrying the revoked
+        // authority until the family-age cap. The wall re-reads the
+        // CURRENT effective authorities from the login store (the same
+        // UserDetails truth the authentication chain reads) and refuses
+        // the raced grant — the row is revoked, the client retries, and
+        // the retry mints from the truth. The residual window mirrors the
+        // disable wall's: a revocation committing AFTER this read leaves
+        // only the already-minted stateless access token's own 900s TTL.
+        if (!currentAuthorityNames(principal).containsAll(roles)) {
+            authorizationService().remove(issuedRow);
+            log.warn("Platform password grant revoked at issue: a role was revoked"
+                    + " while the grant raced (userId={})", user == null ? null : user.id());
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "The sign-in could not complete — sign in again");
         }
         // The shard review (Minor · Security & Privacy, 2026-11-01): the
         // principal is the caller-supplied email — never INFO-log it (PII
@@ -422,8 +451,14 @@ public class PlatformTokenGrantService {
         boolean accountInactive = !identitySpi.loginAccountEnabled(principal);
         if (accountInactive) {
             authorizationService().remove(authorization);
+            // The 2026-11-08 #806 round-9 review (Minor · Security &
+            // Privacy): the principal is the caller-supplied email — a
+            // WARN carrying it persists the PII into the application log.
+            // The authorization row's own id identifies the family (the
+            // same family-only vocabulary the rotation store's security
+            // event uses — never a principal, never a token value).
             log.warn("Refresh rejected and family revoked: the account is not active"
-                    + " (principal={})", principal);
+                    + " (authorizationId={})", authorization.getId());
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "The refresh token is invalid, expired or revoked");
         }
@@ -499,6 +534,21 @@ public class PlatformTokenGrantService {
             rotation.attribute(FAMILY_CREATED_ATTRIBUTE, String.valueOf(familyStart.toEpochMilli()));
         }
         OAuth2Authorization refreshed = rotation.build();
+        // The 2026-11-08 #806 round-9 review (Minor · Functional
+        // Correctness): the account projection read runs BEFORE the
+        // rotation consumes the presented token. A projection failure
+        // (the identity read throwing) previously landed AFTER the
+        // rotation had already consumed the old value and committed the
+        // successor — the client received an error, lost BOTH tokens
+        // (the old one consumed, the successor never delivered), and the
+        // 30-second grace window then expired into a family revocation
+        // forcing a full re-login. Reading BEFORE the rotation keeps the
+        // failure non-destructive: the presented token is still
+        // unconsumed, the client may retry, and the projection is never
+        // an authorization decision (the wall above already decided).
+        UserAccountView user = identitySpi.findCurrentUserAccount(
+                        new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
+                .orElse(null);
         // THE atomic boundary: the store arbitrates the consumption —
         // one conditional UPDATE on the shared row, in the database's
         // row lock, serialized across every instance sharing the store.
@@ -508,9 +558,6 @@ public class PlatformTokenGrantService {
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "The refresh token is invalid, expired or revoked");
         }
-        UserAccountView user = identitySpi.findCurrentUserAccount(
-                        new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()))
-                .orElse(null);
         log.info("Platform token refresh rotated: userId={}", user == null ? null : user.id());
         // The shard review (2026-11-01 wave 2): the csrfToken honesty fix —
         // the rotation's answer carries null, exactly like the grant.
@@ -630,15 +677,31 @@ public class PlatformTokenGrantService {
     }
 
     /**
-     * The OWASP timing-equalization burn: ONE {@link PasswordEncoder#matches}
-     * against the constructor-cached dummy bcrypt hash — constant input,
-     * ignored result, and never a restructuring of the grant flow (the
-     * account-state failure is rethrown to the caller exactly as raised).
+     * The CURRENT effective authority names for the principal, the
+     * {@code ROLE_} prefix stripped the same way {@link #stripRolePrefix}
+     * strips the granted set — the role wall's comparison vocabulary (the
+     * 2026-11-08 #806 round-9 review). A subject with no login row
+     * answers the empty set (the wall then refuses any non-empty grant —
+     * the disable wall has already refused the empty-roles shape).
      */
-    private void burnDummyPasswordComparison() {
-        PasswordEncoder encoder = passwordEncoder.getIfAvailable();
-        if (encoder != null && dummyBcrypt != null) {
-            encoder.matches(DUMMY_COMPARISON_SECRET, dummyBcrypt);
+    private Set<String> currentAuthorityNames(String principal) {
+        return identitySpi.loginEffectiveAuthorities(principal).stream()
+                .map(value -> value.startsWith("ROLE_") ? value.substring(5) : value)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * The per-caller rate-limit guard — an {@link ObjectProvider} so the
+     * containerless package-slice tests (the #392 module-slice shape)
+     * load this service without the guard; a slice without the guard
+     * skips the account budget exactly as it skips the annotated
+     * limiters (the guard's own documented slice semantics — a no-op
+     * guard mirrors a no-op {@code @RateLimiter} annotation there).
+     */
+    private void consumeAccountBudgetAfterAuthentication(String principal, String surface) {
+        PerCallerRateLimitGuard guard = perCallerRateLimitGuard.getIfAvailable();
+        if (guard != null) {
+            guard.acquireAccountPermitForKey(principal, surface);
         }
     }
 
