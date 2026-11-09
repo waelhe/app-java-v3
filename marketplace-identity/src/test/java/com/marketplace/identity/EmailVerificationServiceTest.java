@@ -142,8 +142,13 @@ class EmailVerificationServiceTest {
         when(userDetailsManager.userExists(EMAIL)).thenReturn(true);   // the normalized row
         when(userDetailsManager.userExists(legacy)).thenReturn(true);  // the legacy row
         // The normalized row FINISHED (consumed latest) — the legacy row
-        // is the PENDING one.
-        when(authActionTokenService.latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+        // is the PENDING one. The round-2 subject-first resolution checks
+        // the legacy row's pending state FIRST and resolves it without
+        // ever consulting the normalized twin's token — the stub stays
+        // lenient (it documents the scenario's BOTH-rows state, the
+        // resolution order decides which is read).
+        org.mockito.Mockito.lenient().when(
+                authActionTokenService.latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION))
                 .thenReturn(Optional.of(verificationToken(true)));
         when(authActionTokenService.latest(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION))
                 .thenReturn(Optional.of(verificationToken(false)));
@@ -159,6 +164,45 @@ class EmailVerificationServiceTest {
         // mail event ride the legacy subject, never the verified
         // normalized one.
         verify(authActionTokenService).issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL);
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+    }
+
+    /**
+     * The 2026-11-09 #807 round-2 review (Minor · Functional
+     * Correctness): when BOTH case-form rows are PENDING, the round-5
+     * normalized-first order armed the NORMALIZED row while the
+     * requester's own mixed-case link armed the address they named —
+     * the requested account stayed disabled forever (the round's own
+     * stranded-account defect, mirrored). Among pending rows the
+     * MATCHING subject now wins.
+     */
+    @Test
+    void resend_theMatchingSubjectWinsWhenBothCaseFormsArePending() {
+        String legacy = "Member@Example.com";
+        when(userDetailsManager.userExists(EMAIL)).thenReturn(true);   // the normalized row
+        when(userDetailsManager.userExists(legacy)).thenReturn(true);  // the legacy row
+        // BOTH rows are PENDING (live latest rows). The subject-first
+        // resolution consults the MATCHING row alone — the normalized
+        // twin's stub documents the both-pending state without being
+        // read (lenient — the resolution order decides).
+        org.mockito.Mockito.lenient().when(
+                authActionTokenService.latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(authActionTokenService.latest(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject(legacy))
+                .thenReturn(Optional.of(User.create(legacy, legacy, "Member", UserRole.CONSUMER)));
+        when(authActionTokenService.issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "legacy-fresh-token", NOW.plus(TTL))));
+
+        service.resend(legacy);
+
+        // The MATCHING (legacy/subject) account is re-armed — the fresh
+        // right rides the exact row the requester named, never the
+        // normalized twin (which stays pending for its own resend).
+        verify(authActionTokenService).issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL);
+        verify(authActionTokenService, never()).issue(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL);
         verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
     }
 

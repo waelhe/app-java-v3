@@ -277,9 +277,19 @@ class CollectionGraphQlIntegrationTest {
     }
 
     private List<UUID> activeProductIds(int count) {
+        // The 2026-11-09 #807 round-2 review (Minor · Functional
+        // Correctness): the membership-position tests need a DETERMINISTIC
+        // member order — findAll() carries no ORDER BY, so a registry that
+        // returns Beta before Alpha put position 1 on Beta while the
+        // assertions expect Alpha first (an order-flaky failure over a
+        // correct membership). The seeded titles carry the intended order
+        // (lcol Alpha/Beta/Draft Widget); the id list now derives from the
+        // TITLE's own collation, never the storage order.
         return productRepository.findAll().stream()
                 .filter(product -> product.getStatus() == com.marketplace.catalog.StoreProductStatus.ACTIVE)
                 .filter(product -> seededProductIds.contains(product.getId()))
+                .sorted(java.util.Comparator.comparing(product ->
+                        product.getTitle() != null ? product.getTitle() : ""))
                 .map(Product::getId)
                 .limit(count)
                 .toList();

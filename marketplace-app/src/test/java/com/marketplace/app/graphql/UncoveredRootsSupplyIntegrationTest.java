@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
@@ -464,7 +465,23 @@ class UncoveredRootsSupplyIntegrationTest {
             /** The happy assertion path: the entity id (or count) the payload carries. */
             String happyEntityPath,
             /** The negative expectation. */
-            Negative negative) {
+            Negative negative,
+            /**
+             * The 2026-11-09 #807 round-2 review (Minor · Functional
+             * Correctness): the happy leg's OWN result hook — a root whose
+             * happy call CREATES an entity registers the created id for the
+             * @AfterEach cleanup. The negative leg never reaches this hook
+             * (the AUTHZ/AUTHN gate refuses before any write), so a
+             * registering hook runs exactly once per creating supply.
+             */
+            BiConsumer<GraphQlTester.Response, Map<String, Object>> afterHappy) {
+
+        /** The no-hook convenience — every non-creating supply's own shape. */
+        Supply(String root, Supplier<Map<String, Object>> seed,
+               BiFunction<HttpGraphQlTester, Map<String, Object>, GraphQlTester.Response> call,
+               String happyEntityPath, Negative negative) {
+            this(root, seed, call, happyEntityPath, negative, (response, ctx) -> { });
+        }
     }
 
     enum Negative {
@@ -488,6 +505,14 @@ class UncoveredRootsSupplyIntegrationTest {
         // rows are ADMINs themselves. staffDelete/staffBulkDelete seed a
         // SECOND staff first — the standing erasure's own last-active-ADMIN
         // guard (L23) refuses deleting the last one standing.
+        // The 2026-11-09 #807 round-2 review (Minor · Functional
+        // Correctness): the CREATING supplies register their happy leg's
+        // created ids — the staff account (an ACTIVE ADMIN) and the
+        // customer type (an empty registry's first type answers the
+        // DEFAULT row, and customerTypeDelete's own seeded type then
+        // rides on that leaked state) previously outlived the test, so
+        // a later supply's verdict depended on THIS supply having run
+        // first (the order-dependent state leak the round described).
         table.add(new Supply("staffCreate",
                 () -> ctx(null),
                 (t, c) -> t.document("""
@@ -499,7 +524,9 @@ class UncoveredRootsSupplyIntegrationTest {
                                 "firstName", "B4", "lastName", "Happy", "isActive", true,
                                 "email", "b4-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com"))
                         .execute(),
-                "staffCreate.user.id", Negative.CONSUMER_DENIED));
+                "staffCreate.user.id", Negative.CONSUMER_DENIED,
+                (happy, c) -> seededUserIds.add(nativeId(
+                        happy.path("staffCreate.user.id").entity(String.class).get()))));
         table.add(new Supply("staffUpdate",
                 () -> ctx(seedStaffUser()),
                 (t, c) -> t.document("""
@@ -607,7 +634,9 @@ class UncoveredRootsSupplyIntegrationTest {
                                 "name", "B4 Happy " + UUID.randomUUID().toString().substring(0, 8),
                                 "slug", "b4-happy-" + UUID.randomUUID().toString().substring(0, 8)))
                         .execute(),
-                "customerTypeCreate.customerType.id", Negative.CONSUMER_DENIED));
+                "customerTypeCreate.customerType.id", Negative.CONSUMER_DENIED,
+                (happy, c) -> seededCustomerTypeIds.add(nativeId(
+                        happy.path("customerTypeCreate.customerType.id").entity(String.class).get()))));
         table.add(new Supply("customerTypeUpdate",
                 () -> ctx(seedCustomerType()),
                 (t, c) -> t.document("""
@@ -1089,6 +1118,11 @@ class UncoveredRootsSupplyIntegrationTest {
                 ? admin() : consumer();
         GraphQlTester.Response happy = supply.call().apply(happyCaller, context);
         happy.errors().verify();
+        // The creating supply's own registration hook — the ids the happy
+        // leg just created join the @AfterEach cleanup lists (the
+        // 2026-11-09 #807 round-2 review: no leaked staff account, no
+        // leaked default customer type).
+        supply.afterHappy().accept(happy, context);
         if (supply.happyEntityPath().endsWith(".edges")) {
             happy.path(supply.happyEntityPath()).entityList(Object.class)
                     .satisfies(edges -> assertThat(edges).isNotEmpty());

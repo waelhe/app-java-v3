@@ -149,62 +149,60 @@ public class CollectionReadService implements CollectionReadSpi {
         // EMPTY window that still advertised hasNext=true with no element
         // from which to obtain a continuation cursor (the client either
         // stopped prematurely or repeated the same empty page forever).
-        // The null/unlimited case stays the caller's own whole-registry
-        // read (this in-memory scroll loads the registry either way).
         if (limit != null && limit.isLimited() && limit.max() <= 0) {
             throw new IllegalArgumentException("A positive page size is required");
         }
-        List<CollectionView> visible = new ArrayList<>();
-        for (Collection row : collectionRepository.findAll()) {
-            if (visibleTo(row, authentication)) {
-                visible.add(toView(row));
-            }
-        }
-
-        // The deterministic ordering — the owning sort field's TOTAL
-        // ordering key with the id tiebreaker, both in the requested
-        // direction (the roster's SQL keyset methods' own shape).
-        Comparator<String> fieldOrder = sort.ascending()
-                ? Comparator.naturalOrder()
-                : Comparator.reverseOrder();
-        Comparator<UUID> idOrder = sort.ascending()
-                ? Comparator.naturalOrder()
-                : Comparator.reverseOrder();
-        Function<CollectionView, String> fieldExtractor = CollectionReadService::orderingName;
-        visible.sort(Comparator
-                .comparing(fieldExtractor, fieldOrder)
-                .thenComparing(CollectionView::id, idOrder));
-
-        // The keyset predicate: elements strictly AFTER the cursor's own
-        // (sortProperty, id) sort key in the requested direction.
+        // The 2026-11-09 #808 round-26 review (Minor · Performance &
+        // Scalability): the page is cut in SQL, never in memory — the
+        // previous shape loaded the WHOLE registry (findAll), filtered
+        // the visibility, sorted and sliced in the heap for every page.
+        // The declared repository pages carry the SAME laws the in-memory
+        // scroll owned: the rendered-name ordering key
+        // (COALESCE(nameEn, nameAr, '') — the exact rendering
+        // orderingName used) with the id tiebreaker, the publication
+        // filter (the staff caller bypass), the forward-only keyset
+        // cursor over the same pair, and the honest totalCount from ONE
+        // separate count statement. The null/unlimited case stays the
+        // caller's own whole-registry read (unpaged — every visible row,
+        // hasNext=false, the same behavior the in-memory shape owned).
+        boolean staff = staffCaller(authentication);
         String sortProperty = sort.property();
-        List<CollectionView> scrollable = visible;
+        String cursorName = null;
+        UUID cursorId = null;
         if (position != null && !position.isInitial()) {
             requireForwardKeyset(position, sortProperty, "collection");
-            String cursorField = String.valueOf(
-                    ((KeysetScrollPosition) position).getKeys().get(sortProperty));
-            UUID cursorId = parseCursorId(position, "collection");
-            scrollable = visible.stream()
-                    .filter(collection -> {
-                        int byField = fieldOrder.compare(
-                                fieldExtractor.apply(collection), cursorField);
-                        return byField != 0 ? byField > 0
-                                : idOrder.compare(collection.id(), cursorId) > 0;
-                    })
-                    .toList();
+            cursorName = String.valueOf(position.getKeys().get(sortProperty));
+            cursorId = parseCursorId(position, "collection");
         }
-
-        int pageSize = limit == null || !limit.isLimited()
-                ? scrollable.size()
-                : Math.min(limit.max(), scrollable.size());
-        boolean hasNext = scrollable.size() > pageSize;
-        List<CollectionView> content = scrollable.subList(0, pageSize);
+        boolean bounded = limit != null && limit.isLimited();
+        org.springframework.data.domain.Pageable page = bounded
+                ? org.springframework.data.domain.PageRequest.of(0,
+                        limit.max() == Integer.MAX_VALUE ? Integer.MAX_VALUE : limit.max() + 1)
+                : org.springframework.data.domain.Pageable.unpaged();
+        List<Collection> rows = sort.ascending()
+                ? (cursorId == null
+                        ? collectionRepository.findFirstVisibleCollectionsByNameAsc(staff, page)
+                        : collectionRepository.findNextVisibleCollectionsByNameAsc(
+                                staff, cursorName, cursorId, page))
+                : (cursorId == null
+                        ? collectionRepository.findFirstVisibleCollectionsByNameDesc(staff, page)
+                        : collectionRepository.findNextVisibleCollectionsByNameDesc(
+                                staff, cursorName, cursorId, page));
+        boolean hasNext = false;
+        List<CollectionView> content;
+        if (bounded && rows.size() > limit.max()) {
+            hasNext = true;
+            content = rows.subList(0, limit.max()).stream()
+                    .map(CollectionReadService::toView).toList();
+        } else {
+            content = rows.stream().map(CollectionReadService::toView).toList();
+        }
         Window<CollectionView> window = Window.from(content, index ->
                 ScrollPosition.forward(Map.of(
-                        sortProperty, fieldExtractor.apply(content.get(index)),
+                        sortProperty, orderingName(content.get(index)),
                         "id", content.get(index).id())),
                 hasNext);
-        return new CollectionPage(window, visible.size());
+        return new CollectionPage(window, collectionRepository.countVisibleCollections(staff));
     }
 
     /**

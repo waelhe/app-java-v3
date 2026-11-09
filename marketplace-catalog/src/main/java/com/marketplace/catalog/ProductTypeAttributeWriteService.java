@@ -504,7 +504,17 @@ public class ProductTypeAttributeWriteService implements ProductTypeAttributeWri
                 .toList();
         for (Product product : productRepository.findByProductTypeId(productTypeId)) {
             java.util.Map<String, ProductVariant> newKeyOwners = new java.util.HashMap<>();
-            for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAsc(product.getId())) {
+            // The 2026-11-09 #808 round-26 review (Minor · Stability &
+            // Availability): the walked roster takes its rows FOR UPDATE —
+            // the walk's own transaction later SAVES these variants (the
+            // recombination), so an unlocked read raced every concurrent
+            // variant writer: the stale @Version answered the raw
+            // OptimisticLockException at the save and the WHOLE scope move
+            // rolled back unclassified (the "recompute/modify race" the
+            // round named). The locked roster serializes the pair — the
+            // setStock/deleteVariants ownedRowForUpdate discipline, hoisted
+            // to the roster the move re-keys.
+            for (ProductVariant variant : variantRepository.findByProductIdOrderBySkuAscForUpdate(product.getId())) {
                 java.util.Map<UUID, CatalogAttributeValueInput> valuesByAssignment = new java.util.HashMap<>();
                 for (ProductVariantAttributeValue value : variantAttributeValues
                         .findAllByProductVariantIdOrderByAssignmentIdAsc(variant.getId())) {

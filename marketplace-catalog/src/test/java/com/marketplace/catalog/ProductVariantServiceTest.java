@@ -470,7 +470,13 @@ class ProductVariantServiceTest {
     void theAvailabilityToggleAndItsTerminalEdge() {
         Product product = product();
         ProductVariant variant = variant(product);
-        when(variantRepository.findById(variant.getId())).thenReturn(Optional.of(variant));
+        // The 2026-11-09 #808 round-26 review: the availability writes
+        // join the setStock discipline — the OWNERSHIP-SCOPED FOR-UPDATE
+        // twin (never the unlocked findById), so a concurrent delete of
+        // the same variant serializes against the state change instead
+        // of racing it into the raw OptimisticLockException.
+        when(variantRepository.findByIdAndProviderIdForUpdate(variant.getId(), seller))
+                .thenReturn(Optional.of(variant));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(seller);
         when(variantRepository.save(any(ProductVariant.class))).thenAnswer(inv -> inv.getArgument(0));
 

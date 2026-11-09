@@ -59,12 +59,30 @@ class CollectionWriteServiceTest {
         collectionRepository = mock(CollectionRepository.class);
         membershipRepository = mock(CollectionProductRepository.class);
         productRepository = mock(ProductRepository.class);
-        // The 2026-11-07 #808 round-19: the membership-CREATING read takes
-        // the product rows FOR SHARE — every add test's validated products
-        // answer the share read by default (the delete-pairing test below
-        // overrides its own absence).
-        lenient().when(productRepository.findByIdForShare(any(UUID.class)))
-                .thenAnswer(invocation -> java.util.Optional.of(product()));
+        // The 2026-11-09 #808 round-26 review: the batch reads own the
+        // defaults — the precheck's ONE findAllById statement delegates
+        // to the findById stubs the per-test scaffolding already owns,
+        // and the membership-CREATING read's ONE findAllByIdForShare
+        // statement answers one ALIVE product PER REQUESTED ID (the
+        // returned ids are the liveness set the append checks its
+        // request against — a random-id default would answer every add
+        // as vanished; the delete-pairing tests below override their
+        // own absence).
+        lenient().when(productRepository.findAllById(any(java.util.Collection.class)))
+                .thenAnswer(invocation -> ((java.util.Collection<UUID>) invocation.getArgument(0))
+                        .stream()
+                        .map(requestedId -> productRepository.findById(requestedId))
+                        .flatMap(java.util.Optional::stream)
+                        .toList());
+        lenient().when(productRepository.findAllByIdForShare(any(java.util.Collection.class)))
+                .thenAnswer(invocation -> ((java.util.Collection<UUID>) invocation.getArgument(0))
+                        .stream()
+                        .map(requestedId -> {
+                            Product alive = product();
+                            when(alive.getId()).thenReturn(requestedId);
+                            return alive;
+                        })
+                        .toList());
         service = new CollectionWriteService(
                 collectionRepository, membershipRepository, productRepository);
     }
@@ -178,6 +196,11 @@ class CollectionWriteServiceTest {
     void duplicatedInitialMembershipAnswersTheDuplicatedInputItemDomainError() {
         UUID duplicated = UUID.randomUUID();
         Product member = product();
+        // The 2026-11-09 #808 round-26 review: the batched precheck answers
+        // the liveness set by the RETURNED rows' own ids — the member's id
+        // echoes the requested id (a random-id mock would answer the
+        // unknown-products NOT_FOUND alongside the duplicate verdict).
+        when(member.getId()).thenReturn(duplicated);
         when(productRepository.findById(duplicated)).thenReturn(Optional.of(member));
 
         CollectionMutationResult result = service.createCollection(
@@ -210,6 +233,9 @@ class CollectionWriteServiceTest {
     void happyCreateSavesTheRowAndAppendsTheMembership() {
         UUID productId = UUID.randomUUID();
         Product member = product();
+        // The round-26 id-echo law: the batched reads match by the
+        // returned rows' ids.
+        when(member.getId()).thenReturn(productId);
         when(collectionRepository.findBySlug("fresh")).thenReturn(Optional.empty());
         when(productRepository.findById(productId)).thenReturn(Optional.of(member));
         when(collectionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -452,6 +478,9 @@ class CollectionWriteServiceTest {
         when(collectionRepository.findById(collectionId))
                 .thenReturn(Optional.of(row("slug", "Old", true)));
         Product member = product();
+        // The round-26 id-echo law (the batched precheck matches by the
+        // returned ids).
+        when(member.getId()).thenReturn(productId);
         when(productRepository.findById(productId)).thenReturn(Optional.of(member));
         // The 2026-11-07 #808 round-6 review: the membership precheck rides
         // the ONE batch query (the per-id loop's N queries inside the
@@ -501,7 +530,8 @@ class CollectionWriteServiceTest {
         when(productRepository.findById(member.getId())).thenReturn(Optional.of(member));
         when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(member.getId())))
                 .thenReturn(List.of());
-        when(productRepository.findByIdForShare(member.getId())).thenReturn(Optional.empty());
+        when(productRepository.findAllByIdForShare(List.of(member.getId())))
+                .thenReturn(List.of());
 
         CollectionMutationResult result = service.addProducts(collectionId, List.of(member.getId()));
 
@@ -522,7 +552,8 @@ class CollectionWriteServiceTest {
         // classified NOT_FOUND with the vanished id.
         Product member = product();
         when(productRepository.findById(member.getId())).thenReturn(Optional.of(member));
-        when(productRepository.findByIdForShare(member.getId())).thenReturn(Optional.empty());
+        when(productRepository.findAllByIdForShare(List.of(member.getId())))
+                .thenReturn(List.of());
         when(collectionRepository.save(any(com.marketplace.catalog.Collection.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         org.springframework.transaction.TransactionStatus status =
@@ -558,6 +589,9 @@ class CollectionWriteServiceTest {
         when(collectionRepository.findById(collectionId))
                 .thenReturn(Optional.of(row("slug", "Old", true)));
         Product member = product();
+        // The round-26 id-echo law (the batched precheck matches by the
+        // returned ids).
+        when(member.getId()).thenReturn(newProductId);
         when(productRepository.findById(newProductId)).thenReturn(Optional.of(member));
         when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(newProductId)))
                 .thenReturn(List.of());
@@ -579,6 +613,9 @@ class CollectionWriteServiceTest {
         when(collectionRepository.findById(collectionId))
                 .thenReturn(Optional.of(row("slug", "Old", true)));
         Product member = product();
+        // The round-26 id-echo law (the batched precheck matches by the
+        // returned ids).
+        when(member.getId()).thenReturn(newProductId);
         when(productRepository.findById(newProductId)).thenReturn(Optional.of(member));
         when(membershipRepository.findByCollectionIdAndProductIdIn(collectionId, List.of(newProductId)))
                 .thenReturn(List.of());
@@ -866,7 +903,9 @@ class CollectionWriteServiceTest {
         // Integration): the membership-CREATING read takes the product row
         // FOR SHARE — the product delete's FOR-UPDATE lock plus its
         // membership cascade serialize against the insert (never a live
-        // membership stranded on a deleted product).
+        // membership stranded on a deleted product). The 2026-11-09 #808
+        // round-26 review: the share read is ONE batch statement over the
+        // whole request (findAllByIdForShare — the per-id loop is gone).
         Collection created = row("share-lock", "Share Lock", true);
         when(collectionRepository.save(any(Collection.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -877,7 +916,7 @@ class CollectionWriteServiceTest {
                 new CollectionCreateCommand("Share Lock", "share-lock", true, List.of(member.getId())));
 
         assertThat(result.success()).isTrue();
-        verify(productRepository).findByIdForShare(member.getId());
+        verify(productRepository).findAllByIdForShare(List.of(member.getId()));
     }
 
 }

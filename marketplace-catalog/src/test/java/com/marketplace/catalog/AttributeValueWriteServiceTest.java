@@ -50,9 +50,6 @@ class AttributeValueWriteServiceTest {
     private CatalogAttributeDefinitionRepository definitions;
     private ProductVariantAttributeValueRepository variantValues;
     private ProductAttributeValueRepository productValues;
-    // The 2026-11-08 #808 round-21: the refresh-under-lock contract's own
-    // mock (the OrdersService precedent — a no-op refresh).
-    private jakarta.persistence.EntityManager entityManager;
     private AttributeValueWriteSpi service;
 
     @BeforeEach
@@ -67,13 +64,11 @@ class AttributeValueWriteServiceTest {
         // The 2026-11-06 #808 round-3: the PRODUCT-scope twin answers NO
         // references by default (each test overrides it).
         lenient().when(productValues.existsLiveProductValueForOption(any())).thenReturn(false);
-        // The 2026-11-07 #808 round-19: the post-lock re-read answers
-        // ALIVE by default (the existing delete ladder keeps its
-        // verdicts; the dead-row tests override their own absence).
-        lenient().when(options.existsById(any())).thenReturn(true);
-        entityManager = mock(jakarta.persistence.EntityManager.class);
-        service = new AttributeValueWriteService(options, definitions, variantValues, productValues,
-                entityManager);
+        // The 2026-11-09 #808 round-26 review: the service rides the
+        // repository's OWN locked load (findByIdForUpdate) — no
+        // EntityManager seam remains, and the drop/lock/load order's
+        // scaffolding stubs its own reads per test.
+        service = new AttributeValueWriteService(options, definitions, variantValues, productValues);
     }
 
     private static CatalogAttributeDefinition choiceParent() {
@@ -214,10 +209,25 @@ class AttributeValueWriteServiceTest {
     // updateAttributeValue — the partial-preserve semantics
     // ------------------------------------------------------------------
 
+    /**
+     * The 2026-11-09 #808 round-26 review: the drop/lock/load scaffolding —
+     * the DEFINITION-ID projection answers the owning family for the id
+     * (empty for an unknown option), the family lock is the definitions'
+     * own FOR-UPDATE read, and the option's locked load answers the
+     * authoritative row.
+     */
+    private void stubOwnedOption(CatalogAttributeOption option, CatalogAttributeDefinition parent) {
+        when(options.findDefinitionIdById(option.getId()))
+                .thenReturn(Optional.of(option.getAttributeDefinitionId()));
+        when(definitions.findByIdForUpdate(option.getAttributeDefinitionId()))
+                .thenReturn(Optional.of(parent));
+        when(options.findByIdForUpdate(option.getId())).thenReturn(Optional.of(option));
+    }
+
     @Test
     void unknownIdAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(options.findById(unknown)).thenReturn(Optional.empty());
+        when(options.findDefinitionIdById(unknown)).thenReturn(Optional.empty());
 
         AttributeValueMutationResult result = service.updateAttributeValue(unknown,
                 new AttributeValueUpdateCommand("New", null));
@@ -232,8 +242,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        stubOwnedOption(existing, parent);
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand(null, null));
@@ -250,8 +259,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        stubOwnedOption(existing, parent);
         when(options.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
@@ -268,12 +276,11 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        stubOwnedOption(existing, parent);
         // The 2026-11-06 #808 round (#11): the update path now answers the
         // classified NOT_FOUND when the parent attribute is gone — these
         // validation verdicts need the parent PRESENT to reach their own
         // error branch.
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand("   ", null));
@@ -289,12 +296,11 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        stubOwnedOption(existing, parent);
         // The 2026-11-06 #808 round (#11): the update path now answers the
         // classified NOT_FOUND when the parent attribute is gone — these
         // validation verdicts need the parent PRESENT to reach their own
         // error branch.
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
                 new AttributeValueUpdateCommand(null, "fresh-name"));
@@ -316,10 +322,9 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "keep-val", "Kept", null, 2);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(options.findByAttributeDefinitionIdAndCode(parent.getId(), "keep-val"))
-                .thenReturn(Optional.of(existing));
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        stubOwnedOption(existing, parent);
+        when(options.findByAttributeDefinitionIdAndCode(parent.getId(), "keep-val")
+                ).thenReturn(Optional.of(existing));
         when(options.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
@@ -337,7 +342,7 @@ class AttributeValueWriteServiceTest {
     @Test
     void deleteOfAnUnknownRowAnswersTheNotFoundDomainError() {
         UUID unknown = UUID.randomUUID();
-        when(options.findById(unknown)).thenReturn(Optional.empty());
+        when(options.findDefinitionIdById(unknown)).thenReturn(Optional.empty());
 
         AttributeValueMutationResult result = service.deleteAttributeValue(unknown);
 
@@ -352,8 +357,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "gone-val", "Gone", null, 2);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        stubOwnedOption(existing, parent);
 
         AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
 
@@ -368,22 +372,24 @@ class AttributeValueWriteServiceTest {
     void deleteAnswersThePostRefreshLastKnownProjection() {
         // The 2026-11-08 #808 round-22 review (Minor · Data Integrity &
         // Integration): the last-known projection is built AFTER the
-        // under-lock refresh — a translation that committed while this
+        // under-lock re-read — a translation that committed while this
         // call waited on the definition lock is the name the delete
         // ACTUALLY removes, and the success payload answers THAT name
-        // (never the stale pre-lock snapshot). The refresh mock here
-        // plays the reload: it mutates the row the way the
-        // authoritative re-read would.
+        // (never the stale pre-lock snapshot). The 2026-11-09 #808
+        // round-26 review moved the re-read to the option's OWN locked
+        // load: the load's answer IS the authoritative row, and the stub
+        // here plays the reload — it mutates the row the way the
+        // post-lock re-read would, then hands it back.
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "gone-val", "Gone", null, 2);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(options.findDefinitionIdById(existing.getId()))
+                .thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
-        org.mockito.Mockito.doAnswer(invocation -> {
+        when(options.findByIdForUpdate(existing.getId())).thenAnswer(invocation -> {
             existing.revise("Replaced Under The Lock", existing.getNameAr());
-            return null;
-        }).when(entityManager).refresh(existing,
-                jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            return Optional.of(existing);
+        });
 
         AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
 
@@ -397,8 +403,11 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption first = CatalogAttributeOption.create(parent.getId(), "first", "First", null, 0);
         CatalogAttributeOption second = CatalogAttributeOption.create(parent.getId(), "second", "Second", null, 1);
-        when(options.findById(first.getId())).thenReturn(Optional.of(first));
-        when(options.findById(second.getId())).thenReturn(Optional.of(second));
+        when(options.findDefinitionIdById(first.getId())).thenReturn(Optional.of(parent.getId()));
+        when(options.findDefinitionIdById(second.getId())).thenReturn(Optional.of(parent.getId()));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(options.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(options.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
 
         // Arrays.asList carries the null member the honest-skip case
         // feeds the owner (List.of's own null refusal is not the seam).
@@ -428,8 +437,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption arOnly = CatalogAttributeOption.create(
                 parent.getId(), "ar-val", null, "القيمة العربية فقط", 0);
-        when(options.findById(arOnly.getId())).thenReturn(Optional.of(arOnly));
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        stubOwnedOption(arOnly, parent);
 
         AttributeValueMutationResult result = service.deleteAttributeValue(arOnly.getId());
 
@@ -455,8 +463,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "existing", "Existing", null, 1);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        stubOwnedOption(existing, parent);
         when(variantValues.existsByOptionId(existing.getId())).thenReturn(true);
 
         AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
@@ -479,8 +486,10 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption orphaned = CatalogAttributeOption.create(
                 parent.getId(), "orphaned", "Orphaned", null, 1);
-        when(options.findById(orphaned.getId())).thenReturn(Optional.of(orphaned));
+        when(options.findDefinitionIdById(orphaned.getId()))
+                .thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
+        when(options.findByIdForUpdate(orphaned.getId())).thenReturn(Optional.of(orphaned));
 
         AttributeValueMutationResult result = service.deleteAttributeValue(orphaned.getId());
 
@@ -494,23 +503,21 @@ class AttributeValueWriteServiceTest {
 
     @Test
     void anOrphanedOptionThatVanishedUnderItsOwnRefreshAnswersItsOwnNotFound() {
-        // The 2026-11-08 #808 round-25 review (Minor · Stability &
-        // Availability): the dead family answers no definition row, so
-        // NO lock serializes the orphan cleanup against a rival delete
-        // of the SAME option — the row can vanish between the pre-lock
-        // load and the under-lock refresh, and the refresh's documented
-        // contract (jakarta.persistence.EntityNotFoundException) answers
-        // the option's own honest absence: never the raw exception, and
-        // never a cleanup delete riding a stale managed entity.
+        // The 2026-11-08 #808 round-25 review, re-proven on the
+        // 2026-11-09 round-26 shape: the dead family answers no definition
+        // row, so NO family lock serializes the orphan cleanup against a
+        // rival delete of the SAME option — the row can vanish before the
+        // option's own locked load, and the load answers the option's own
+        // honest absence as an EMPTY OPTIONAL: never an exception, never a
+        // rollback-only poison riding the classified NOT_FOUND, and never
+        // a cleanup delete riding a stale managed entity.
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption orphaned = CatalogAttributeOption.create(
                 parent.getId(), "orphaned", "Orphaned", null, 1);
-        when(options.findById(orphaned.getId())).thenReturn(Optional.of(orphaned));
+        when(options.findDefinitionIdById(orphaned.getId()))
+                .thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
-        org.mockito.Mockito.doThrow(new jakarta.persistence.EntityNotFoundException(
-                "the entity no longer exists in the database"))
-                .when(entityManager).refresh(orphaned,
-                        jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        when(options.findByIdForUpdate(orphaned.getId())).thenReturn(Optional.empty());
 
         AttributeValueMutationResult result = service.deleteAttributeValue(orphaned.getId());
 
@@ -523,32 +530,33 @@ class AttributeValueWriteServiceTest {
 
     @Test
     void theBulkLegSkipsAnOptionThatVanishedBetweenItsProbeAndTheRefresh() {
-        // The same round-25 finding's bulk half: the dead-family legs
-        // take NO definition lock, so a rival delete of the option can
-        // commit between the existsById probe and the locking re-read —
-        // the refresh answers EntityNotFoundException (the JPA refresh
-        // law) and the honest count SKIPS the vanished row, never the
-        // raw exception aborting the whole batch.
+        // The same round-25 finding's bulk half, re-proven on the
+        // 2026-11-09 round-26 shape: the dead-family legs take NO family
+        // lock, so a rival delete of the option can commit before the
+        // option's own locked load — the load answers the EMPTY OPTIONAL
+        // and the honest count SKIPS the vanished row. The round-26
+        // defect this closes: the refresh-based skip used to poison the
+        // session (rollback-only at the EntityNotFoundException
+        // conversion), rolling the batch's EARLIER deletions back at
+        // commit — the locked load keeps the survivor's deletion and
+        // the honest count in the SAME transaction.
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption victim = CatalogAttributeOption.create(
                 parent.getId(), "victim", "Victim", null, 1);
         CatalogAttributeOption survivor = CatalogAttributeOption.create(
                 parent.getId(), "survivor", "Survivor", null, 2);
-        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
-        when(options.findById(survivor.getId())).thenReturn(Optional.of(survivor));
+        when(options.findDefinitionIdById(victim.getId())).thenReturn(Optional.of(parent.getId()));
+        when(options.findDefinitionIdById(survivor.getId())).thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
-        when(options.existsById(victim.getId())).thenReturn(true);
-        when(options.existsById(survivor.getId())).thenReturn(true);
-        org.mockito.Mockito.doThrow(new jakarta.persistence.EntityNotFoundException(
-                "the entity no longer exists in the database"))
-                .when(entityManager).refresh(victim,
-                        jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        when(options.findByIdForUpdate(victim.getId())).thenReturn(Optional.empty());
+        when(options.findByIdForUpdate(survivor.getId())).thenReturn(Optional.of(survivor));
 
         int count = service.deleteAttributeValues(java.util.Arrays.asList(
                 victim.getId(), survivor.getId()));
 
-        // The vanished option is skipped (never a raw exception), the
-        // survivor's cleanup still runs — the honest count.
+        // The vanished option is skipped (never an exception, never a
+        // poisoned transaction), the survivor's cleanup still runs — the
+        // honest count.
         assertThat(count).isEqualTo(1);
         verify(options, org.mockito.Mockito.never()).delete(victim);
         verify(options).delete(survivor);
@@ -562,8 +570,11 @@ class AttributeValueWriteServiceTest {
                 parent.getId(), "free", "Free", null, 1);
         CatalogAttributeOption held = CatalogAttributeOption.create(
                 parent.getId(), "held", "Held", null, 2);
-        when(options.findById(free.getId())).thenReturn(Optional.of(free));
-        when(options.findById(held.getId())).thenReturn(Optional.of(held));
+        when(options.findDefinitionIdById(free.getId())).thenReturn(Optional.of(parent.getId()));
+        when(options.findDefinitionIdById(held.getId())).thenReturn(Optional.of(parent.getId()));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(options.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
+        when(options.findByIdForUpdate(held.getId())).thenReturn(Optional.of(held));
         when(variantValues.existsByOptionId(held.getId())).thenReturn(true);
 
         int count = service.deleteAttributeValues(java.util.Arrays.asList(free.getId(), held.getId()));
@@ -594,9 +605,11 @@ class AttributeValueWriteServiceTest {
                 parent.getId(), "first", "First", null, 0);
         CatalogAttributeOption second = CatalogAttributeOption.create(
                 parent.getId(), "second", "Second", null, 1);
-        when(options.findById(first.getId())).thenReturn(Optional.of(first));
-        when(options.findById(second.getId())).thenReturn(Optional.of(second));
+        when(options.findDefinitionIdById(first.getId())).thenReturn(Optional.of(parent.getId()));
+        when(options.findDefinitionIdById(second.getId())).thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(options.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(options.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
 
         service.deleteAttributeValues(List.of(first.getId(), second.getId()));
 
@@ -626,8 +639,12 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeOption underA = CatalogAttributeOption.create(
                 parentA.getId(), "under-a", "Under A", null, 0);
         // The caller names B's option FIRST — the lock order stays sorted.
-        when(options.findById(underB.getId())).thenReturn(Optional.of(underB));
-        when(options.findById(underA.getId())).thenReturn(Optional.of(underA));
+        when(options.findDefinitionIdById(underB.getId())).thenReturn(Optional.of(parentB.getId()));
+        when(options.findDefinitionIdById(underA.getId())).thenReturn(Optional.of(parentA.getId()));
+        when(definitions.findByIdForUpdate(parentA.getId())).thenReturn(Optional.of(parentA));
+        when(definitions.findByIdForUpdate(parentB.getId())).thenReturn(Optional.of(parentB));
+        when(options.findByIdForUpdate(underB.getId())).thenReturn(Optional.of(underB));
+        when(options.findByIdForUpdate(underA.getId())).thenReturn(Optional.of(underA));
 
         service.deleteAttributeValues(java.util.Arrays.asList(underB.getId(), underA.getId()));
 
@@ -649,8 +666,7 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "existing", "Existing", null, 1);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
-        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        stubOwnedOption(existing, parent);
         when(productValues.existsLiveProductValueForOption(existing.getId())).thenReturn(true);
 
         AttributeValueMutationResult result = service.deleteAttributeValue(existing.getId());
@@ -669,8 +685,11 @@ class AttributeValueWriteServiceTest {
                 parent.getId(), "free", "Free", null, 1);
         CatalogAttributeOption held = CatalogAttributeOption.create(
                 parent.getId(), "held-product", "Held by product", null, 2);
-        when(options.findById(free.getId())).thenReturn(Optional.of(free));
-        when(options.findById(held.getId())).thenReturn(Optional.of(held));
+        when(options.findDefinitionIdById(free.getId())).thenReturn(Optional.of(parent.getId()));
+        when(options.findDefinitionIdById(held.getId())).thenReturn(Optional.of(parent.getId()));
+        when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        when(options.findByIdForUpdate(free.getId())).thenReturn(Optional.of(free));
+        when(options.findByIdForUpdate(held.getId())).thenReturn(Optional.of(held));
         when(productValues.existsLiveProductValueForOption(held.getId())).thenReturn(true);
 
         int count = service.deleteAttributeValues(java.util.Arrays.asList(free.getId(), held.getId()));
@@ -686,7 +705,8 @@ class AttributeValueWriteServiceTest {
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption existing = CatalogAttributeOption.create(
                 parent.getId(), "existing", "Existing", null, 1);
-        when(options.findById(existing.getId())).thenReturn(Optional.of(existing));
+        when(options.findDefinitionIdById(existing.getId()))
+                .thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.empty());
 
         AttributeValueMutationResult result = service.updateAttributeValue(existing.getId(),
@@ -725,16 +745,18 @@ class AttributeValueWriteServiceTest {
     @Test
     void deleteAnswersTheHonestNotFoundWhenTheOptionDiedUnderTheLock() {
         // The 2026-11-07 #808 round-19 review (Minor · Functional
-        // Correctness): the option row re-reads AFTER the definition
-        // lock — a concurrent delete of the SAME option that committed
-        // between the pre-lock load and the lock would otherwise ride
-        // the stale managed entity to a fabricated SUCCESS.
+        // Correctness), re-proven on the round-26 shape: the option's own
+        // locked load answers the row's post-lock absence — a concurrent
+        // delete of the SAME option that committed while this call waited
+        // on the family lock answers the honest NOT_FOUND (never a
+        // fabricated SUCCESS off a stale row).
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption victim = CatalogAttributeOption.create(parent.getId(),
                 "victim", "Victim", null, 1);
-        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
+        when(options.findDefinitionIdById(victim.getId()))
+                .thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
-        when(options.existsById(victim.getId())).thenReturn(false);
+        when(options.findByIdForUpdate(victim.getId())).thenReturn(Optional.empty());
 
         AttributeValueMutationResult result = service.deleteAttributeValue(victim.getId());
 
@@ -747,14 +769,16 @@ class AttributeValueWriteServiceTest {
 
     @Test
     void bulkDeleteSkipsTheRowsThatDiedUnderTheLocks() {
-        // The same re-read in bulk form — the honest count skips the
-        // concurrently deleted row, never a fabricated delete count.
+        // The same locked-load skip in bulk form — the honest count skips
+        // the concurrently deleted row, never a fabricated delete count,
+        // and (the round-26 law) never a poisoned transaction.
         CatalogAttributeDefinition parent = choiceParent();
         CatalogAttributeOption victim = CatalogAttributeOption.create(parent.getId(),
                 "victim", "Victim", null, 1);
-        when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
+        when(options.findDefinitionIdById(victim.getId()))
+                .thenReturn(Optional.of(parent.getId()));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
-        when(options.existsById(victim.getId())).thenReturn(false);
+        when(options.findByIdForUpdate(victim.getId())).thenReturn(Optional.empty());
 
         int deleted = service.deleteAttributeValues(java.util.List.of(victim.getId()));
 

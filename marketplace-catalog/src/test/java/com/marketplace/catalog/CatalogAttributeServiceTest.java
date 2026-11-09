@@ -20,7 +20,6 @@ class CatalogAttributeServiceTest {
     private CatalogAttributeOptionRepository options;
     private ProductVariantAttributeValueRepository variantValues;
     private ProductAttributeValueRepository productValues;
-    private jakarta.persistence.EntityManager entityManager;
     private CatalogAttributeService service;
 
     @BeforeEach void setUp() {
@@ -31,13 +30,17 @@ class CatalogAttributeServiceTest {
         productValues = mock(ProductAttributeValueRepository.class);
         when(variantValues.existsByOptionId(any())).thenReturn(false);
         when(productValues.existsLiveProductValueForOption(any())).thenReturn(false);
-        // The remove law's post-lock re-read answers ALIVE by default.
-        lenient().when(options.existsById(any())).thenReturn(true);
-        // The 2026-11-08 #808 round-21: the refresh-under-lock contract's own
-        // mock (the OrdersService precedent — a no-op refresh).
-        entityManager = org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class);
-        service = new CatalogAttributeService(definitions, options, variantValues, productValues,
-                entityManager);
+        // The 2026-11-09 #808 round-26 review: the drop/lock/load order's
+        // read-through defaults — the DEFINITION-ID projection and the
+        // option's OWN locked load delegate to the findById stubs the
+        // per-test scaffolding owns (the refresh seam is gone; the
+        // locked load IS the authoritative re-read).
+        lenient().when(options.findDefinitionIdById(any(UUID.class)))
+                .thenAnswer(invocation -> options.findById(invocation.getArgument(0, UUID.class))
+                        .map(CatalogAttributeOption::getAttributeDefinitionId));
+        lenient().when(options.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> options.findById(invocation.getArgument(0)));
+        service = new CatalogAttributeService(definitions, options, variantValues, productValues);
     }
 
     @Test void registerDefinitionPersistsReusableTypedAttribute() {
@@ -138,24 +141,25 @@ class CatalogAttributeServiceTest {
 
         service.removeOption(victim.getId());
 
-        // The 2026-11-08 #808 round-22 review (nitpick): the under-lock
-        // contract pins the WHOLE ladder — the definition lock, the
-        // honest existence re-check, the refresh-under-lock
-        // (PESSIMISTIC_WRITE, the round-21 stale-@Version closure), and
-        // only then the delete. A reorder that swaps the refresh and
-        // the delete (or drops the refresh) must fail here, not ride a
-        // green suite silently.
+        // The 2026-11-08 #808 round-22 review (nitpick), re-pinned on the
+        // 2026-11-09 round-26 shape: the under-lock contract pins the
+        // WHOLE ladder — the DEFINITION-ID projection, the definition
+        // lock, the option's OWN locked load (the authoritative re-read,
+        // PESSIMISTIC_WRITE — the round-21 stale-@Version closure without
+        // the refresh's poisoned exception contract), and only then the
+        // delete. A reorder that swaps the locked load and the delete (or
+        // drops the load) must fail here, not ride a green suite
+        // silently.
         // The 2026-11-08 #808 round-23 review (nitpick): the reference
         // probes join the ladder — BOTH walls (the live-variant and the
-        // live-product probes) sit AFTER the refresh and BEFORE the
+        // live-product probes) sit AFTER the locked load and BEFORE the
         // delete; moving them ahead of the lock reopens the concurrency
         // window the walls exist to close.
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(
-                definitions, options, entityManager, variantValues, productValues);
+                options, definitions, variantValues, productValues);
+        order.verify(options).findDefinitionIdById(victim.getId());
         order.verify(definitions).findByIdForUpdate(parent.getId());
-        order.verify(options).existsById(victim.getId());
-        order.verify(entityManager).refresh(victim,
-                jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        order.verify(options).findByIdForUpdate(victim.getId());
         order.verify(variantValues).existsByOptionId(victim.getId());
         order.verify(productValues).existsLiveProductValueForOption(victim.getId());
         order.verify(options).delete(victim);
@@ -168,17 +172,27 @@ class CatalogAttributeServiceTest {
         CatalogAttributeOption victim = CatalogAttributeOption.create(parent.getId(), "red", "Red", null, 1);
         when(options.findById(victim.getId())).thenReturn(Optional.of(victim));
         when(definitions.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
-        when(options.existsById(victim.getId())).thenReturn(false);
+        // The round-26 Mockito law: the read-through default on
+        // findByIdForUpdate delegates to findById ON THE SAME MOCK — a
+        // when(...findByIdForUpdate...) registration would run that answer
+        // mid-registration and rebind the stub to the INNER findById call
+        // (the unfinished-stubbing trap). The doReturn/when shape registers
+        // the override without ever invoking the method.
+        org.mockito.Mockito.doReturn(Optional.empty()).when(options)
+                .findByIdForUpdate(victim.getId());
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.removeOption(victim.getId()))
                 .isInstanceOf(com.marketplace.shared.api.ResourceNotFoundException.class);
         org.mockito.Mockito.verify(options, org.mockito.Mockito.never()).delete(any());
-        // The 2026-11-08 #808 round-24 review (nitpick): the dead-option
-        // verdict answers BEFORE the refresh — if the existsById check
-        // ever moved AFTER it, the mocked no-op refresh would let this
-        // test pass while the real refresh throws on the dead row. No
-        // entityManager interaction happens on this path.
-        org.mockito.Mockito.verifyNoInteractions(entityManager);
+        // The 2026-11-08 #808 round-24 review (nitpick), re-pinned on the
+        // round-26 shape: the dead-option verdict answers from the
+        // locked load's OWN empty Optional — the projection resolved the
+        // family and the family lock was taken, and the option's absence
+        // is the locked load's answer (never a refresh on a dead row,
+        // never a fabricated delete).
+        org.mockito.Mockito.verify(options).findDefinitionIdById(victim.getId());
+        org.mockito.Mockito.verify(definitions).findByIdForUpdate(parent.getId());
+        org.mockito.Mockito.verify(options).findByIdForUpdate(victim.getId());
     }
 
 }

@@ -72,25 +72,17 @@ public class TranslationWriteService implements TranslationWriteSpi {
     private final CatalogAttributeOptionRepository attributeOptionRepository;
     private final CollectionRepository collectionRepository;
     private final CollectionProductRepository collectionProductRepository;
-    // The 2026-11-08 #808 round-21 review (Minor · Stability &
-    // Availability): constructor injection (not @PersistenceContext) so
-    // the unit tests can mock the refresh contract — Spring injects the
-    // shared transactional EntityManager either way (the OrdersService
-    // confirmFromPayment precedent).
-    private final jakarta.persistence.EntityManager entityManager;
 
     public TranslationWriteService(CategoryRepository categoryRepository,
                                    CatalogAttributeDefinitionRepository attributeDefinitionRepository,
                                    CatalogAttributeOptionRepository attributeOptionRepository,
                                    CollectionRepository collectionRepository,
-                                   CollectionProductRepository collectionProductRepository,
-                                   jakarta.persistence.EntityManager entityManager) {
+                                   CollectionProductRepository collectionProductRepository) {
         this.categoryRepository = categoryRepository;
         this.attributeDefinitionRepository = attributeDefinitionRepository;
         this.attributeOptionRepository = attributeOptionRepository;
         this.collectionRepository = collectionRepository;
         this.collectionProductRepository = collectionProductRepository;
-        this.entityManager = entityManager;
     }
 
     @Override
@@ -172,69 +164,48 @@ public class TranslationWriteService implements TranslationWriteSpi {
         // concurrent value delete commit between the read and the save,
         // and the translation wrote over the soft-deleted option (the
         // fabricated SUCCESS) or the stale @Version answered the raw
-        // OptimisticLockException. The definition lock plus the fresh
-        // existence re-read answer the honest not-found.
-        Optional<CatalogAttributeOption> addressed =
-                id == null ? Optional.empty() : attributeOptionRepository.findById(id);
-        if (addressed.isEmpty()) {
+        // OptimisticLockException.
+        //
+        // The 2026-11-09 #808 round-26 review (Minor · Stability &
+        // Availability): the drop/lock/load order — the DEFINITION-ID
+        // PROJECTION resolves the family without managing the option
+        // (the round-13 law), the family's FOR-UPDATE lock serializes
+        // the writers, and the option's OWN locked load
+        // (findByIdForUpdate) answers the authoritative post-lock state:
+        // a dead option answers the empty Optional — never the
+        // refresh's EntityNotFoundException, which the installed
+        // Hibernate 7.4.13 converts with session.markForRollbackOnly
+        // (ExceptionConverterImpl.rollbackIfNecessary), poisoning the
+        // transaction the classified verdict was about to ride.
+        Optional<UUID> familyId = id == null
+                ? Optional.empty() : attributeOptionRepository.findDefinitionIdById(id);
+        if (familyId.isEmpty()) {
             return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
         }
-        if (attributeDefinitionRepository
-                .findByIdForUpdate(addressed.get().getAttributeDefinitionId()).isEmpty()) {
+        Optional<CatalogAttributeDefinition> parent =
+                attributeDefinitionRepository.findByIdForUpdate(familyId.get());
+        if (parent.isEmpty()) {
+            // B20 (CAT-08 — the 2026-11-03 adversarial review,
+            // review-pr-808): the concurrent parent soft-delete race
+            // answers the classified NOT_FOUND — never a raw
+            // NoSuchElementException 500 off the wire — and the orphan
+            // revision never persists.
             return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
         }
-        // The fresh re-read under the lock — the option may have died
-        // while this call waited (the honest not-found, never a write
-        // over a soft-deleted row).
-        if (!attributeOptionRepository.existsById(id)) {
+        Optional<CatalogAttributeOption> locked = attributeOptionRepository.findByIdForUpdate(id);
+        if (locked.isEmpty()) {
             return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
                     "id", AttributeMutationErrorCode.NOT_FOUND, "No attribute value found for the id")));
         }
+        CatalogAttributeOption row = locked.get();
         List<AttributeMutationError> errors = ladder(command,
                 (field, message) -> new AttributeMutationError(field,
                         AttributeMutationErrorCode.INVALID, message));
         if (!errors.isEmpty()) {
             return AttributeValueMutationResult.failure(errors);
         }
-        CatalogAttributeOption row = addressed.get();
-        // B20 (CAT-08 — the 2026-11-03 adversarial review, review-pr-808):
-        // the concurrent parent soft-delete race answers the classified
-        // NOT_FOUND — the ProductVariantWriteService precedent's own law
-        // (never a raw NoSuchElementException 500 off the wire) — and the
-        // orphan revision never persists.
-        // The 2026-11-07 #808 round-20 review (Minor · Data Integrity &
-        // Integration): the definition row loads FOR UPDATE — the
-        // attribute delete holds the SAME row while its children cascade
-        // soft-deletes THIS option, and the unlocked read let the delete
-        // commit between the check and the save (the amend then answered
-        // a fabricated success on a dead row). The option re-reads under
-        // the lock; a dead option answers the honest NOT_FOUND.
-        Optional<CatalogAttributeDefinition> parent =
-                attributeDefinitionRepository.findByIdForUpdate(row.getAttributeDefinitionId());
-        if (parent.isEmpty()) {
-            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
-                    "id", AttributeMutationErrorCode.NOT_FOUND,
-                    "No attribute definition found for the value's parent")));
-        }
-        if (!attributeOptionRepository.existsById(row.getId())) {
-            return AttributeValueMutationResult.failure(List.of(new AttributeMutationError(
-                    "id", AttributeMutationErrorCode.NOT_FOUND,
-                    "No attribute value found for the id")));
-        }
-        // The 2026-11-08 #808 round-21 review (Minor · Stability &
-        // Availability): the option RE-READS under the lock — the row
-        // was loaded BEFORE the definition lock was taken, so a
-        // concurrent reorder (the locked definition writer that
-        // repositions every option) or a sibling translation that
-        // committed while THIS transaction waited on the lock leaves the
-        // managed row's @Version stale; the save would answer the raw
-        // OptimisticLockException. The JPA-documented re-read-under-lock
-        // is refresh(entity, PESSIMISTIC_WRITE) — the row's state is
-        // reloaded from the authoritative row (the OrdersService
-        // confirmFromPayment precedent verbatim).
-        entityManager.refresh(row, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         if (command.name() == null) {
             return AttributeValueMutationResult.success(toView(parent.get()), toValueView(row));
         }

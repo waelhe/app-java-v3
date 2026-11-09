@@ -774,7 +774,7 @@ class ProductTypeAttributeWriteServiceTest {
         // The typed variant covers ONLY the existing selection assignment
         // — the moved assignment has no value at all.
         when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
-        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(typed));
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(product.getId())).thenReturn(List.of(typed));
         when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(typed.getId()))
                 .thenReturn(List.of(ProductVariantAttributeValue.create(typed.getId(),
                         new CatalogAttributeValueInput(existing.getId(), null, null, null, UUID.randomUUID()))));
@@ -813,7 +813,7 @@ class ProductTypeAttributeWriteServiceTest {
         ProductVariant second = ProductVariant.register(product, "sku-two", "Two", 900L, "key-two");
         UUID sharedOption = UUID.randomUUID();
         when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
-        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId()))
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(product.getId()))
                 .thenReturn(List.of(first, second));
         when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(first.getId()))
                 .thenReturn(List.of(
@@ -866,7 +866,7 @@ class ProductTypeAttributeWriteServiceTest {
         UUID keptOption = UUID.randomUUID();
         UUID movedOption = UUID.randomUUID();
         when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
-        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(typed));
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(product.getId())).thenReturn(List.of(typed));
         when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(typed.getId()))
                 .thenReturn(List.of(
                         ProductVariantAttributeValue.create(typed.getId(), new CatalogAttributeValueInput(
@@ -914,7 +914,7 @@ class ProductTypeAttributeWriteServiceTest {
         ProductVariant first = ProductVariant.register(product, "sku-one", "One", 900L, "key-one");
         ProductVariant second = ProductVariant.register(product, "sku-two", "Two", 900L, "key-two");
         when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
-        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId()))
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(product.getId()))
                 .thenReturn(List.of(first, second));
         when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(first.getId()))
                 .thenReturn(List.of(ProductVariantAttributeValue.create(first.getId(),
@@ -955,7 +955,7 @@ class ProductTypeAttributeWriteServiceTest {
         UUID option = UUID.randomUUID();
         ProductVariant typed = ProductVariant.register(product, "sku-a", "A", 900L, "old-shape-key");
         when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
-        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(typed));
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(product.getId())).thenReturn(List.of(typed));
         when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(typed.getId()))
                 .thenReturn(List.of(ProductVariantAttributeValue.create(typed.getId(),
                         new CatalogAttributeValueInput(selection.getId(), null, null, null, option))));
@@ -1145,7 +1145,7 @@ class ProductTypeAttributeWriteServiceTest {
         // The archived variant covers ONLY the existing selection
         // assignment — the moved assignment has no value at all.
         when(productRepository.findByProductTypeId(type.getId())).thenReturn(List.of(product));
-        when(variantRepository.findByProductIdOrderBySkuAsc(product.getId())).thenReturn(List.of(archived));
+        when(variantRepository.findByProductIdOrderBySkuAscForUpdate(product.getId())).thenReturn(List.of(archived));
         when(variantAttributeValues.findAllByProductVariantIdOrderByAssignmentIdAsc(archived.getId()))
                 .thenReturn(List.of(ProductVariantAttributeValue.create(archived.getId(),
                         new CatalogAttributeValueInput(existing.getId(), null, null, null, UUID.randomUUID()))));

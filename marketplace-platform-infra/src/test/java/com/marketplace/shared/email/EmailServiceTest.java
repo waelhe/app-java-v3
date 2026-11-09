@@ -90,4 +90,27 @@ class EmailServiceTest {
                 .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("victim@example.com"))
                 .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("Sales @ Team"));
     }
+
+    /**
+     * The 2026-11-09 #807 round-2 review (Minor · Security & Privacy):
+     * the RFC 5322 QUOTED local form ({@code "private
+     * mailbox"@example.com}) escaped the scrub token's atom class — the
+     * {@code "} ahead of the {@code @} broke the character run, the
+     * address never matched, and the full quoted address rode the
+     * failure log and the exception verbatim. The quoted alternative
+     * joins the atom form: both shapes reach the mask, and the masked
+     * rendering hides the quoted local part whole.
+     */
+    @Test
+    void send_theFailurePathNeverCarriesTheQuotedLocalRecipient() {
+        when(mailSender.createMimeMessage())
+                .thenThrow(new RuntimeException("550 <\"private mailbox\"@example.com>... user unknown"));
+
+        assertThatThrownBy(() -> emailService.send("\"private mailbox\"@example.com",
+                "Welcome", "email/welcome", Map.of()))
+                .isInstanceOf(EmailSendException.class)
+                .hasMessageContaining("\"***@example.com")
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("private mailbox"))
+                .satisfies(ex -> assertThat(ex.getMessage()).doesNotContain("\"private mailbox\"@example.com"));
+    }
 }

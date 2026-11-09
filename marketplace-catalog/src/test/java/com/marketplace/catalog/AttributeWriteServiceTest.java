@@ -691,6 +691,39 @@ class AttributeWriteServiceTest {
     }
 
     @Test
+    void bulkCreateRefusesAWithinBatchDuplicateSlugPerItemUnderTheRowLevelPolicies() {
+        // The 2026-11-09 #808 round-26 review (Minor · Functional
+        // Correctness): [color, color, material] under IGNORE_FAILED —
+        // the FIRST color claimant keeps the slug (the caller's own
+        // order), the SECOND answers the classified per-item
+        // ALREADY_EXISTS at the VALIDATION pass, and material PERSISTS:
+        // the within-batch duplicate never reaches the flush, so the
+        // engine's whole-batch rollback (which used to take material
+        // down with the concurrent-collision mislabel) has nothing to
+        // abort — the row-level policy's own contract answers.
+        when(repository.findByCode("color")).thenReturn(Optional.empty());
+        when(repository.findByCode("material")).thenReturn(Optional.empty());
+        when(repository.save(any(CatalogAttributeDefinition.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var outcomes = service.bulkCreateAttributes(List.of(
+                new AttributeCreateCommand("Color", "color", CatalogAttributeType.TEXT),
+                new AttributeCreateCommand("Color Again", "color", CatalogAttributeType.TEXT),
+                new AttributeCreateCommand("Material", "material", CatalogAttributeType.TEXT)),
+                "IGNORE_FAILED");
+
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes.get(0).success()).isTrue();
+        assertThat(outcomes.get(1).success()).isFalse();
+        assertThat(outcomes.get(1).errors()).singleElement()
+                .extracting(AttributeMutationError::code)
+                .isEqualTo(AttributeMutationErrorCode.ALREADY_EXISTS);
+        assertThat(outcomes.get(1).errors().get(0).message())
+                .isEqualTo("Another item in the same batch already carries the slug");
+        assertThat(outcomes.get(2).success()).isTrue();
+    }
+
+    @Test
     void bulkUpdateReturnsThePerItemOutcomes() {
         CatalogAttributeDefinition row = row("bulk-upd", "Bulk Upd");
         when(repository.findByIdForUpdate(row.getId())).thenReturn(Optional.of(row));

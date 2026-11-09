@@ -1,5 +1,7 @@
 package com.marketplace.catalog;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -153,6 +155,23 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_READ)
     @Query("select p from Product p where p.id = :id")
     Optional<Product> findByIdForShare(@Param("id") UUID id);
+
+    /**
+     * The 2026-11-09 #808 round-26 review (Minor · Performance &amp;
+     * Scalability): the reference-creating read's own BATCH twin — the
+     * collection append's liveness re-read used to take the per-product
+     * FOR-SHARE row one id at a time (N locking statements inside the
+     * collection's advisory-lock window, stretching every membership
+     * write's critical section with the request's size). ONE statement
+     * takes every member row's share lock; the vanished ids answer from
+     * the returned set's own diff (the same ids, the same locks, the
+     * same serialized-against-the-delete pairing the single read owns —
+     * the delete's FOR-UPDATE lock and its cascade still serialize with
+     * this read over the SAME rows).
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_READ)
+    @Query("select p from Product p where p.id in :ids")
+    List<Product> findAllByIdForShare(@Param("ids") Collection<UUID> ids);
 
     /**
      * Reserves {@code qty} units of an ACTIVE product whose free stock

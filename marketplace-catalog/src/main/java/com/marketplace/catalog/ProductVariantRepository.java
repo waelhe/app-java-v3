@@ -113,6 +113,24 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     List<ProductVariant> findByProductIdOrderBySkuAsc(UUID productId);
 
     /**
+     * The 2026-11-09 #808 round-26 review (Minor · Stability &amp;
+     * Availability): the roster's own FOR-UPDATE twin — the assignment
+     * scope move's consistency walk loads a product's variants,
+     * re-derives their combination keys over the post-move schema, and
+     * the SAME transaction then SAVES those variants: a concurrent
+     * variant writer (a price change, a value edit) that committed
+     * while the walk's transaction waited left the walked rows'
+     * {@code @Version} stale, and the recombination save answered the
+     * raw OptimisticLockException — the whole scope move rolled back
+     * unclassified. The locked roster serializes the pair (the
+     * setStock/deleteVariants ownedRowForUpdate discipline, hoisted to
+     * the whole roster the move re-keys).
+     */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from ProductVariant v where v.productId = :productId order by v.sku asc")
+    List<ProductVariant> findByProductIdOrderBySkuAscForUpdate(@Param("productId") UUID productId);
+
+    /**
      * B7's TOCTOU residual (CAT-04 — the 2026-11-04 follow-on): the
      * delete-path locked roster, the money path's own
      * {@code VoucherRepository.findByCodeForUpdate} pattern. The variant

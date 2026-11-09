@@ -632,8 +632,26 @@ public class CollectionWriteService implements CollectionWriteSpi {
         // membership on a deleted product (the read join hid it, the
         // reorder still walked it).
         List<UUID> vanished = new ArrayList<>();
+        // The 2026-11-09 #808 round-26 review (Minor · Performance &
+        // Scalability): the membership-CREATING read takes every member
+        // product's FOR-SHARE row in ONE batch statement
+        // (findAllByIdForShare — the per-id loop held the collection's
+        // advisory lock for N sequential locking queries, stretching the
+        // membership write's critical section with the request's size).
+        // The same reference-creating discipline the round-19 law owns:
+        // the product delete's FOR-UPDATE row lock plus its membership
+        // cascade serialize against this read — either the delete
+        // committed first (the share read answers the soft-deleted row's
+        // absence and the vanished id rides this method's return) or
+        // THIS insert commits its membership first and the delete's
+        // cascade carries it away with the product. The vanished ids
+        // keep the REQUEST'S OWN first-occurrence order.
+        java.util.Set<UUID> liveMemberIds = productRepository
+                .findAllByIdForShare(distinct(productIds)).stream()
+                .map(Product::getId)
+                .collect(java.util.stream.Collectors.toSet());
         for (UUID productId : distinct(productIds)) {
-            if (productRepository.findByIdForShare(productId).isEmpty()) {
+            if (!liveMemberIds.contains(productId)) {
                 vanished.add(productId);
             }
         }
@@ -684,14 +702,24 @@ public class CollectionWriteService implements CollectionWriteSpi {
 
     /** The request's unknown product ids (the NOT_FOUND law's own input). */
     private List<UUID> unknownProducts(List<UUID> productIds) {
+        // The 2026-11-09 #808 round-26 review (Minor · Performance &
+        // Scalability): the precheck's existence read is ONE batch
+        // statement — the per-id findById loop held the advisory lock for
+        // N sequential queries (the same stretch the liveness re-read
+        // just dropped). findAllById rides the same @SoftDelete filter
+        // the single read owns, so the diff answers the same unknown
+        // ids in the request's own first-occurrence order.
+        if (productIds == null || productIds.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> distinctIds = distinct(productIds);
+        java.util.Set<UUID> knownIds = productRepository.findAllById(distinctIds).stream()
+                .map(Product::getId)
+                .collect(java.util.stream.Collectors.toSet());
         List<UUID> unknown = new ArrayList<>();
-        if (productIds != null) {
-            for (UUID productId : distinct(productIds)) {
-                if (productId == null || productRepository.findById(productId).isEmpty()) {
-                    if (productId != null) {
-                        unknown.add(productId);
-                    }
-                }
+        for (UUID productId : distinctIds) {
+            if (!knownIds.contains(productId)) {
+                unknown.add(productId);
             }
         }
         return unknown;

@@ -166,11 +166,19 @@ class CollectionReadServiceTest {
     // ------------------------------------------------------------------
 
     @Test
-    void theScrollOrdersByNameWithTheIdTiebreakerAndAnswersTheVisibleTotal() {
-        when(collectionRepository.findAll()).thenReturn(List.of(
-                publishedRow("b", "Bravo"),
-                unpublishedRow("c", "Charlie"),
-                publishedRow("a", "Alpha")));
+    void theScrollRendersTheSqlPagesOrderAndAnswersTheVisibleTotal() {
+        // The 2026-11-09 #808 round-26 review: the page is cut in SQL —
+        // the ORDER BY is the repository statement's own law now (the
+        // in-memory sort is gone), so the service's contract here is the
+        // RENDERING of the page's order plus the separate count
+        // statement's total.
+        org.mockito.Mockito.when(collectionRepository.findFirstVisibleCollectionsByNameAsc(
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(
+                        publishedRow("a", "Alpha"),
+                        publishedRow("b", "Bravo"),
+                        unpublishedRow("c", "Charlie")));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(true)).thenReturn(3L);
 
         CollectionPage page = service.scrollCollections(admin,
                 CollectionSort.of(CollectionSort.Field.NAME, true),
@@ -185,9 +193,12 @@ class CollectionReadServiceTest {
 
     @Test
     void thePlainCallersScrollCarriesThePublishedRowsAlone() {
-        when(collectionRepository.findAll()).thenReturn(List.of(
-                publishedRow("a", "Alpha"),
-                unpublishedRow("b", "Bravo")));
+        // The publication law rides the SAME SQL statement — the staff
+        // flag the service passes is the caller's own class.
+        org.mockito.Mockito.when(collectionRepository.findFirstVisibleCollectionsByNameAsc(
+                org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(publishedRow("a", "Alpha")));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(false)).thenReturn(1L);
 
         CollectionPage page = service.scrollCollections(member,
                 CollectionSort.of(CollectionSort.Field.NAME, true),
@@ -199,10 +210,13 @@ class CollectionReadServiceTest {
     }
 
     @Test
-    void theDescendingScrollReversesTheOrder() {
-        when(collectionRepository.findAll()).thenReturn(List.of(
-                publishedRow("a", "Alpha"),
-                publishedRow("b", "Bravo")));
+    void theDescendingScrollRidesTheDescendingStatement() {
+        org.mockito.Mockito.when(collectionRepository.findFirstVisibleCollectionsByNameDesc(
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(
+                        publishedRow("b", "Bravo"),
+                        publishedRow("a", "Alpha")));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(true)).thenReturn(2L);
 
         CollectionPage page = service.scrollCollections(admin,
                 CollectionSort.of(CollectionSort.Field.NAME, false),
@@ -214,10 +228,13 @@ class CollectionReadServiceTest {
 
     @Test
     void thePageSizeLimitDrivesHasNextAndTheWindow() {
-        when(collectionRepository.findAll()).thenReturn(List.of(
-                publishedRow("a", "Alpha"),
-                publishedRow("b", "Bravo"),
-                publishedRow("c", "Charlie")));
+        org.mockito.Mockito.when(collectionRepository.findFirstVisibleCollectionsByNameAsc(
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(
+                        publishedRow("a", "Alpha"),
+                        publishedRow("b", "Bravo"),
+                        publishedRow("c", "Charlie")));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(true)).thenReturn(3L);
 
         CollectionPage page = service.scrollCollections(admin,
                 CollectionSort.of(CollectionSort.Field.NAME, true),
@@ -229,6 +246,32 @@ class CollectionReadServiceTest {
     }
 
     @Test
+    void theBoundedScrollFetchesOneRowBeyondThePage() {
+        // The 2026-11-09 #808 round-26 review: the hasNext verdict rides
+        // the limit+1 fetch — the service asks the statement for ONE row
+        // beyond the page (the SQL twin of the in-memory size comparison
+        // the old shape owned), and trims the window back to the page
+        // size when the extra row answers.
+        org.mockito.ArgumentCaptor<Pageable> page =
+                org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        org.mockito.Mockito.when(collectionRepository.findFirstVisibleCollectionsByNameAsc(
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(
+                        publishedRow("a", "Alpha"),
+                        publishedRow("b", "Bravo")));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(true)).thenReturn(2L);
+
+        service.scrollCollections(admin,
+                CollectionSort.of(CollectionSort.Field.NAME, true),
+                ScrollPosition.keyset(), Limit.of(2));
+
+        org.mockito.Mockito.verify(collectionRepository)
+                .findFirstVisibleCollectionsByNameAsc(
+                        org.mockito.ArgumentMatchers.eq(true), page.capture());
+        assertThat(page.getValue().getPageSize()).isEqualTo(3);
+    }
+
+    @Test
     void aNullSortAnswersTheClassifiedValidationError() {
         assertThatThrownBy(() -> service.scrollCollections(admin, null,
                 ScrollPosition.keyset(), Limit.of(10)))
@@ -237,8 +280,6 @@ class CollectionReadServiceTest {
 
     @Test
     void aNonForwardKeysetPositionAnswersTheClassifiedValidationError() {
-        when(collectionRepository.findAll()).thenReturn(List.of(publishedRow("a", "Alpha")));
-
         KeysetScrollPosition backward = (KeysetScrollPosition) ScrollPosition.backward(
                 Map.of("name", "Alpha", "id", UUID.randomUUID()));
         assertThatThrownBy(() -> service.scrollCollections(admin,
@@ -249,10 +290,18 @@ class CollectionReadServiceTest {
     }
 
     @Test
-    void theForwardKeysetFollowsTheCursorsOwnSortKey() {
+    void theForwardKeysetRidesTheCursorContinuationStatement() {
+        // The cursor's own (name, id) key rides the CONTINUATION
+        // statement — the service passes the cursor's pair to the
+        // repository's own keyset predicate (the SQL is the law now).
         Collection first = publishedRow("a", "Alpha");
-        Collection second = publishedRow("b", "Bravo");
-        when(collectionRepository.findAll()).thenReturn(List.of(second, first));
+        org.mockito.Mockito.when(collectionRepository.findNextVisibleCollectionsByNameAsc(
+                org.mockito.ArgumentMatchers.eq(true),
+                org.mockito.ArgumentMatchers.eq("Alpha"),
+                org.mockito.ArgumentMatchers.eq(first.getId()),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(publishedRow("b", "Bravo")));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(true)).thenReturn(2L);
 
         KeysetScrollPosition afterFirst = ScrollPosition.forward(Map.of(
                 "name", "Alpha", "id", first.getId()));
@@ -510,8 +559,14 @@ class CollectionReadServiceTest {
 
     @Test
     void theProjectionRendersThePrimaryNameAndThePublicationFact() {
-        when(collectionRepository.findAll()).thenReturn(List.of(
-                Collection.create("slug", "English", "عربي", true)));
+        // The 2026-11-09 #808 round-26 review: the page rides the SQL
+        // statement — the scaffolding stubs the page method (the in-memory
+        // findAll scroll is gone).
+        org.mockito.Mockito.when(collectionRepository.findFirstVisibleCollectionsByNameAsc(
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(
+                        Collection.create("slug", "English", "عربي", true)));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(true)).thenReturn(1L);
 
         CollectionPage page = service.scrollCollections(admin,
                 CollectionSort.of(CollectionSort.Field.NAME, true),
@@ -526,16 +581,24 @@ class CollectionReadServiceTest {
 
     @Test
     void aRowCarryingNeitherNameOrdersByTheEmptyKeyAndAnswersTheNullWireName() {
-        when(collectionRepository.findAll()).thenReturn(List.of(
-                Collection.create("a", null, null, true),
-                publishedRow("b", "Bravo")));
+        // The empty ordering key (COALESCE(name_en, name_ar, '')) is the
+        // SQL statement's own law — the repository returns the empty-key
+        // row first in the ascending order, and the service renders the
+        // page in that order with the honest null wire name (the
+        // 2026-11-09 #808 round-26 review's SQL-page shape).
+        org.mockito.Mockito.when(collectionRepository.findFirstVisibleCollectionsByNameAsc(
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(
+                        Collection.create("a", null, null, true),
+                        publishedRow("b", "Bravo")));
+        org.mockito.Mockito.when(collectionRepository.countVisibleCollections(true)).thenReturn(2L);
 
         CollectionPage page = service.scrollCollections(admin,
                 CollectionSort.of(CollectionSort.Field.NAME, true),
                 ScrollPosition.keyset(), Limit.of(10));
 
-        // Ascending orders the empty-key rows first (the total-ordering
-        // key's own law); the wire name stays the honest null.
+        // The empty-key rows lead the ascending page (the statement's own
+        // ordering); the wire name stays the honest null.
         assertThat(page.window().getContent()).hasSize(2);
         assertThat(page.window().getContent().get(0).name()).isNull();
         assertThat(page.window().getContent().get(0).slug()).isEqualTo("a");

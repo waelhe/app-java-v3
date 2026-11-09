@@ -7,6 +7,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Management of reusable typed catalog attributes and CHOICE options. */
@@ -17,22 +18,15 @@ public class CatalogAttributeService {
     /** The live-reference walls the remove law reads (the 2026-11-07 #808 round-20). */
     private final ProductVariantAttributeValueRepository variantValues;
     private final ProductAttributeValueRepository productValues;
-    // The 2026-11-08 #808 round-21 review (Minor · Stability &
-    // Availability): constructor injection (not @PersistenceContext) so
-    // the unit tests can mock the refresh contract — the OrdersService
-    // confirmFromPayment precedent.
-    private final jakarta.persistence.EntityManager entityManager;
 
     public CatalogAttributeService(CatalogAttributeDefinitionRepository definitions,
                                    CatalogAttributeOptionRepository options,
                                    ProductVariantAttributeValueRepository variantValues,
-                                   ProductAttributeValueRepository productValues,
-                                   jakarta.persistence.EntityManager entityManager) {
+                                   ProductAttributeValueRepository productValues) {
         this.definitions = definitions;
         this.options = options;
         this.variantValues = variantValues;
         this.productValues = productValues;
-        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -109,34 +103,38 @@ public class CatalogAttributeService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void removeOption(UUID optionId) {
-        CatalogAttributeOption option = optionId == null ? null
-                : options.findById(optionId).orElse(null);
-        if (option == null) {
+        // The 2026-11-09 #808 round-26 review (Minor · Stability &
+        // Availability): the drop/lock/load order — the DEFINITION-ID
+        // projection resolves the family without managing the option (the
+        // round-13 law), the family's FOR-UPDATE lock serializes against
+        // every reference writer, and the option's OWN locked load
+        // (findByIdForUpdate) answers the authoritative row: a vanished
+        // option answers the empty Optional, never the refresh's
+        // EntityNotFoundException (which the installed Hibernate 7.4.13
+        // converts with session.markForRollbackOnly — the round-26
+        // poison), so the classified NOT_FOUND rides a transaction that
+        // can still commit.
+        Optional<UUID> familyId = optionId == null
+                ? Optional.empty() : options.findDefinitionIdById(optionId);
+        if (familyId.isEmpty()) {
             throw new ResourceNotFoundException("CatalogAttributeOption", optionId);
         }
         // The 2026-11-07 #808 round-20 review (Major · Data Integrity &
         // Integration): the REST remove rides the SAME law the SPI
         // delete owns (deleteAttributeValue) — the definition row's own
-        // FOR-UPDATE lock serializes against every reference writer, the
-        // live-variant and live-product walls refuse an option the
-        // shelf still renders, and the option re-reads AFTER the lock
-        // (a concurrent delete of the SAME option never fabricates a
-        // success off the stale managed row).
-        definitions.findByIdForUpdate(option.getAttributeDefinitionId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "CatalogAttributeDefinition", option.getAttributeDefinitionId()));
-        if (!options.existsById(optionId)) {
-            throw new ResourceNotFoundException("CatalogAttributeOption", optionId);
-        }
+        // FOR-UPDATE lock serializes against every reference writer, and
+        // a dead family's option is the orphaned cleanup the SPI leg
+        // answers with the family's own honest absence.
+        definitions.findByIdForUpdate(familyId.get())
+                .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeDefinition", familyId.get()));
         // The 2026-11-08 #808 round-21 review (Minor · Stability &
-        // Availability): the option RE-READS under the lock — it was
-        // loaded BEFORE the definition lock, so a translation or reorder
-        // that committed while THIS call waited leaves the managed row's
-        // @Version stale and the soft delete matches zero rows (the raw
-        // OptimisticLockException). refresh(entity, PESSIMISTIC_WRITE)
-        // reloads the authoritative row first (the OrdersService
-        // confirmFromPayment precedent).
-        entityManager.refresh(option, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        // Availability), re-proven on the round-26 shape: the option
+        // RE-READS under its own row lock — the load IS the
+        // authoritative re-read (the OrdersService confirmFromPayment
+        // precedent's intent, without the refresh's poisoned exception
+        // contract).
+        CatalogAttributeOption option = options.findByIdForUpdate(optionId)
+                .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeOption", optionId));
         if (variantValues.existsByOptionId(optionId)) {
             throw new ConflictException(
                     "An attribute value referenced by a live variant cannot be deleted");

@@ -147,6 +147,16 @@ class CampaignReportsGuardTest {
             }
         }
         field.add(cur.toString());
+        // The 2026-11-09 #807 round-2 review (Minor · Functional
+        // Correctness): an UNCLOSED trailing quote must refuse the ledger,
+        // not parse through it — the loop above ends with inQuotes still
+        // true when the closing mark was deleted, and the EOF tail below
+        // would silently append the line separator into the quoted field
+        // and accept the corrupted row (the report tests could pass over
+        // broken CSV). The closed-form invariant answers first.
+        assertThat(inQuotes)
+                .as("the ledger CSV must close every quoted field")
+                .isFalse();
         if (!(field.size() == 1 && field.get(0).isEmpty())) {
             records.add(field);
         }

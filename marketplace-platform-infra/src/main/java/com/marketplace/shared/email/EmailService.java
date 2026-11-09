@@ -136,9 +136,20 @@ public class EmailService {
         }
     }
 
-    /** Every address-shaped token in a diagnostic message — the scrub target. */
+    /**
+     * Every address-shaped token in a diagnostic message — the scrub
+     * target. The 2026-11-09 #807 round-2 review (Minor · Security &
+     * Privacy): the RFC 5322 QUOTED local form ({@code "private
+     * mailbox"@example.com}) escaped the atom class — the {@code "} ahead
+     * of the {@code @} breaks the character run, the token never matched,
+     * and the full address rode the failure log and the exception
+     * verbatim. The quoted alternative joins the atom form: both shapes
+     * reach {@link #mask(String)}, which answers the quoted local with
+     * its fully-masked rendering ({@code "***@domain} — the local part's
+     * characters never survive).
+     */
     private static final java.util.regex.Pattern EMAIL_TOKEN =
-            java.util.regex.Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+");
+            java.util.regex.Pattern.compile("(\"[^\"]*\"|[A-Za-z0-9._%+-]+)@[A-Za-z0-9.-]+");
 
     /**
      * The logging-safe rendering of one recipient value. The RFC 5322

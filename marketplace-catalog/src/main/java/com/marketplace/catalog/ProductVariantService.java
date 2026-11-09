@@ -305,7 +305,17 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant suspend(UUID variantId, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The 2026-11-09 #808 round-26 review (Minor · Stability &
+        // Availability): the availability writes join the setStock
+        // discipline — the UNLOCKED requireOwnedVariant read let a
+        // concurrent delete of the SAME variant commit between the read
+        // and the save, and the state change then rode the stale managed
+        // row (the raw OptimisticLockException, or a soft-delete UPDATE
+        // matching zero rows). The locked read serializes the pair: the
+        // delete either waits (this state change lands first, the
+        // delete's cascade carries it away) or has already committed
+        // (the locked load answers the honest 404).
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.suspend();
         return variantRepository.save(variant);
     }
@@ -313,7 +323,9 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant reactivate(UUID variantId, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The same round-26 law: the locked ownership read, the setStock
+        // precedent verbatim.
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.reactivate();
         return variantRepository.save(variant);
     }
@@ -321,7 +333,9 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant archive(UUID variantId, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The same round-26 law: the locked ownership read, the setStock
+        // precedent verbatim.
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.archive();
         return variantRepository.save(variant);
     }

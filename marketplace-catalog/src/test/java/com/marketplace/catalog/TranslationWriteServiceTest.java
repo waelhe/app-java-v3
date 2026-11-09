@@ -60,10 +60,9 @@ class TranslationWriteServiceTest {
     private CatalogAttributeDefinitionRepository attributeDefinitionRepository;
     private CatalogAttributeOptionRepository attributeOptionRepository;
     private CollectionRepository collectionRepository;
-    // The 2026-11-08 #808 round-21: the advisory-lock port and the
-    // refresh-under-lock contract's own mocks.
+    // The 2026-11-08 #808 round-21: the collection translation rides the
+    // collection advisory lock (the locked-first law).
     private CollectionProductRepository collectionProductRepository;
-    private jakarta.persistence.EntityManager entityManager;
     private TranslationWriteSpi service;
     private final Authentication caller = new TestingAuthenticationToken("admin-subject", "n/a", "ROLE_ADMIN");
 
@@ -73,20 +72,24 @@ class TranslationWriteServiceTest {
         attributeDefinitionRepository = mock(CatalogAttributeDefinitionRepository.class);
         attributeOptionRepository = mock(CatalogAttributeOptionRepository.class);
         collectionRepository = mock(CollectionRepository.class);
+        collectionProductRepository = mock(CollectionProductRepository.class);
         // The 2026-11-07 #808 round-20: the value translation rides the
         // definition's FOR-UPDATE lock — the delete-pairing default.
         lenient().when(attributeDefinitionRepository.findByIdForUpdate(any(UUID.class)))
                 .thenAnswer(invocation -> attributeDefinitionRepository.findById(invocation.getArgument(0)));
-        lenient().when(attributeOptionRepository.existsById(any(UUID.class))).thenReturn(true);
-        // The 2026-11-08 #808 round-21: the collection translation rides the
-        // collection advisory lock (the locked-first law) and the value
-        // translation re-reads its option under the definition lock — the
-        // EntityManager mock is the OrdersService no-op-refresh precedent.
-        collectionProductRepository = mock(CollectionProductRepository.class);
-        entityManager = mock(jakarta.persistence.EntityManager.class);
+        // The 2026-11-09 #808 round-26 review: the drop/lock/load order's
+        // read-through defaults — the DEFINITION-ID projection and the
+        // option's OWN locked load both delegate to the findById stubs the
+        // per-test scaffolding already owns (the refresh seam is gone;
+        // the locked load IS the authoritative re-read).
+        lenient().when(attributeOptionRepository.findDefinitionIdById(any(UUID.class)))
+                .thenAnswer(invocation -> attributeOptionRepository
+                        .findById(invocation.getArgument(0, UUID.class))
+                        .map(CatalogAttributeOption::getAttributeDefinitionId));
+        lenient().when(attributeOptionRepository.findByIdForUpdate(any(UUID.class)))
+                .thenAnswer(invocation -> attributeOptionRepository.findById(invocation.getArgument(0)));
         service = new TranslationWriteService(categoryRepository, attributeDefinitionRepository,
-                attributeOptionRepository, collectionRepository, collectionProductRepository,
-                entityManager);
+                attributeOptionRepository, collectionRepository, collectionProductRepository);
     }
 
     // ------------------------------------------------------------------
@@ -645,16 +648,21 @@ class TranslationWriteServiceTest {
     void theValueTranslationAnswersTheHonestNotFoundWhenTheOptionDiedUnderTheLock() {
         // The 2026-11-07 #808 round-20 review (Minor · Data Integrity &
         // Integration): the definition's FOR-UPDATE lock serializes with
-        // the attribute delete's cascade; the option re-read under it
-        // answers the honest absence — never a fabricated success on a
-        // dead row.
+        // the attribute delete's cascade; the option's own locked load
+        // under it answers the honest absence — never a fabricated
+        // success on a dead row. The 2026-11-09 #808 round-26 review:
+        // the absence is the locked load's EMPTY OPTIONAL (the
+        // existsById guard is gone); the doReturn/when shape registers
+        // the override without running the read-through default (the
+        // same-mock unfinished-stubbing trap).
         CatalogAttributeDefinition parent = CatalogAttributeDefinition.create(
                 "color", "Color", null, CatalogAttributeType.CHOICE, null);
         CatalogAttributeOption row = CatalogAttributeOption.create(
                 parent.getId(), "red", "Red", null, 1);
         when(attributeOptionRepository.findById(row.getId())).thenReturn(Optional.of(row));
         when(attributeDefinitionRepository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
-        when(attributeOptionRepository.existsById(row.getId())).thenReturn(false);
+        org.mockito.Mockito.doReturn(Optional.empty()).when(attributeOptionRepository)
+                .findByIdForUpdate(row.getId());
 
         AttributeValueMutationResult result = service.translateAttributeValue(
                 row.getId(), new TranslationAmendCommand("أحمر", "AR"));

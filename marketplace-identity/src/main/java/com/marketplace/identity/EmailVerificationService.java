@@ -191,6 +191,17 @@ public class EmailVerificationService {
         // one. The post-lock state guard below remains the authority —
         // this resolution is the addressing choice, never the eligibility
         // verdict itself.
+        //
+        // The 2026-11-09 #807 round-2 review (Minor · Functional
+        // Correctness): when BOTH rows are pending, the round-5 order armed
+        // the NORMALIZED row while the requester's own mixed-case link arms
+        // the address they asked about — the requested account stayed
+        // disabled forever (the round's own stranded-account defect,
+        // mirrored). Among pending rows the MATCHING subject now wins:
+        // subject pending → subject (the exact row the requester named),
+        // else the normalized row when it alone is pending, else the
+        // normalized row as before (the finished case — the post-lock
+        // guard decides).
         String resolved;
         if (normalized.equals(subject)) {
             resolved = userDetailsManager.userExists(normalized) ? normalized : null;
@@ -198,8 +209,8 @@ public class EmailVerificationService {
             boolean normalizedExists = userDetailsManager.userExists(normalized);
             boolean subjectExists = userDetailsManager.userExists(subject);
             if (normalizedExists && subjectExists) {
-                resolved = pendingVerification(normalized) ? normalized
-                        : pendingVerification(subject) ? subject : normalized;
+                resolved = pendingVerification(subject) ? subject
+                        : pendingVerification(normalized) ? normalized : normalized;
             } else {
                 resolved = normalizedExists ? normalized : subjectExists ? subject : null;
             }

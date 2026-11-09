@@ -501,6 +501,30 @@ public class AttributeWriteService implements AttributeWriteSpi {
         for (AttributeCreateCommand command : commands) {
             candidates.add(validateNewAttribute(command));
         }
+        // The 2026-11-09 #808 round-26 review (Minor · Functional
+        // Correctness): a WITHIN-batch duplicate slug is detectable in
+        // the VALIDATION pass (a pure read — no insert is pending yet),
+        // and the row-level policies owe it the per-item refusal: under
+        // IGNORE_FAILED, [color, color, material] used to land the
+        // second color's claim on the unique index at the flush and the
+        // engine's own law rolled the whole batch back — material
+        // included — with the CONCURRENT-collision wording (a mislabel:
+        // no rival exists). The first VALID claimant keeps the slug (the
+        // caller's own order — the claims' sorted order below stays
+        // unchanged); every LATER valid candidate naming an already-
+        // claimed code answers the classified per-item ALREADY_EXISTS
+        // here, and the concurrent rival's violation (the one the
+        // precheck cannot see) keeps the flush-boundary backstop below.
+        java.util.Set<String> claimedCodes = new java.util.HashSet<>();
+        for (int i = 0; i < candidates.size(); i++) {
+            NewAttribute candidate = candidates.get(i);
+            if (candidate.valid() && !claimedCodes.add(candidate.code())) {
+                candidates.set(i, new NewAttribute(candidate.code(), candidate.name(),
+                        candidate.valueType(), List.of(new AttributeMutationError(
+                        "slug", AttributeMutationErrorCode.ALREADY_EXISTS,
+                        "Another item in the same batch already carries the slug"))));
+            }
+        }
         List<Integer> claims = new ArrayList<>();
         for (int i = 0; i < commands.size(); i++) {
             if (candidates.get(i).valid()) {

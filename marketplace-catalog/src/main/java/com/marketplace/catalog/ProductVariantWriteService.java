@@ -233,6 +233,34 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
         }
         ProductVariant created = variantRepository.save(ProductVariant.register(
                 parent.get(), sku, name, command.priceMinor()));
+        // The 2026-11-09 #808 round-26 review (Minor · Data Integrity &
+        // Integration): the precheck is honest but not atomic — two
+        // concurrent single creates from the SAME provider can both pass
+        // countSkuReservationsIncludingDeleted and the loser then died on
+        // V219's GLOBAL unique index (uq_product_variants_provider_sku)
+        // at the interceptor's commit, past every catch, as the raw
+        // constraint error. The flush lands the insert INSIDE the
+        // boundary (the bulk leg's own round-21 law, hoisted to the
+        // single create): the collision surfaces HERE, the discrimination
+        // names THIS index only (every other violation keeps its own
+        // propagation), and the LOCAL rollback-only marking rolls the
+        // transaction back silently at the boundary — the classified
+        // ALREADY_EXISTS reaches the caller (the bulkCreateAttributes
+        // collision backstop's own discipline; the bulk leg's in-loop
+        // coordination owns its batch rewrite).
+        try {
+            variantRepository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException violation) {
+            if (violation.getMessage() == null
+                    || !violation.getMessage().contains("uq_product_variants_provider_sku")) {
+                throw violation;
+            }
+            org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().setRollbackOnly();
+            return ProductVariantMutationResult.failure(List.of(new ProductVariantMutationError(
+                    "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                    "The SKU was committed concurrently in this seller's namespace")));
+        }
         return ProductVariantMutationResult.success(toView(created, parent.get()));
     }
 
@@ -476,6 +504,32 @@ public class ProductVariantWriteService implements ProductVariantWriteSpi {
                 return rewritten;
             }
             outcomes.add(new ProductVariantBulkOutcome(result.variant(), result.errors()));
+            // The 2026-11-09 #808 round-26 review: the single create's OWN
+            // flush boundary (the concurrent-SKU backstop above) answers
+            // the classified ALREADY_EXISTS and marks the transaction
+            // rollback-only — the batch stops HERE (the PostgreSQL
+            // statement error aborted the transaction; any further
+            // statement answers the aborted-transaction error), and every
+            // item answers the collision honestly (the round-22 rewrite's
+            // own discipline, carried to the boundary's new position).
+            if (org.springframework.transaction.interceptor.TransactionAspectSupport
+                    .currentTransactionStatus().isRollbackOnly()) {
+                ProductVariantMutationError boundaryCollision = new ProductVariantMutationError(
+                        "sku", ProductVariantMutationErrorCode.ALREADY_EXISTS,
+                        "The SKU was committed concurrently in this seller's namespace — the batch"
+                                + " rolled back whole");
+                List<ProductVariantBulkOutcome> boundaryRewritten = new ArrayList<>(outcomes.size());
+                for (ProductVariantBulkOutcome outcome : outcomes) {
+                    boundaryRewritten.add(outcome.success()
+                            ? new ProductVariantBulkOutcome(null, List.of(boundaryCollision))
+                            : new ProductVariantBulkOutcome(null,
+                                    appendError(outcome.errors(), boundaryCollision)));
+                }
+                while (boundaryRewritten.size() < commands.size()) {
+                    boundaryRewritten.add(new ProductVariantBulkOutcome(null, List.of(boundaryCollision)));
+                }
+                return boundaryRewritten;
+            }
         }
         try {
             // The 2026-11-08 #808 round-21 review (Minor · Data Integrity

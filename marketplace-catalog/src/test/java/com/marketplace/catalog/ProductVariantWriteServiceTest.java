@@ -836,6 +836,46 @@ class ProductVariantWriteServiceTest {
     }
 
     @Test
+    void theSingleCreateAnswersTheClassifiedCollisionWhenAConcurrentSkuClaimWinsTheIndex() {
+        // The 2026-11-09 #808 round-26 review (Minor · Data Integrity &
+        // Integration): the single create's own concurrent-collision
+        // backstop — the precheck is honest but not atomic (two
+        // concurrent single creates from the SAME provider both pass
+        // countSkuReservationsIncludingDeleted), and the loser used to
+        // die on V219's GLOBAL unique index at the interceptor's commit,
+        // past every catch, as the raw constraint error. The flush now
+        // lands INSIDE the single create's boundary: the collision
+        // surfaces in the catch, the discrimination names THIS index
+        // only, and the LOCAL rollback-only marking lets the classified
+        // ALREADY_EXISTS reach the caller.
+        Product parent = productOwnedBy(ProviderIds.CALLER);
+        when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(parent));
+        when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "RACE-SKU"))
+                .thenReturn(0L);
+        when(variantRepository.save(any(ProductVariant.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "could not execute statement; SQL n/a; constraint [uq_product_variants_provider_sku]"))
+                .when(variantRepository).flush();
+
+        ProductVariantMutationResult result;
+        try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
+
+            result = service.createVariant(create(parent.getId(), "RACE-SKU", "Racer", 100L), caller);
+        }
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+        verify(variantRepository).flush();
+    }
+
+    @Test
     void theBulkCreateAnswersTheClassifiedCollisionWhenAConcurrentSkuClaimWinsTheIndex() {
         // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
         // Integration, additional comment): the non-atomic policy's
@@ -844,6 +884,14 @@ class ProductVariantWriteServiceTest {
         // answers the classified ALREADY_EXISTS for every item (the
         // bulkCreateAttributes precedent verbatim), never the raw
         // constraint error past every catch at the interceptor's commit.
+        // The 2026-11-09 #808 round-26 review: the flush now rides INSIDE
+        // each item's createVariant (the single create's own backstop),
+        // so the batch's coordination answers the verdict — the
+        // rollback-only marking the single catch owns stops the loop
+        // right after the colliding item (the PostgreSQL statement error
+        // aborted the transaction; a later item's statement would answer
+        // the aborted-transaction error), and the whole batch answers
+        // the classified collision.
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         // The 2026-11-08 #808 round-25 review: createVariant is
@@ -864,8 +912,13 @@ class ProductVariantWriteServiceTest {
         List<ProductVariantBulkOutcome> outcomes;
         try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
                      org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            org.springframework.transaction.TransactionStatus status =
+                    org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class);
+            // The single create's catch marks the batch — the loop's
+            // coordination reads the SAME marking and stops.
+            when(status.isRollbackOnly()).thenReturn(true);
             transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
-                    .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
+                    .thenReturn(status);
 
             outcomes = service.bulkCreateVariants(parent.getId(),
                     List.of(new ProductVariantCreateCommand(parent.getId(), "RACE-SKU", "Racer", 100L)),
@@ -876,6 +929,8 @@ class ProductVariantWriteServiceTest {
                 .extracting(ProductVariantBulkOutcome::success, o -> o.errors().get(0).code(),
                         o -> o.errors().get(0).field())
                 .containsExactly(false, ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+        // The single create's own flush — exactly once, never a second
+        // statement on the aborted transaction.
         verify(variantRepository).flush();
     }
 
@@ -905,11 +960,24 @@ class ProductVariantWriteServiceTest {
         when(variantRepository.save(any(ProductVariant.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        var outcomes = service.bulkCreateVariants(parent.getId(), List.of(
-                new ProductVariantCreateCommand(null, "SKU-A", "A", 100L),
-                new ProductVariantCreateCommand(null, "SKU-B", "B", 200L),
-                new ProductVariantCreateCommand(null, "SKU-9", "Nine", 300L)),
-                caller, "IGNORE_FAILED");
+        // The 2026-11-09 #808 round-26 review: the batch loop reads the
+        // transaction's rollback-only marking after every item (the
+        // single create's flush-boundary coordination) — the unit seam
+        // wraps the call in the static mock the collision tests already
+        // own (the status answers not-marked, so the batch runs to its
+        // end).
+        List<ProductVariantBulkOutcome> outcomes;
+        try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
+                     org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
+            transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
+                    .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
+
+            outcomes = service.bulkCreateVariants(parent.getId(), List.of(
+                    new ProductVariantCreateCommand(null, "SKU-A", "A", 100L),
+                    new ProductVariantCreateCommand(null, "SKU-B", "B", 200L),
+                    new ProductVariantCreateCommand(null, "SKU-9", "Nine", 300L)),
+                    caller, "IGNORE_FAILED");
+        }
 
         assertThat(outcomes).hasSize(3);
         assertThat(outcomes.get(0).success()).isTrue();
@@ -1053,14 +1121,19 @@ class ProductVariantWriteServiceTest {
     @Test
     void theBulkCreateAnswersTheClassifiedCollisionWhenTheViolationSurfacesInsideTheLoop() {
         // The 2026-11-08 #808 round-22 review (Minor · Data Integrity &
-        // Integration): the violation can surface INSIDE the loop — an
-        // earlier item's pending insert is auto-flushed by a LATER
-        // item's SKU precheck (FlushMode.AUTO flushes before any query
-        // over product_variants), so the guarded flush() after the loop
-        // never sees it. The in-loop catch owns the same discrimination
-        // (this index only) and the same whole-batch rewrite: every item
-        // answers the collision honestly, the ones past the failure
-        // included — and the flush itself is never reached.
+        // Integration): a violation surfacing INSIDE the loop is owned by
+        // the in-loop catch — the same discrimination (this index only)
+        // and the same whole-batch rewrite: every item answers the
+        // collision honestly, the ones past the failure included.
+        // The 2026-11-09 #808 round-26 review: each item's insert now
+        // lands at its OWN flush boundary inside createVariant (the
+        // auto-flushed-pending-insert window the round-22 shape answered
+        // is closed — a later item's precheck never sees an earlier
+        // item's pending insert), so the precheck-surfaced violation this
+        // stub simulates pins the catch's standing as the BACKSTOP: the
+        // rewrite answers every item, and the only flush that ran is the
+        // FIRST item's own boundary flush (SKU-A's insert; the rewrite
+        // returns before SKU-C ever starts).
         Product parent = productOwnedBy(ProviderIds.CALLER);
         when(productRepository.findByIdForShare(parent.getId())).thenReturn(Optional.of(parent));
         // The 2026-11-08 #808 round-25 review: createVariant is
@@ -1096,8 +1169,10 @@ class ProductVariantWriteServiceTest {
                     .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
                     .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
         });
-        // The collision was answered IN the loop, never by the flush.
-        verify(variantRepository, never()).flush();
+        // The collision was answered IN the loop (the in-loop catch's
+        // rewrite); the ONLY flush that ran is SKU-A's own boundary flush
+        // inside its createVariant — the round-26 boundary.
+        verify(variantRepository, org.mockito.Mockito.times(1)).flush();
     }
 
     @Test
