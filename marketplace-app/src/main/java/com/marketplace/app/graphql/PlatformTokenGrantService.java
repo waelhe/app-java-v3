@@ -340,7 +340,22 @@ public class PlatformTokenGrantService {
         // the retry mints from the truth. The residual window mirrors the
         // disable wall's: a revocation committing AFTER this read leaves
         // only the already-minted stateless access token's own 900s TTL.
-        if (!currentAuthorityNames(principal).containsAll(roles)) {
+        // The 2026-11-09 CI diagnosis (the round-9 wall's first
+        // real-context exercise): the framework-assembled authentication
+        // carries Spring Security 7.1's authentication-FACTOR markers
+        // (e.g. FACTOR_PASSWORD — appended by the real provider; absent
+        // from any hand-built unit stub, and from the login store's role
+        // truth by design) alongside the ROLE_ authorities. The factor
+        // markers are not revocable roles — the wall compares the
+        // ROLE-namespace subset ONLY (the authorities that carry the
+        // ROLE_ prefix, stripped the same way stripRolePrefix strips
+        // the stored set), never the factor markers.
+        Set<String> grantedRevocableRoles = authentication.getAuthorities().stream()
+                .map(authority -> authority.getAuthority())
+                .filter(authority -> authority.startsWith("ROLE_"))
+                .map(authority -> authority.substring(5))
+                .collect(Collectors.toSet());
+        if (!currentAuthorityNames(principal).containsAll(grantedRevocableRoles)) {
             authorizationService().remove(issuedRow);
             // The sets ride the WARN (operator forensics: WHICH authority
             // vanished between the authentication and the wall read) —
@@ -348,7 +363,8 @@ public class PlatformTokenGrantService {
             // nothing about the store's state).
             log.warn("Platform password grant revoked at issue: a role was revoked"
                     + " while the grant raced (userId={}): granted={} current={}",
-                    user == null ? null : user.id(), roles, currentAuthorityNames(principal));
+                    user == null ? null : user.id(), grantedRevocableRoles,
+                    currentAuthorityNames(principal));
             throw new org.springframework.security.authentication.BadCredentialsException(
                     "The sign-in could not complete — sign in again");
         }

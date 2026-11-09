@@ -176,8 +176,14 @@ class PlatformTokenGrantServiceTest {
             }
             if (PRINCIPAL.equals(authentication.getName())
                     && PASSWORD.equals(authentication.getCredentials())) {
+                // The 2026-11-09 CI diagnosis: the REAL framework provider
+                // appends Spring Security 7.1's authentication-factor
+                // markers (FACTOR_PASSWORD) alongside the ROLE authorities —
+                // the stub mirrors the real shape so every wall pin runs
+                // against the exact CI failure configuration.
                 return new UsernamePasswordAuthenticationToken(PRINCIPAL, null,
-                        List.of(new SimpleGrantedAuthority("ROLE_CONSUMER")));
+                        List.of(new SimpleGrantedAuthority("ROLE_CONSUMER"),
+                                new SimpleGrantedAuthority("FACTOR_PASSWORD")));
             }
             throw new BadCredentialsException("bad credentials");
         };
@@ -305,7 +311,11 @@ class PlatformTokenGrantServiceTest {
         assertThat(claims.get("iss")).isEqualTo("https://auth.example.com");
         @SuppressWarnings("unchecked")
         List<Object> rolesClaim = (List<Object>) claims.get("roles");
-        assertThat(rolesClaim).containsExactly("CONSUMER");
+        // The 2026-11-09 CI diagnosis: the real provider's factor marker
+        // rides the roles claim verbatim (the pre-batch-RR CI-green wire
+        // contract — the claim carries the authenticated authorities
+        // stripped, the factor marker included).
+        assertThat(rolesClaim).containsExactlyInAnyOrder("CONSUMER", "FACTOR_PASSWORD");
     }
 
     @Test
