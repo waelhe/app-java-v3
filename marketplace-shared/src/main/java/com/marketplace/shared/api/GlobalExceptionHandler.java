@@ -137,6 +137,31 @@ public class GlobalExceptionHandler {
         return leaf != null ? leaf : violation.getPropertyPath().toString();
     }
 
+    /**
+     * D4 (adversarial review 2026-11-10): a request parameter that fails its
+     * declared type binding — an unknown enum vocabulary value on a raw
+     * enum-bound {@code @RequestParam} (search's purpose/propertyType), or a
+     * non-numeric value on a numeric parameter — is a CLIENT-contract
+     * violation: the house VAL-001 400 with the rejected parameter named in
+     * the violations list, never the masked INT-001 500 the
+     * uncaught-exception net answered before this handler (the gap
+     * DiscoveryController's own comment documents — closed tree-wide here,
+     * both legs of the type gate now answer the one error pipeline).
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+            HttpServletRequest request) {
+        String expected = ex.getRequiredType() != null
+                ? ex.getRequiredType().getSimpleName() : "the declared type";
+        String detail = "Invalid value '" + ex.getValue() + "' for parameter '" + ex.getName()
+                + "' — expected " + expected;
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, detail, request, null, "detail");
+        pd.setProperty("fieldErrors",
+                List.of(new ApiErrorPayload.FieldError(ex.getName(), detail)));
+        return pd;
+    }
+
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
         return problem(ApiErrorTaxonomy.CONFLICT, "Resource was modified by another transaction. Please retry.",
