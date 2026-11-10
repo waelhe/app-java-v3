@@ -87,12 +87,22 @@ public class JobsContentPurgeAdapter implements AuthoredContentPurgePort {
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
         // The employer's authored listing texts (jobs + its audit mirror).
+        // The family law (rulebook B5: "version = version + 1 in the purge
+        // statement") rides the LIVE statements — the exact shape the
+        // cover-message leg below already carries in this same file, and
+        // the seven sibling adapters before it: a job-closure or expiry
+        // transition holding a pre-purge JobListing snapshot flushes zero
+        // rows and fails with the framework's optimistic-lock exception,
+        // instead of restoring the erased title/description through the
+        // passed check and recreating them in a new Envers revision. The
+        // _aud mirrors carry no version column (Envers revisions) and stay
+        // untouched.
         int jobTitles = jdbcTemplate.update(
-                "UPDATE jobs SET title = ? WHERE employer_id = ? "
+                "UPDATE jobs SET title = ?, version = version + 1 WHERE employer_id = ? "
                         + "AND title IS NOT NULL AND title <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int jobDescriptions = jdbcTemplate.update(
-                "UPDATE jobs SET description = ? WHERE employer_id = ? "
+                "UPDATE jobs SET description = ?, version = version + 1 WHERE employer_id = ? "
                         + "AND description IS NOT NULL AND description <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int jobTitleAudits = jdbcTemplate.update(
