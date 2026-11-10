@@ -308,6 +308,56 @@ class GlobalExceptionHandlerTest {
         }
     }
 
+    // ---- D4 (adversarial review 2026-11-10): the type-mismatch gate → the
+    // ---- house VAL-001 400, never the masked INT-001 500 ----
+
+    @Test
+    void handleTypeMismatch_answersTheHouse400WithTheRejectedParameter()
+            throws NoSuchMethodException {
+        // The D4 scenario: an unknown enum vocabulary value on a raw
+        // enum-bound @RequestParam (search's purpose=BUY) — the binding
+        // fails and the handler must answer the one error pipeline's
+        // validation shape: VAL-001, the rejected parameter named in the
+        // violations list, and the declared type surfaced for the client.
+        org.springframework.core.MethodParameter parameter = new org.springframework.core.MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex =
+                new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                        "BUY", java.util.concurrent.TimeUnit.class, "purpose", parameter, null);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/search");
+        var response = handler.handleTypeMismatch(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/validation"));
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        String detail = response.getDetail();
+        assertThat(detail).contains("purpose").contains("BUY").contains("TimeUnit");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("purpose", detail)));
+    }
+
+    @Test
+    void handleTypeMismatch_answersTheHouse400WhenTheRequiredTypeIsUnknown()
+            throws NoSuchMethodException {
+        // The required type can be absent (null) — the detail still names
+        // the parameter and value, never a 500.
+        org.springframework.core.MethodParameter parameter = new org.springframework.core.MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex =
+                new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                        "abc", null, "page", parameter, null);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/search");
+        var response = handler.handleTypeMismatch(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        String detail = response.getDetail();
+        assertThat(detail).contains("page").contains("abc").contains("the declared type");
+    }
+
     // ---- L31: the unique-violation (23505) backstop → 409 CONFLICT ----
 
     @Test
