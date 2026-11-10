@@ -1,6 +1,7 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.shared.api.ApiErrorTaxonomy;
+import com.marketplace.shared.api.ApiProblemDetailException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CorrelationIdFilter;
 import graphql.GraphQLError;
@@ -67,11 +68,31 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
      * Only the designated-safe domain messages pass through; every unknown
      * failure carries the generic internal sentence — never a stack trace,
      * SQL, or provider detail.
+     *
+     * <p>Adversarial-review 2026-11-10 finding D1: the house
+     * {@link ApiProblemDetailException} family (BadRequest / Conflict /
+     * ServiceUnavailable / TooManyRequests) rides the family branch — each
+     * member carries its OWN taxonomy through {@code taxonomy()} (the same
+     * single vocabulary the REST {@code GlobalExceptionHandler.handleApiProblemDetail}
+     * emits), so a conflict or a validation failure surfaces as
+     * CONFLICT-001/VAL-001 on GraphQL exactly as it does on REST — never as
+     * the masked INT-001 internal.</p>
      */
     @Override
     protected GraphQLError resolveToSingleError(Throwable ex, DataFetchingEnvironment env) {
         if (ex instanceof ResourceNotFoundException) {
             return buildError(env, ErrorType.NOT_FOUND, ApiErrorTaxonomy.NOT_FOUND, ex.getMessage());
+        }
+        if (ex instanceof ApiProblemDetailException problem) {
+            // The family's own branch: the taxonomy pair is authoritative
+            // (the exception carries it); the GraphQL-spec ErrorType is the
+            // closest value of the fixed five-value vocabulary per the
+            // class's documented rule — 400/409/429 all ride BAD_REQUEST
+            // (the IllegalState→CONFLICT and RequestNotPermitted precedents),
+            // 5xx rides INTERNAL_ERROR (no availability value exists), and
+            // the message is the documented bare domain detail sentence.
+            return buildError(env, closestErrorType(problem.taxonomy().statusCode()),
+                    problem.taxonomy(), ex.getMessage());
         }
         if (ex instanceof IllegalArgumentException) {
             return buildError(env, ErrorType.BAD_REQUEST, ApiErrorTaxonomy.VALIDATION, ex.getMessage());
@@ -102,6 +123,23 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
         }
 
         return buildError(env, ErrorType.INTERNAL_ERROR, ApiErrorTaxonomy.INTERNAL, GENERIC_INTERNAL_MESSAGE);
+    }
+
+    /**
+     * Derives the closest GraphQL-spec {@link ErrorType} for a house
+     * problem-detail taxonomy's HTTP status — the class's documented rule
+     * (the five-value vocabulary has no conflict, rate-limit, or
+     * availability value; the extensions pair is the authoritative machine
+     * contract, so the ErrorType only needs the closest transport hint).
+     */
+    private ErrorType closestErrorType(org.springframework.http.HttpStatusCode statusCode) {
+        return switch (statusCode.value()) {
+            case 400, 409, 429 -> ErrorType.BAD_REQUEST;
+            case 401 -> ErrorType.UNAUTHORIZED;
+            case 403 -> ErrorType.FORBIDDEN;
+            case 404 -> ErrorType.NOT_FOUND;
+            default -> ErrorType.INTERNAL_ERROR;
+        };
     }
 
     /**
