@@ -46,13 +46,16 @@
 
 | الدفعة | الصفوف | PR (فرع مستقل + اختبارات مقيسة) | حالة الإغلاق |
 |---|---|---|---|
-| 1 — عائلة قفل المحو التفاؤلي | G1، G2، G4، G5، G6 | **#817** (`agent/fix-g1-g6-purge-lock-family-20261110`، commit `6259c7c4`): `version = version + 1` في كل جملة جدول حي بالمحوّلات الخمسة (+COALESCE للإشعارات، +تأهيل `o.version` تحت UPDATE...FROM لخيارات الاستفتاء) + اختبار شكل-جملة لكل محوّل (المحوّل الإشعارات اختبره الأول قطعاً) — 28/28 نجاح محلياً واختُبر فشل الاختبار الجديد ضد الكود غير المصلح | fix-in-flight (بانتظار CI/CodeRabbit والدمج) |
-| 2 — حارس آخر أدمن على باب الإلغاء | B1 | **#818** (`agent/fix-b1-revoke-last-admin-guard-20261110`، commit `a7ae526e`): القفل الاستشاري + عدّ V188 + رفض 409 — 201/201 لوحدة identity محلياً | fix-in-flight |
-| 3 — عائلة ApiProblemDetail في GraphQL | D1 | **#819** (`agent/fix-d1-graphql-problem-family-20261110`، commit `54df6d5b`): فرع العائلة بالتصنيف الذاتي + اشتقاق ErrorType الخماسي — 10/10 محلياً | fix-in-flight |
+| 1 — عائلة قفل المحو التفاؤلي | G1، G2، G4، G5، G6 | **#817** (`agent/fix-g1-g6-purge-lock-family-20261110`، رأس `f92fa7d9` — الإصلاح `6259c7c4` ثم جولة CodeRabbit على وثيقة الخطة): `version = version + 1` في كل جملة جدول حي بالمحوّلات الخمسة (+COALESCE للإشعارات، +تأهيل `o.version` تحت UPDATE...FROM لخيارات الاستفتاء) + اختبار شكل-جملة لكل محوّل (المحوّل الإشعارات اختبره الأول قطعاً) — 28/28 نجاح محلياً واختُبر فشل الاختبار الجديد ضد الكود غير المصلح | fix-in-flight (CI خضراء على الرأس؛ مراجعة CodeRabbit بانتظار نافذة المعدل) |
+| 2 — حارس آخر أدمن على باب الإلغاء | B1 | **#818** (`agent/fix-b1-revoke-last-admin-guard-20261110`، رأس `ddb9e356` — الإصلاح `a7ae526e` ثم بذر أدمن ثانٍ في اختبار تكاملي تاريخي): القفل الاستشاري + عدّ V188 + رفض 409 — 201/201 لوحدة identity محلياً | fix-in-flight |
+| 3 — عائلة ApiProblemDetail في GraphQL | D1 | **#819** (`agent/fix-d1-graphql-problem-family-20261110`، رأس `54df6d5b`): فرع العائلة بالتصنيف الذاتي + اشتقاق ErrorType الخماسي — 10/10 محلياً | fix-in-flight |
+| 5أ — اختبارات الانتقالات النهائية المستنفدة | E2 | **#820** (`agent/fix-e2-terminal-transitions-exhaustive-20261110`، رأس `a377b86c`): حراس آلتي حالة الدفع (`PaymentStatus`/`PaymentIntentStatus`) على كل انتقال نهائي→نهائي وغيره — مع تحقق عدائي مؤقت (فشل الحراس بحقن `COMPLETED` محظور ثم استُعيد الكود) | fix-in-flight |
+| 5ب — معالجة type-mismatch في REST | D4 | **#821** (`agent/fix-d4-type-mismatch-400-20261110`، رأس `fc2fe3a6`): `MethodArgumentTypeMismatchException` → VAL-001 بدل 500 — 22/22 لوحدة shared-api محلياً | fix-in-flight |
+| 5ج — أصل روابط بريد الهوية في الإنتاج | W2 | **#822** (`agent/fix-w2-identity-mail-base-url-prod-20261110`، رأس `aa33c008`): ربط `marketplace.identity.mail-base-url` بلا افتراض في prod/staging (نمط AUTH_SERVER_ISSUER) + إعلان `MARKETPLACE_IDENTITY_MAIL_BASE_URL` في railway.ts (ثابتة D10/G2) + اختبار حارس `IdentityMailBaseUrlProdConfigTest` — 8/8 محلياً مع تحقق عدائي (فشل الاختبار الجديد بالضبط في ساقي العيب قبل الإصلاح) | fix-in-flight |
 | خطة الإصلاح الحاكمة | (الكل) | مرفقة بالـPR #817: `docs/governance/adversarial-behavioral-review-2026-11-10-fix-plan.md` (الدفعات + المرجعيات الرسمية + بوابات قرار المالك للنتائج التي لا تُصلح آلياً) | مسجّلة |
 
-الصفوف الباقية (A1–A5، B2–B4، D2–D8، E1–E4، G3، G7، W1–W6) تبقى **OPEN-REGISTERED**
-بانتظار قرار المالك على بوابات خطة الإصلاح أو دفعات لاحقة.
+الصفوف الباقية (A1–A5، B2–B4، D2–D3، D5–D8، E1، E3–E4، G3، G7، W1، W3–W6) تبقى
+**OPEN-REGISTERED** بانتظار قرار المالك على بوابات خطة الإصلاح أو دفعات لاحقة.
 
 **الإغلاق المقترح (تصريف النتائج وفق بروتوكول المراجعة §Disposition):** كل نتيجة أدناه
 مسجّلة **OPEN-REGISTERED** مع مالك (المالك يحدد أمر الإصلاح) — **بمن فيهم الاثنتان
