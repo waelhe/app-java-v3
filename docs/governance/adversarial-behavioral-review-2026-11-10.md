@@ -31,14 +31,18 @@
 لا يُستنسخ من ذاكرة):
 
 - PRs المفتوحة وحمولة كل رأس — الحقول من نقطة التفاصيل حصراً (رد القائمة لا يضمن
-  `additions`/`deletions` — مُقيس: قيمها `null` في رد القائمة):
-  `gh api 'repos/waelhe/app-java-v3/pulls?state=open&per_page=100' --jq '.[].number' | xargs -I{} gh api repos/waelhe/app-java-v3/pulls/{} --jq '[.number, .additions, .deletions, .changed_files] | @tsv'`
+  `additions`/`deletions` — مُقيس: قيمها `null` في رد القائمة)، والقائمة تجمع كل
+  صفحاتها (`--paginate --slurp` — انضباط الترقيم نفسه الذي تعتمده بوابة التغطية):
+  `gh api --paginate --slurp 'repos/waelhe/app-java-v3/pulls?state=open&per_page=100' --jq '[.[][] | .number] | unique | .[]' | xargs -I{} gh api repos/waelhe/app-java-v3/pulls/{} --jq '[.number, .additions, .deletions, .changed_files] | @tsv'`
   وعدد ملفات المرشح #787 المسجل (571): `gh api repos/waelhe/app-java-v3/pulls/787 --jq .changed_files`
 - حالة CI على أي رأس (main=`7e136440`، المرشح=`b97747f0`) — الفحوص غير المكتملة
-  (`queued`/`in_progress`) خالية `conclusion` فتجمع بمفتاح `status` عبر `//`:
-  `gh api "repos/waelhe/app-java-v3/commits/<sha>/check-runs?per_page=100" --jq '[.check_runs[] | (.conclusion // .status)] | group_by(.) | map({(.[0]): length})'`
-- نشاط CodeRabbit المقيس (تعليقات كل PR):
-  `gh api "repos/waelhe/app-java-v3/issues/<PR>/comments?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | length'`
+  (`queued`/`in_progress`) خالية `conclusion` فتجمع بمفتاح `status` عبر `//`،
+  وكل صفحات الفحوص تجمع قبل العد (`--paginate --slurp` — رد الفحوص مُغلّف بمفتاح
+  `check_runs`):
+  `gh api --paginate --slurp "repos/waelhe/app-java-v3/commits/<sha>/check-runs?per_page=100" --jq '[.[].check_runs[] | (.conclusion // .status)] | group_by(.) | map({(.[0]): length})'`
+- نشاط CodeRabbit المقيس — تعليقات كل PR عبر كل الصفحات قبل العد
+  (`--paginate --slurp` — كتل تعليقات البوت قد تتجاوز 100 تعليقاً كما في #787):
+  `gh api --paginate --slurp "repos/waelhe/app-java-v3/issues/<PR>/comments?per_page=100" --jq '[.[][] | select(.user.login=="coderabbitai[bot]")] | length'`
 - رؤوس الفروع: `git ls-remote origin main integration/saleor-full-commerce-20261021`
 
 ## الحالة الإجمالية للنتائج (34 نتيجة)
