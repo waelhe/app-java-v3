@@ -70,10 +70,12 @@
 | 5أ — اختبارات الانتقالات النهائية المستنفدة | E2 | **#820** (`agent/fix-e2-terminal-transitions-exhaustive-20261110`، رأس `a377b86c`): حراس آلتي حالة الدفع (`PaymentStatus`/`PaymentIntentStatus`) على كل انتقال نهائي→نهائي وغيره — مع تحقق عدائي مؤقت (فشل الحراس بحقن `COMPLETED` محظور ثم استُعيد الكود) | fix-in-flight |
 | 5ب — معالجة type-mismatch في REST | D4 | **#821** (`agent/fix-d4-type-mismatch-400-20261110`، رأس `fc2fe3a6`): `MethodArgumentTypeMismatchException` → VAL-001 بدل 500 — 22/22 لوحدة shared-api محلياً | fix-in-flight |
 | 5ج — أصل روابط بريد الهوية في الإنتاج | W2 | **#822** (`agent/fix-w2-identity-mail-base-url-prod-20261110`، رأس `aa33c008`): ربط `marketplace.identity.mail-base-url` بلا افتراض في prod/staging (نمط AUTH_SERVER_ISSUER) + إعلان `MARKETPLACE_IDENTITY_MAIL_BASE_URL` في railway.ts (ثابتة D10/G2) + اختبار حارس `IdentityMailBaseUrlProdConfigTest` — 8/8 محلياً مع تحقق عدائي (فشل الاختبار الجديد بالضبط في ساقي العيب قبل الإصلاح) | fix-in-flight |
+| 7 — اختبارات الإغلاق الموثقة | E1، E4 | **#823** (`agent/fix-e1-e4-review-closure-tests-20261110`، رأس `264c447a` — تصحيح رقم التوثيق المشتق 172 بعد جولة CI الأولى): اختبار عقد إزالة تكرار الويبهوك على المخطط الحقيقي بنمط NotificationInbox الموثق (مفتاح V42 المركب يرفض المكرر بـDataIntegrityViolationException، والنطاق B5 يقبل نفس event_id تحت مزوّد آخر، وخيطان حقيقيان بمعاملتين REQUIRES_NEW يتسلسلان على الإدراج بصفّ ناجح واحد) + التأكيد المزدوج لنطاق قراءة النزاعات (نزاعان عبر حجزين بمستهلك ثانٍ + stub محدد بالوسيط لا any()) — **مقيس على CI**: 2/2 و3/3 على Docker حقيقي (شظايا app 5/8 و6/8) | fix-in-flight (CI خضراء؛ مراجعة CodeRabbit بانتظار نافذة المعدل) |
 | خطة الإصلاح الحاكمة | (الكل) | مرفقة بالـPR #817: `docs/governance/adversarial-behavioral-review-2026-11-10-fix-plan.md` (الدفعات + المرجعيات الرسمية + بوابات قرار المالك للنتائج التي لا تُصلح آلياً) | مسجّلة |
 
-الصفوف الباقية (A1–A5، B2–B4، D2–D3، D5–D8، E1، E3–E4، G3، G7، W1، W3–W6) تبقى
-**OPEN-REGISTERED** بانتظار قرار المالك على بوابات خطة الإصلاح أو دفعات لاحقة.
+الصفوف الباقية (A1–A5، B2–B4، D2–D3، D5–D8، E3–E4، G3، G7، W1، W3–W6) — بعد إغلاق
+E1 وE4 بالدفعة 7 (#823) — تبقى **OPEN-REGISTERED** بانتظار قرار المالك على بوابات
+خطة الإصلاح أو دفعات لاحقة.
 
 **الإغلاق المقترح (تصريف النتائج وفق بروتوكول المراجعة §Disposition):** كل نتيجة أدناه
 مسجّلة **OPEN-REGISTERED** مع مالك (المالك يحدد أمر الإصلاح) — **بمن فيهم الاثنتان
