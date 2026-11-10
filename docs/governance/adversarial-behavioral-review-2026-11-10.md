@@ -27,6 +27,17 @@
 | CodeRabbit | نشط فعلاً على الشظايا الست و#787 و#813 (مُثبت من عدد تعليقاته المقيسة: 50/41/49/33/34/37/10/13) |
 | رأس الفروع | main=`7e136440`، المرشح=`b97747f0` |
 
+**أوامر إعادة اشتقاق القياسات أعلاه** (معيار A6 — كل رقم في الجدول يعاد اشتقاقه بأمر واحد،
+لا يُستنسخ من ذاكرة):
+
+- PRs المفتوحة وعدّها وحمولة كل رأس:
+  `gh api 'repos/waelhe/app-java-v3/pulls?state=open&per_page=100' --jq '.[] | [.number, .title, .additions, .deletions]'`
+- حالة CI على أي رأس (main=`7e136440`، المرشح=`b97747f0`):
+  `gh api "repos/waelhe/app-java-v3/commits/<sha>/check-runs?per_page=100" --jq '[.check_runs[] | .conclusion] | group_by(.) | map({(.[0]): length})'`
+- نشاط CodeRabbit المقيس (تعليقات كل PR):
+  `gh api "repos/waelhe/app-java-v3/issues/<PR>/comments?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | length'`
+- رؤوس الفروع: `git ls-remote origin main integration/saleor-full-commerce-20261021`
+
 ## الحالة الإجمالية للنتائج (34 نتيجة)
 
 | النطاق | عدد النتائج | مثبتة بآلية كاملة | مشتبهة (مسجّلة) | قابلة للإصلاح ضمن مهمة لاحقة مستقلة |
