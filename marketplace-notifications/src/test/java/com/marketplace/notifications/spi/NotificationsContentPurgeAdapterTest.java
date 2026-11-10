@@ -26,9 +26,10 @@ import static org.mockito.Mockito.when;
  *
  * <ul>
  *   <li>the LIVE statement carries the version advance in the SAME
- *       statement as the message erasure (the nullable-column COALESCE
- *       form — the provider adapter's own documented precedent for a
- *       nullable {@code notifications.version}) — a recipient's or
+ *       statement as the message erasure (the COALESCE form —
+ *       defensive parity with the provider adapter's own documented
+ *       precedent; the schema measurement: V25 pins
+ *       {@code notifications.version} to NOT NULL DEFAULT 0) — a recipient's or
  *       admin's {@code markAsRead} transaction holding a pre-purge
  *       Notification snapshot flushes zero rows and fails with the
  *       framework's optimistic-lock exception, instead of restoring the
@@ -65,9 +66,10 @@ class NotificationsContentPurgeAdapterTest {
         adapter.purgeAuthoredTexts(SUBJECT);
 
         // The optimistic-lock advance rides the SAME single statement as the
-        // message erasure — atomic by construction. The COALESCE form covers
-        // the family's one nullable version column: NULL advances to 1,
-        // never to NULL.
+        // message erasure — atomic by construction. The COALESCE form is kept
+        // as defensive parity (V25 pins the column NOT NULL DEFAULT 0; the
+        // guard is harmless and survives any future widening): NULL can
+        // never advance to NULL.
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.argThat((String sql) ->
                         sql.startsWith("UPDATE notifications SET message = ?, version = COALESCE(version, 0) + 1")),

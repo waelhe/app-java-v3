@@ -56,9 +56,12 @@ public class NotificationsContentPurgeAdapter implements AuthoredContentPurgePor
         // zero rows and fails with the framework's optimistic-lock exception,
         // instead of restoring the erased message through the passed check
         // and recreating it in a new Envers revision. The COALESCE form is
-        // the provider adapter's own documented precedent for a nullable
-        // version column (measured: notifications.version is the family's
-        // one nullable carryover) — NULL advances to 1, never to NULL.
+        // kept as defensive parity with the provider adapter's own
+        // documented precedent; the schema measurement: V25 pins
+        // notifications.version to NOT NULL DEFAULT 0 (V18 originally
+        // declared it nullable; V25__add_base_entity_columns tightened it
+        // like every other family table) — a NOT NULL guard is harmless
+        // and NULL can never advance to NULL under any future widening.
         // The _aud mirror carries no version column (Envers revisions) and
         // stays untouched.
         int notifications = jdbcTemplate.update(
