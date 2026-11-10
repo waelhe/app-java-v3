@@ -21,7 +21,7 @@
 
 | البعد | القيمة المقيسة (2026-11-10) |
 |---|---|
-| PRs مفتوحة | 8: #787 (المرشح، 809 ملفات، +115,799/−809) + 6 شظايا مراجعة تتبّعية (#806–811) + #813 (حوكمة) |
+| PRs مفتوحة | 8: #787 (المرشح، 571 ملفاً، +115,799/−809) + 6 شظايا مراجعة تتبّعية (#806–811) + #813 (حوكمة) |
 | حالة CI على رأس main | 46 فحصاً: 26 success / **18 failure** / 2 skipped — منها «Probe public production endpoints» فاشل تكرارياً و«OpenRewrite recipe discovery» فاشل |
 | حالة CI على رأس #787 | 53: 45 success / 6 skipped / **2 failure** |
 | CodeRabbit | نشط فعلاً على الشظايا الست و#787 و#813 (مُثبت من عدد تعليقاته المقيسة: 50/41/49/33/34/37/10/13) |
@@ -30,10 +30,13 @@
 **أوامر إعادة اشتقاق القياسات أعلاه** (معيار A6 — كل رقم في الجدول يعاد اشتقاقه بأمر واحد،
 لا يُستنسخ من ذاكرة):
 
-- PRs المفتوحة وعدّها وحمولة كل رأس:
-  `gh api 'repos/waelhe/app-java-v3/pulls?state=open&per_page=100' --jq '.[] | [.number, .title, .additions, .deletions]'`
-- حالة CI على أي رأس (main=`7e136440`، المرشح=`b97747f0`):
-  `gh api "repos/waelhe/app-java-v3/commits/<sha>/check-runs?per_page=100" --jq '[.check_runs[] | .conclusion] | group_by(.) | map({(.[0]): length})'`
+- PRs المفتوحة وحمولة كل رأس — الحقول من نقطة التفاصيل حصراً (رد القائمة لا يضمن
+  `additions`/`deletions` — مُقيس: قيمها `null` في رد القائمة):
+  `gh api 'repos/waelhe/app-java-v3/pulls?state=open&per_page=100' --jq '.[].number' | xargs -I{} gh api repos/waelhe/app-java-v3/pulls/{} --jq '[.number, .additions, .deletions, .changed_files] | @tsv'`
+  وعدد ملفات المرشح #787 المسجل (571): `gh api repos/waelhe/app-java-v3/pulls/787 --jq .changed_files`
+- حالة CI على أي رأس (main=`7e136440`، المرشح=`b97747f0`) — الفحوص غير المكتملة
+  (`queued`/`in_progress`) خالية `conclusion` فتجمع بمفتاح `status` عبر `//`:
+  `gh api "repos/waelhe/app-java-v3/commits/<sha>/check-runs?per_page=100" --jq '[.check_runs[] | (.conclusion // .status)] | group_by(.) | map({(.[0]): length})'`
 - نشاط CodeRabbit المقيس (تعليقات كل PR):
   `gh api "repos/waelhe/app-java-v3/issues/<PR>/comments?per_page=100" --jq '[.[] | select(.user.login=="coderabbitai[bot]")] | length'`
 - رؤوس الفروع: `git ls-remote origin main integration/saleor-full-commerce-20261021`
