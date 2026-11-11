@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ApiErrorTaxonomy;
 import com.marketplace.shared.api.ApiProblemDetailException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CorrelationIdFilter;
+import org.springframework.http.HttpStatusCode;
 import graphql.GraphQLError;
 import graphql.GraphqlErrorBuilder;
 import graphql.schema.DataFetchingEnvironment;
@@ -132,13 +133,19 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
      * availability value; the extensions pair is the authoritative machine
      * contract, so the ErrorType only needs the closest transport hint).
      */
-    private ErrorType closestErrorType(org.springframework.http.HttpStatusCode statusCode) {
+    private ErrorType closestErrorType(HttpStatusCode statusCode) {
         return switch (statusCode.value()) {
             case 400, 409, 429 -> ErrorType.BAD_REQUEST;
             case 401 -> ErrorType.UNAUTHORIZED;
             case 403 -> ErrorType.FORBIDDEN;
             case 404 -> ErrorType.NOT_FOUND;
-            default -> ErrorType.INTERNAL_ERROR;
+            // Review round 2 (CodeRabbit 2026-11-11): an unlisted 4xx (422, 410,
+            // ...) is a CLIENT failure — the closest five-value hint is
+            // BAD_REQUEST, never INTERNAL_ERROR (the taxonomy pair stays the
+            // authoritative contract either way).
+            default -> statusCode.is4xxClientError()
+                    ? ErrorType.BAD_REQUEST
+                    : ErrorType.INTERNAL_ERROR;
         };
     }
 
