@@ -3,6 +3,7 @@ package com.marketplace.identity;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
+import java.net.URI;
 import java.time.Duration;
 
 /**
@@ -69,4 +70,44 @@ public record IdentityMailProperties(
          */
         @DefaultValue("60s") Duration minIssueInterval
 ) {
+    // The W2 binding-time fail-fast wall (review round 2, 2026-11-11):
+    // @ConfigurationProperties binding passes unresolved placeholders
+    // through literally, so the deployable profiles' no-default
+    // ${MARKETPLACE_IDENTITY_MAIL_BASE_URL} reaches THIS constructor
+    // unchanged when the variable is absent — reject it here, at binding,
+    // with the operational message (the MailChannelProperties precedent).
+    public IdentityMailProperties {
+        if (mailBaseUrl == null || mailBaseUrl.isBlank()) {
+            throw new IllegalArgumentException(
+                    "marketplace.identity.mail-base-url is required: the client origin every "
+                            + "account mail deep link is built on — set "
+                            + "MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://<public-client-origin>' "
+                            + "in the deployment environment (the .railway/railway.ts declaration "
+                            + "carries the variable's seat).");
+        }
+        if (mailBaseUrl.contains("${")) {
+            throw new IllegalArgumentException(
+                    "marketplace.identity.mail-base-url '" + mailBaseUrl + "' is an UNRESOLVED "
+                            + "configuration placeholder: Spring Boot 4.1.2's @ConfigurationProperties "
+                            + "binding passes unresolved placeholders through literally instead of "
+                            + "failing, so this record rejects it — set "
+                            + "MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://<public-client-origin>' "
+                            + "in the deployment environment before the next deploy.");
+        }
+        URI origin;
+        try {
+            origin = URI.create(mailBaseUrl);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException(
+                    "marketplace.identity.mail-base-url '" + mailBaseUrl + "' is not a valid URI "
+                            + "(java.net.URI): " + ex.getMessage(), ex);
+        }
+        if (origin.getScheme() == null || origin.getHost() == null
+                || !(("http".equals(origin.getScheme()) || "https".equals(origin.getScheme())))) {
+            throw new IllegalArgumentException(
+                    "marketplace.identity.mail-base-url '" + mailBaseUrl + "' must be an absolute "
+                            + "http(s) client origin (scheme + host) — e.g. "
+                            + "MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://app.example.com'.");
+        }
+    }
 }
