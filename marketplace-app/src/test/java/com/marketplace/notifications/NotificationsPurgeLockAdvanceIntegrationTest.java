@@ -1,6 +1,8 @@
 package com.marketplace.notifications;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 import com.marketplace.notifications.spi.NotificationsContentPurgeAdapter;
@@ -137,7 +139,12 @@ class NotificationsPurgeLockAdvanceIntegrationTest {
         // message dies into the tombstone while its version moves).
         UUID recipient = UUID.randomUUID();
         UUID subjectRow = UUID.randomUUID();
-        Instant now = Instant.now();
+        // JDBC 4.2 binding: the TIMESTAMPTZ columns take OffsetDateTime
+        // (setObject's official mapping) — a raw Instant has no inferable
+        // SQL type for the PostgreSQL driver (the measured CI round: the
+        // seed INSERT failed with "Can't infer the SQL type to use for an
+        // instance of java.time.Instant").
+        OffsetDateTime now = Instant.now().atOffset(ZoneOffset.UTC);
         jdbcTemplate.update(
                 "INSERT INTO notifications (id, recipient_id, type, message, is_read, is_deleted, version, "
                         + "created_at, updated_at) VALUES (?, ?, ?, ?, false, false, 0, ?, ?)",
