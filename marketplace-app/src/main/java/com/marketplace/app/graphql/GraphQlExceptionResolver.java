@@ -132,6 +132,12 @@ public class GraphQlExceptionResolver extends DataFetcherExceptionResolverAdapte
      * (the five-value vocabulary has no conflict, rate-limit, or
      * availability value; the extensions pair is the authoritative machine
      * contract, so the ErrorType only needs the closest transport hint).
+     *
+     * <p>The named statuses map directly; every OTHER 4xx (422, 410, a
+     * future family member's status) rides the class hint —
+     * {@code BAD_REQUEST} — because a client failure is never the
+     * transport's internal-error shape; everything else stays
+     * {@code INTERNAL_ERROR} (review round 2, 2026-11-11).</p>
      */
     private ErrorType closestErrorType(HttpStatusCode statusCode) {
         return switch (statusCode.value()) {
