@@ -162,6 +162,25 @@ class IdentityMailBaseUrlProdConfigTest {
                 .hasMessageContaining("MARKETPLACE_IDENTITY_MAIL_BASE_URL");
     }
 
+    /**
+     * Review round 3's own leg: an origin carrying a query or a fragment is
+     * NOT a client origin — the deep links minted on it would be malformed
+     * (a second '?' or a '#' breaks the token's link) — the wall rejects both.
+     */
+    @Test
+    void theRecordRejectsQueryAndFragmentCarryingOrigins() {
+        for (String invalid : new String[] { "https://app.example.com?next=/x", "https://app.example.com#section" }) {
+            assertThatThrownBy(() -> new IdentityMailProperties(
+                    invalid,
+                    java.time.Duration.ofMinutes(30),
+                    java.time.Duration.ofHours(24),
+                    java.time.Duration.ofSeconds(60)))
+                    .as("origin '%s' must be rejected", invalid)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("no query or fragment");
+        }
+    }
+
     private String property(String yml, String key) throws java.io.IOException {
         List<PropertySource<?>> sources = loader.load(yml, new ClassPathResource(yml));
         assertThat(sources).as("%s must load", yml).isNotEmpty();

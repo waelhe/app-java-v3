@@ -102,11 +102,17 @@ public record IdentityMailProperties(
                     "marketplace.identity.mail-base-url '" + mailBaseUrl + "' is not a valid URI "
                             + "(java.net.URI): " + ex.getMessage(), ex);
         }
+        // Review round 3 (2026-11-11, Minor): an origin carrying a query or a
+        // fragment would mint malformed deep links (the record concatenates
+        // "/reset-password?token=..." onto this base — a second '?' or a '#'
+        // breaks the link) — reject both, same operational message shape.
         if (origin.getScheme() == null || origin.getHost() == null
-                || !(("http".equals(origin.getScheme()) || "https".equals(origin.getScheme())))) {
+                || !(("http".equals(origin.getScheme()) || "https".equals(origin.getScheme())))
+                || origin.getRawQuery() != null
+                || origin.getRawFragment() != null) {
             throw new IllegalArgumentException(
                     "marketplace.identity.mail-base-url '" + mailBaseUrl + "' must be an absolute "
-                            + "http(s) client origin (scheme + host) — e.g. "
+                            + "http(s) client origin (scheme + host, no query or fragment) — e.g. "
                             + "MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://app.example.com'.");
         }
     }
