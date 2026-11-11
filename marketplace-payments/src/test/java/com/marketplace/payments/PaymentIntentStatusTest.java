@@ -119,6 +119,11 @@ class PaymentIntentStatusTest {
     // every named test green while dead money reopens.
     // ------------------------------------------------------------------
 
+    /**
+     * E2's structural law itself: every terminal row's outgoing set is EMPTY
+     * — a late PSP success (or any other actor) can never complete failed,
+     * cancelled, or refunded money through the state machine's front door.
+     */
     @Test
     void theTerminalStatesAllowNoOutgoingTransitions_theLateSuccessLaw() {
         org.assertj.core.api.Assertions.assertThat(PaymentIntentStatus.TRANSITIONS.get(PaymentIntentStatus.FAILED))
@@ -132,6 +137,10 @@ class PaymentIntentStatusTest {
                 .isEmpty();
     }
 
+    /**
+     * FAILED refuses EVERY other status (the enum swept exhaustively — any
+     * future status addition lands under this pin automatically).
+     */
     @Test
     void failed_rejectsEveryOtherStatus_exhaustively() {
         for (PaymentIntentStatus target : PaymentIntentStatus.values()) {
@@ -144,6 +153,10 @@ class PaymentIntentStatusTest {
         }
     }
 
+    /**
+     * CANCELLED refuses every other status exhaustively — cancelled money
+     * never reopens through any transition.
+     */
     @Test
     void cancelled_rejectsEveryOtherStatus_exhaustively() {
         for (PaymentIntentStatus target : PaymentIntentStatus.values()) {
@@ -156,6 +169,10 @@ class PaymentIntentStatusTest {
         }
     }
 
+    /**
+     * REFUNDED refuses every other status exhaustively — refunded money
+     * never reopens through any transition.
+     */
     @Test
     void refunded_rejectsEveryOtherStatus_exhaustively() {
         for (PaymentIntentStatus target : PaymentIntentStatus.values()) {

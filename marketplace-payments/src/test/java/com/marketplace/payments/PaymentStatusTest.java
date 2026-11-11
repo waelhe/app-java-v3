@@ -69,6 +69,10 @@ class PaymentStatusTest {
     // completed/refunded (the late-PSP-success money double-open).
     // ------------------------------------------------------------------
 
+    /**
+     * E2's structural law itself: every terminal row's outgoing set is EMPTY
+     * — the late-PSP-success money double-open has no legal front door.
+     */
     @Test
     void theTerminalStatesAllowNoOutgoingTransitions_theLateSuccessLaw() {
         org.assertj.core.api.Assertions.assertThat(PaymentStatus.TRANSITIONS.get(PaymentStatus.FAILED))
@@ -79,6 +83,11 @@ class PaymentStatusTest {
                 .isEmpty();
     }
 
+    /**
+     * FAILED refuses EVERY other status (the enum swept exhaustively —
+     * including COMPLETED and PARTIALLY_REFUNDED, the exact double-open
+     * the old single-edge pin could miss).
+     */
     @Test
     void failed_rejectsEveryOtherStatus_exhaustively() {
         for (PaymentStatus target : PaymentStatus.values()) {
@@ -91,6 +100,10 @@ class PaymentStatusTest {
         }
     }
 
+    /**
+     * REFUNDED refuses every other status exhaustively — refunded money
+     * never reopens through any transition.
+     */
     @Test
     void refunded_rejectsEveryOtherStatus_exhaustively() {
         for (PaymentStatus target : PaymentStatus.values()) {
