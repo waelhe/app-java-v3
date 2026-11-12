@@ -10,6 +10,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -115,12 +116,22 @@ class RefundCarrierPoisoningIntegrationTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void transientChannelFailureDoesNotPoisonTheCarrierCompletion() {
         TransactionTemplate carrier = new TransactionTemplate(transactionManager);
         UUID orderId = UUID.randomUUID();
         UUID consumerId = UUID.randomUUID();
         UUID returnId = UUID.randomUUID();
+
+        // The FK chain payment_intents needs: one consumer user row.
+        // users.subject is the unique key (the established seeding
+        // precedent: PaymentIntentOneActiveAttemptMigrationIntegrationTest).
+        jdbcTemplate.update(
+                "INSERT INTO users (id, subject, role) VALUES (?, ?, 'CONSUMER')",
+                consumerId, "consumer-" + consumerId);
 
         // Plant the paid order intent OUTSIDE the carrier (the completing
         // return's money edge finds it exactly as the real journey does),
