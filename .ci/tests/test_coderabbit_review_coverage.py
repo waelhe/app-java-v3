@@ -614,6 +614,59 @@ class RunPathTests(ManifestTests):
         )
         self.run_gate(client)
 
+    def test_declaring_review_wins_over_later_empty_approval(self):
+        # measured live on PR #820/#819 (2026-11-12): the only pair on the
+        # candidate head is the substantive COMMENTED review that declares the
+        # processed files followed by an empty-bodied APPROVED review that
+        # request_changes_workflow posts after the findings are resolved. The
+        # declaration is the coverage evidence; the approval must not hide it.
+        small = ["src/A.java", "src/B.java"]
+        declaring = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        approval = {
+            "id": 9, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "APPROVED", "submitted_at": "2026-10-31T19:00:07Z", "body": "",
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [declaring, approval], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+        )
+        self.run_gate(client)
+        self.assertNotIn(("file_json", MANIFEST_PATH, "head-A"), client.calls)
+
+    def test_empty_approval_alone_fails_closed(self):
+        small = ["src/A.java", "src/B.java"]
+        approval = {
+            "id": 9, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "APPROVED", "submitted_at": "2026-10-31T19:00:07Z", "body": "",
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [approval], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(gate.GateError, "declares its processed-file list"):
+            self.run_gate(client)
+
 
 if __name__ == "__main__":
     unittest.main()

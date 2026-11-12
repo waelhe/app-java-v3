@@ -208,6 +208,39 @@ def latest_review(reviews, sha, login):
     return max(candidates, key=lambda item: item.get("submitted_at") or "") if candidates else None
 
 
+def declaring_review(reviews, sha, login, states):
+    """Newest review on this head that declares its processed-file list.
+
+    CodeRabbit's ``request_changes_workflow`` posts the substantive review
+    (state COMMENTED or CHANGES_REQUESTED, body carrying
+    ``Files selected for processing: N``) and then, once the findings are
+    resolved, a SECOND empty-bodied APPROVED review. Taking the
+    chronologically newest review as the coverage evidence therefore reads an
+    empty body and fails with "CodeRabbit omitted its explicit processed-file
+    list" even though the head is fully declared — measured live on PR #819
+    and PR #820 (2026-11-12): the only review on each head is
+    ``APPROVED`` with an empty body, while the declaration sits on the paired
+    substantive review.
+
+    Coverage evidence is the declaration, not the chronology: the verdict
+    state still belongs to the newest review (the gate workflow enforces it),
+    and every candidate here must already carry a good state on this exact
+    head. Returns ``(review, selected_paths)`` or ``(None, None)``; the
+    caller fails closed on ``None``.
+    """
+    candidates = [item for item in reviews
+                  if (item.get("user") or {}).get("login") == login
+                  and item.get("commit_id") == sha
+                  and item.get("state") in states]
+    for item in sorted(candidates, key=lambda review: review.get("submitted_at") or "",
+                       reverse=True):
+        try:
+            return item, processed_files(item.get("body", ""))
+        except GateError:
+            continue
+    return None, None
+
+
 def exact_review(reviews, review_id, sha, login, states):
     found = [item for item in reviews if item.get("id") == review_id]
     need(len(found) == 1, f"review {review_id} not found exactly once")
@@ -383,8 +416,10 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     # rename-heavy candidate into the manifest path despite an existing review.
     if len(candidate_by_name) <= MAX_FILES:
         need(newest is not None, f"no CodeRabbit review on current candidate head {head_sha}")
-        review = exact_review(candidate_reviews, newest["id"], head_sha, BOT, GOOD_STATES)
-        selected = processed_files(review.get("body", ""))
+        review, selected = declaring_review(candidate_reviews, head_sha, BOT, GOOD_STATES)
+        need(review is not None,
+             "no CodeRabbit review on the current candidate head declares its processed-file list "
+             "(a bare empty-bodied approval is not coverage evidence)")
         need(0 < len(selected) <= MAX_FILES, "candidate CodeRabbit review exceeds the 100-file cap")
         for path in selected:
             direct.add(path)
