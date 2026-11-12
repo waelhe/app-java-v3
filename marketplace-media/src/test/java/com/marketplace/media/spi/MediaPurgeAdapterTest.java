@@ -54,8 +54,7 @@ class MediaPurgeAdapterTest {
         // per read (a deterministic hand-rolled row set — the read's own
         // contract, no Mockito answer indirection).
         UUID subject = UUID.randomUUID();
-        when(jdbcTemplate.query(anyString(), any(RowCallbackHandler.class), eq(subject)))
-                .thenAnswer(inv -> {
+        org.mockito.Mockito.doAnswer(inv -> {
                     String sql = inv.getArgument(0);
                     RowCallbackHandler handler = inv.getArgument(1);
                     if (sql.contains("media_assets")) {
@@ -66,7 +65,7 @@ class MediaPurgeAdapterTest {
                         handler.processRow(resultSet(new String[]{"review-media/3/c.jpg"}));
                     }
                     return null;
-                });
+                }).when(jdbcTemplate).query(anyString(), any(RowCallbackHandler.class), eq(subject));
         when(jdbcTemplate.update(anyString(), eq(subject))).thenReturn(2, 1);
 
         int purged = new MediaPurgeAdapter(jdbcTemplate, mediaService).purgeAuthoredTexts(subject);
@@ -135,17 +134,17 @@ class MediaPurgeAdapterTest {
         ResultSet rs = mock(ResultSet.class);
         // next(): true once per row, then false — one chained thenReturn per
         // step (an arbitrary-length sequence stays legal).
-        org.mockito.Mockito.OngoingStubbing<Boolean> nextStub = org.mockito.Mockito.when(rs.next());
+        org.mockito.stubbing.OngoingStubbing<Boolean> nextStub = org.mockito.Mockito.when(rs.next());
         for (int i = 0; i <= rows.length; i++) {
             nextStub = nextStub.thenReturn(i < rows.length);
         }
         // getString(1)/(2): one chained thenReturn per row (a null thumb is
         // a plain legal consecutive value).
-        org.mockito.Mockito.OngoingStubbing<String> col1 = org.mockito.Mockito.when(rs.getString(1));
+        org.mockito.stubbing.OngoingStubbing<String> col1 = org.mockito.Mockito.when(rs.getString(1));
         for (String[] r : rows) {
             col1 = col1.thenReturn(r[0]);
         }
-        org.mockito.Mockito.OngoingStubbing<String> col2 = org.mockito.Mockito.when(rs.getString(2));
+        org.mockito.stubbing.OngoingStubbing<String> col2 = org.mockito.Mockito.when(rs.getString(2));
         for (String[] r : rows) {
             col2 = col2.thenReturn(r.length > 1 ? r[1] : null);
         }
