@@ -121,9 +121,13 @@ class MediaPurgeAdapterTest {
      * A minimal sequential in-memory ResultSet: each {@code next()} advances
      * one row and seeds that row's positional {@code getString(1..n)}
      * values; {@code next()} false past the last row. The adapter reads
-     * positionally only (getString(1)/getString(2)).
+     * positionally only (getString(1)/getString(2)). Mockito's stubbed
+     * answers never throw, so the SQLException the JDBC surface declares
+     * never materializes — but the compiler still demands the throws clause
+     * RowCallbackHandler's own signature carries (the CI-measured
+     * unreported-exception error).
      */
-    private static ResultSet rows(Object[][] rows) {
+    private static ResultSet rows(Object[][] rows) throws java.sql.SQLException {
         ResultSet rs = mock(ResultSet.class);
         AtomicInteger cursor = new AtomicInteger(-1);
         when(rs.next()).thenAnswer(inv -> {
