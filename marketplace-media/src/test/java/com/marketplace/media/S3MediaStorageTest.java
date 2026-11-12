@@ -154,6 +154,45 @@ class S3MediaStorageTest {
     }
 
     @Test
+    void g3_deleteObjects_sendsTheExactKnownKeysInOneBatchCall() {
+        // G3 (owner-gate batch 6a — the erasure flow's storage leg): the
+        // documented batch API carries the purge's KNOWN keys in ONE wire
+        // call — the request holds exactly the collected originals and
+        // thumbnails, nothing else.
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            storage.deleteObjects(java.util.List.of("listings/1/a.jpg", "listings/1/a.jpg/thumb",
+                    "posts/2/b.jpg", "review-media/3/c.jpg"));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client).deleteObjects(captor.capture());
+            var request = captor.getValue();
+            org.assertj.core.api.Assertions.assertThat(request.bucket()).isEqualTo(BUCKET);
+            org.assertj.core.api.Assertions.assertThat(request.delete().objects())
+                    .extracting(software.amazon.awssdk.services.s3.model.ObjectIdentifier::key)
+                    .containsExactlyInAnyOrder("listings/1/a.jpg", "listings/1/a.jpg/thumb",
+                            "posts/2/b.jpg", "review-media/3/c.jpg");
+        }
+    }
+
+    @Test
+    void g3_deleteObjects_emptyOrNullInputIsTheHonestNoOp() {
+        // A subject with no media (or an already-purged re-run) never issues
+        // a wire call.
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            storage.deleteObjects(java.util.List.of());
+            storage.deleteObjects(null);
+
+            verify(client, org.mockito.Mockito.never())
+                    .deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
+        }
+    }
+
+    @Test
     void close_shutsDownPresignerAndClient() {
         S3Presigner presigner = org.mockito.Mockito.mock(S3Presigner.class);
         S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());

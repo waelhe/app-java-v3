@@ -207,6 +207,36 @@ final class S3MediaStorage implements AutoCloseable {
     }
 
     /**
+     * G3 (adversarial review 2026-11-10, owner-gate batch 6a — the erasure
+     * flow's storage leg): batch best-effort removal of KNOWN keys — the
+     * account-erasure flow's media adapter holds the subject's exact
+     * object keys (originals + thumbnails), so the official documented
+     * batch API is the right channel: AWS S3 {@code DeleteObjects}
+     * (the multi-object delete — up to 1,000 keys per call, the service
+     * documentation's own batch shape) instead of one round trip per
+     * object. Same best-effort contract as {@link #deleteObject}:
+     * storage-side failure is logged by the caller, never fatal — bucket
+     * lifecycle rules own orphans. An empty/null input is a no-op (the
+     * subject held no media — the honest zero, never a wire call).
+     */
+    void deleteObjects(java.util.Collection<String> objectKeys) {
+        if (objectKeys == null || objectKeys.isEmpty()) {
+            return;
+        }
+        java.util.List<software.amazon.awssdk.services.s3.model.ObjectIdentifier> identifiers =
+                objectKeys.stream()
+                        .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
+                                .key(key)
+                                .build())
+                        .toList();
+        circuitBreaker.executeRunnable(() -> client.deleteObjects(
+                software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.builder()
+                        .bucket(bucket)
+                        .delete(d -> d.objects(identifiers))
+                        .build()));
+    }
+
+    /**
      * L28: fetches the raw object bytes — the thumbnail pipeline's read half
      * (scale the original server-side). The AWS SDK v2 synchronous channel
      * the client already uses ({@code getObjectAsBytes}).
