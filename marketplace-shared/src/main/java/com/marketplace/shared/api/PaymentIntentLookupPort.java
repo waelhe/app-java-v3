@@ -30,6 +30,7 @@ public interface PaymentIntentLookupPort {
      * unsettled state answers false: the honest "not yet verified",
      * never an exception (the FeatureGatePort's absent-row law).
      */
+    boolean isOrderPayableSettled(UUID orderId);
 
     /**
      * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the
