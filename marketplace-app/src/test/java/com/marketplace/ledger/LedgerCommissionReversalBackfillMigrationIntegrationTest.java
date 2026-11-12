@@ -84,36 +84,38 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
 
     @Test
     void v298_backfillsOnlyTheDeservingPreFixRefunds_andIsIdempotent() throws Exception {
-        UUID providerId = UUID.randomUUID();
+        // Three INDEPENDENT providers — one per case: the balance is keyed
+        // (provider, currency), so every case's money lives on its own
+        // provider's row and no seed can overwrite another case's state.
         UUID consumerId = UUID.randomUUID();
-        UUID listingId = UUID.randomUUID();
-        UUID bookingId = UUID.randomUUID();
-        UUID deservingIntent = UUID.randomUUID();   // the A2 defect's own residue
-        UUID fixedIntent = UUID.randomUUID();      // the post-fix shape: mirror already present
-        UUID zeroCommissionIntent = UUID.randomUUID(); // the zero-commission refund: nothing to reverse
+        UUID deservingProvider = UUID.randomUUID();   // the A2 defect's own residue
+        UUID fixedProvider = UUID.randomUUID();        // the post-fix shape: mirror already present
+        UUID zeroProvider = UUID.randomUUID();         // the zero-commission refund: nothing to reverse
+        UUID deservingIntent = UUID.randomUUID();
+        UUID fixedIntent = UUID.randomUUID();
+        UUID zeroIntent = UUID.randomUUID();
 
-        seedFkParents(providerId, consumerId, listingId, bookingId);
-        seedBookingIntent(deservingIntent, bookingId, consumerId);
-        seedBookingIntent(fixedIntent, bookingId, consumerId);
-        seedBookingIntent(zeroCommissionIntent, bookingId, consumerId);
+        seedProviderWorld(deservingProvider, consumerId, deservingIntent);
+        seedProviderWorld(fixedProvider, consumerId, fixedIntent);
+        seedProviderWorld(zeroProvider, consumerId, zeroIntent);
 
         // ---- The deserving case: settlement pair + refund debit, NO mirror ----
-        insertEntry(providerId, deservingIntent, "PAYMENT_CREDIT", PRICE_CENTS);
-        insertEntry(providerId, commissionSource(deservingIntent), "COMMISSION_DEBIT", COMMISSION_CENTS);
-        insertEntry(providerId, refundSource(deservingIntent), "REFUND_DEBIT", PRICE_CENTS);
-        seedBalance(providerId, PRICE_CENTS - COMMISSION_CENTS - PRICE_CENTS); // minus the commission
+        insertEntry(deservingProvider, deservingIntent, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(deservingProvider, commissionSource(deservingIntent), "COMMISSION_DEBIT", COMMISSION_CENTS);
+        insertEntry(deservingProvider, refundSource(deservingIntent), "REFUND_DEBIT", PRICE_CENTS);
+        seedBalance(deservingProvider, PRICE_CENTS - COMMISSION_CENTS - PRICE_CENTS); // minus the commission
 
         // ---- The already-fixed case: the mirror rode the refund ----
-        insertEntry(providerId, fixedIntent, "PAYMENT_CREDIT", PRICE_CENTS);
-        insertEntry(providerId, commissionSource(fixedIntent), "COMMISSION_DEBIT", COMMISSION_CENTS);
-        insertEntry(providerId, refundSource(fixedIntent), "REFUND_DEBIT", PRICE_CENTS);
-        insertEntry(providerId, reversalSource(fixedIntent), "COMMISSION_REVERSAL_CREDIT", COMMISSION_CENTS);
-        seedBalance(providerId, 0L);
+        insertEntry(fixedProvider, fixedIntent, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(fixedProvider, commissionSource(fixedIntent), "COMMISSION_DEBIT", COMMISSION_CENTS);
+        insertEntry(fixedProvider, refundSource(fixedIntent), "REFUND_DEBIT", PRICE_CENTS);
+        insertEntry(fixedProvider, reversalSource(fixedIntent), "COMMISSION_REVERSAL_CREDIT", COMMISSION_CENTS);
+        seedBalance(fixedProvider, 0L);
 
         // ---- The zero-commission case: no COMMISSION_DEBIT ever existed ----
-        insertEntry(providerId, zeroCommissionIntent, "PAYMENT_CREDIT", PRICE_CENTS);
-        insertEntry(providerId, refundSource(zeroCommissionIntent), "REFUND_DEBIT", PRICE_CENTS);
-        seedBalance(providerId, 0L);
+        insertEntry(zeroProvider, zeroIntent, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(zeroProvider, refundSource(zeroIntent), "REFUND_DEBIT", PRICE_CENTS);
+        seedBalance(zeroProvider, 0L);
 
         // ---- execute the actual V298 script (the real file from the
         // classpath; the migration is one atomic data-modifying CTE, so the
@@ -131,7 +133,7 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
         assertThat(reversalAmount)
                 .as("the backfill reverses the POSTED commission row's own amount")
                 .isEqualTo(COMMISSION_CENTS);
-        assertThat(balanceOf(providerId))
+        assertThat(balanceOf(deservingProvider))
                 .as("the provider's balance returns from minus-the-commission to zero")
                 .isEqualTo(0L);
 
@@ -139,18 +141,26 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
         assertThat(countEntries(reversalSource(fixedIntent), "COMMISSION_REVERSAL_CREDIT"))
                 .as("the already-mirrored refund is not re-mirrored (count stays one)")
                 .isEqualTo(1);
+        assertThat(balanceOf(fixedProvider))
+                .as("the already-fixed provider's balance is untouched")
+                .isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM ledger_entries WHERE source_id = ?",
-                Long.class, reversalSource(zeroCommissionIntent)))
+                Long.class, reversalSource(zeroIntent)))
                 .as("the zero-commission refund gains no reversal — nothing was ever over-debited")
+                .isZero();
+        assertThat(balanceOf(zeroProvider))
+                .as("the zero-commission provider's balance is untouched")
                 .isZero();
 
         // ---- Idempotency: the second execution moves nothing ----
         long entriesBefore = totalEntries();
-        long balanceBefore = balanceOf(providerId);
+        long deservingBalanceBefore = balanceOf(deservingProvider);
         executeV298();
         assertThat(totalEntries()).as("the re-run inserts nothing").isEqualTo(entriesBefore);
-        assertThat(balanceOf(providerId)).as("the re-run moves no balance").isEqualTo(balanceBefore);
+        assertThat(balanceOf(deservingProvider))
+                .as("the re-run moves no balance")
+                .isEqualTo(deservingBalanceBefore);
     }
 
     /** The runtime path's own derivation — the JDK UUIDv3 the SQL reconstructs. */
@@ -170,9 +180,13 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
      * The FK chain payment_intents' booking origin enforces (users →
      * provider_listings → bookings) — the {@code
      * DisputeFinancialResolutionIntegrationTest} seeding convention: raw SQL
-     * with ON CONFLICT DO NOTHING, idempotent per test.
+     * with ON CONFLICT DO NOTHING, idempotent per test. Each case's provider
+     * carries its OWN listing and booking (the booking row's provider FK is
+     * one provider), so the three cases never share a money row.
      */
-    private void seedFkParents(UUID providerId, UUID consumerId, UUID listingId, UUID bookingId) {
+    private void seedProviderWorld(UUID providerId, UUID consumerId, UUID intentId) {
+        UUID listingId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
         jdbcTemplate.update("""
                 INSERT INTO users (id, subject, email, display_name, role)
                 VALUES (?, ?, ?, ?, 'PROVIDER')
@@ -198,9 +212,6 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
                 VALUES (?, ?, ?, ?, 'CONFIRMED', ?, 'SAR')
                 ON CONFLICT (id) DO NOTHING
                 """, bookingId, listingId, consumerId, providerId, PRICE_CENTS);
-    }
-
-    private void seedBookingIntent(UUID intentId, UUID bookingId, UUID consumerId) {
         jdbcTemplate.update("""
                 INSERT INTO payment_intents (id, booking_id, consumer_id, origin, amount_cents,
                     currency, status, refunded_amount_cents)

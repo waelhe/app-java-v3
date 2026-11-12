@@ -244,19 +244,24 @@ class LedgerRefundReplayIntegrationTest {
     }
 
     /**
-     * The house poll for the re-published refund's OWN completed delivery:
-     * the original FAILED publication moved into the archive when its
-     * resubmission completed, so the COMPLETED REFUNDED row this poll awaits
-     * in {@code event_publication} is the re-published event's fresh
-     * delivery — the registry's own record that the replayed listener ran
-     * (the Modulith reference's distinction between a failed and a completed
-     * delivery).
+     * The house poll for the re-published refund's OWN completed delivery.
+     * A COMPLETED publication moves into the archive IMMEDIATELY (the same
+     * registry semantics the {@code EventPublicationResubmissionIntegrationTest}'s
+     * awaitArchived witnesses) — {@code event_publication} holds only
+     * non-terminal and FAILED rows. The re-published refund's completed
+     * delivery is therefore awaited in the ARCHIVE, distinguished from the
+     * original replayed publication by its completion-attempt count: the
+     * fresh delivery completed on its FIRST attempt, the original rode the
+     * resubmission (two attempts) — the registry's own record that the
+     * replayed listener ran (the Modulith reference's distinction between
+     * a failed and a completed delivery).
      */
     private void awaitRefundedPublicationCompleted() {
-        poll("the re-published refund delivery completed", () -> {
+        poll("the re-published refund delivery completed (archived on its first attempt)", () -> {
             Long count = jdbc.queryForObject(
-                    "select count(*) from event_publication where listener_id like ?"
-                            + " and status = 'COMPLETED' and serialized_event like ?",
+                    "select count(*) from event_publication_archive where listener_id like ?"
+                            + " and completion_date is not null and completion_attempts = 1"
+                            + " and serialized_event like ?",
                     Long.class, LISTENER_PATTERN, "%\"REFUNDED\"%");
             return count != null && count > 0;
         });
