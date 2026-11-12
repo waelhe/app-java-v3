@@ -58,12 +58,19 @@ class MediaPurgeAdapterTest {
         org.mockito.Mockito.doAnswer(inv -> {
             String sql = inv.getArgument(0);
             RowCallbackHandler handler = inv.getArgument(1);
-            if (sql.contains("media_assets")) {
-                handler.processRow(rowSet(new String[][]{
-                        {"listings/1/a.jpg", "listings/1/a.jpg/thumb"},
-                        {"posts/2/b.jpg", null}}));
-            } else {
-                handler.processRow(rowSet(new String[][]{{"review-media/3/c.jpg"}}));
+            // The REAL JdbcTemplate contract this stub replaces: the TEMPLATE
+            // drives next() and hands the handler the CURRENT row — the driver
+            // therefore walks the rows itself (next() once per row, processRow
+            // on the current row). The pre-driver harness had called
+            // processRow directly on the fresh set (cursor never advanced,
+            // getString answered null: the NPE at List.copyOf).
+            java.sql.ResultSet rs = sql.contains("media_assets")
+                    ? rowSet(new String[][]{
+                            {"listings/1/a.jpg", "listings/1/a.jpg/thumb"},
+                            {"posts/2/b.jpg", null}})
+                    : rowSet(new String[][]{{"review-media/3/c.jpg"}});
+            while (rs.next()) {
+                handler.processRow(rs);
             }
             return null;
         }).when(jdbcTemplate).query(anyString(), any(RowCallbackHandler.class), eq(subject));
