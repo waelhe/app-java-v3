@@ -92,6 +92,30 @@ public class LedgerService {
     }
 
     /**
+     * A2 + CodeRabbit round 1 (major — data integrity): the posted
+     * commission the refund's mirror must reverse — read from the ledger's
+     * OWN COMMISSION_DEBIT row (the deterministic
+     * {@code commission-<intentId>} source key {@link #debitFromCommission}
+     * wrote), never recomputed from a live rate. The legacy pre-freeze rows
+     * (a null {@code commission_rate}) settle AND refund against the live
+     * {@code app.commission.rate}: if the operator changes the rate between
+     * settlement and refund, a recomputed mirror would reverse a DIFFERENT
+     * number than the debit actually posted — the balance would end at
+     * minus or plus the drift. The posted ENTRY is the ledger's own truth
+     * (the ADR's D2 discipline: the posted value is the disclosure of
+     * record); the mirror reads it, and an intent whose commission was
+     * never posted answers empty (the caller skips the mirror — nothing
+     * posted, nothing to reverse).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> postedCommissionCents(UUID paymentIntentId) {
+        UUID sourceId = UUID.nameUUIDFromBytes(("commission-" + paymentIntentId.toString()).getBytes());
+        return entryRepository.findBySourceId(sourceId)
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.COMMISSION_DEBIT)
+                .map(LedgerEntry::getAmountCents);
+    }
+
+    /**
      * A2 (adversarial review 2026-11-10, owner-gate batch 6a — the
      * ADR-0013 D3 §3 mirror rule): the full refund's commission REVERSAL
      * credit — the exact mirror image of {@link #debitFromCommission},

@@ -204,12 +204,18 @@ public class LedgerPaymentEventListener {
             java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
             ledgerService.debitFromRefund(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            ledgerService.creditFromCommissionReversal(sellerId, intent.paymentIntentId(),
-                    commissionCents(intent.amountCents(), intent), intent.currency());
-            log.info("Ledger processed: debited {} {} from seller {}, credited {} {} as the commission "
-                            + "reversal mirror — the order refund mirrors its settlement (intent {})",
-                    intent.amountCents(), intent.currency(), sellerId,
-                    commissionCents(intent.amountCents(), intent), intent.currency(), intent.paymentIntentId());
+            // CodeRabbit round 1 (major — data integrity): the mirror reverses
+            // the commission the ledger ACTUALLY posted — the posted
+            // COMMISSION_DEBIT row's own amount, never a recomputation (a
+            // legacy null-rate row's settlement and refund both read the
+            // LIVE rate: a rate change between them would reverse a different
+            // number than was posted).
+            ledgerService.postedCommissionCents(intent.paymentIntentId())
+                    .ifPresent(commission -> ledgerService.creditFromCommissionReversal(
+                            sellerId, intent.paymentIntentId(), commission, intent.currency()));
+            log.info("Ledger processed: debited {} {} from seller {} — the order refund "
+                            + "mirrors its settlement credit (intent {})",
+                    intent.amountCents(), intent.currency(), sellerId, intent.paymentIntentId());
             return;
         }
         // Stage 8 (ADR-0004): the LOAN refund mirrors its settlement credit
@@ -219,12 +225,14 @@ public class LedgerPaymentEventListener {
             java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
             ledgerService.debitFromRefund(ownerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            ledgerService.creditFromCommissionReversal(ownerId, intent.paymentIntentId(),
-                    commissionCents(intent.amountCents(), intent), intent.currency());
-            log.info("Ledger processed: debited {} {} from owner {}, credited {} {} as the commission "
-                            + "reversal mirror — the loan-fee refund mirrors its settlement (intent {})",
-                    intent.amountCents(), intent.currency(), ownerId,
-                    commissionCents(intent.amountCents(), intent), intent.currency(), intent.paymentIntentId());
+            // CodeRabbit round 1: the posted row's own amount (the order
+            // branch's identical discipline).
+            ledgerService.postedCommissionCents(intent.paymentIntentId())
+                    .ifPresent(commission -> ledgerService.creditFromCommissionReversal(
+                            ownerId, intent.paymentIntentId(), commission, intent.currency()));
+            log.info("Ledger processed: debited {} {} from owner {} — the loan-fee refund "
+                            + "mirrors its settlement credit (intent {})",
+                    intent.amountCents(), intent.currency(), ownerId, intent.paymentIntentId());
             return;
         }
         // The booking refund — the explicit named branch (the completion
@@ -239,12 +247,13 @@ public class LedgerPaymentEventListener {
             // currency — so the debit lands on the balance the credit moved.
             String currency = bookingInfo.currency();
             ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
-            ledgerService.creditFromCommissionReversal(bookingInfo.providerId(), intent.paymentIntentId(),
-                    commissionCents(priceCents, intent), currency);
-            log.info("Ledger processed: debited {} {} from provider {}, credited {} {} as the commission "
-                            + "reversal mirror — the refund mirrors the original credit",
-                    priceCents, currency, bookingInfo.providerId(),
-                    commissionCents(priceCents, intent), currency);
+            // CodeRabbit round 1: the posted row's own amount (the order
+            // branch's identical discipline).
+            ledgerService.postedCommissionCents(intent.paymentIntentId())
+                    .ifPresent(commission -> ledgerService.creditFromCommissionReversal(
+                            bookingInfo.providerId(), intent.paymentIntentId(), commission, currency));
+            log.info("Ledger processed: debited {} {} from provider {} — the refund mirrors the original credit",
+                    priceCents, currency, bookingInfo.providerId());
             return;
         }
         // Fail closed — the completion path's twin: no debit, the explicit
