@@ -204,6 +204,68 @@ class RoleAssignmentServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // B1 (adversarial review 2026-11-10) — the last-active-ADMIN guard
+    // rides the fourth door: the revoke itself
+    // ------------------------------------------------------------------
+
+    @Test
+    void revoke_refusesToRemoveTheLastActiveAdminAssignment() {
+        // The B1 scenario: the subject holds the platform's only effective
+        // active ADMIN assignment — the revoke must answer the family's 409
+        // and write nothing, exactly like the three UserService doors.
+        UUID userId = UUID.randomUUID();
+        String subject = "last-admin@example.com";
+        RoleAssignment admin = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.ADMIN, NOW.minusSeconds(3600), null, "BACKFILL");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user(subject)));
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.ADMIN))
+                .thenReturn(Optional.of(admin));
+        when(jdbcTemplate.queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class))
+                .thenReturn(List.of(subject));
+
+        ConflictException ex = assertThrows(ConflictException.class,
+                () -> service.revoke(userId, UserRole.ADMIN, "admin"));
+
+        assertThat(ex.getMessage()).contains("Cannot remove the last active ADMIN role");
+        // The serialized decision ran (advisory lock + effective count) and
+        // NOTHING else: no authorization kill, no published fact, and the
+        // assignment row itself was never stamped.
+        verify(jdbcTemplate).execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
+        verify(jdbcTemplate).queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class);
+        org.mockito.Mockito.verifyNoMoreInteractions(jdbcTemplate);
+        verifyNoInteractions(eventPublisher);
+        assertThat(admin.isActive())
+                .as("the refusal precedes every write — the row stays active")
+                .isTrue();
+    }
+
+    @Test
+    void revoke_proceedsWhenAnotherActiveAdminRemains() {
+        // The guard must never block the legitimate removal: with another
+        // active admin standing, the revoke stamps, kills the authorization
+        // rows, and publishes the fact exactly as the non-guarded path does.
+        UUID userId = UUID.randomUUID();
+        String subject = "second-admin@example.com";
+        RoleAssignment admin = RoleAssignment.grant(
+                UUID.randomUUID(), userId, UserRole.ADMIN, NOW.minusSeconds(3600), null, "BACKFILL");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user(subject)));
+        when(repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, UserRole.ADMIN))
+                .thenReturn(Optional.of(admin));
+        when(jdbcTemplate.queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class))
+                .thenReturn(List.of("break.glass", subject));
+
+        service.revoke(userId, UserRole.ADMIN, "admin");
+
+        assertThat(admin.isActive())
+                .as("the legitimate removal proceeds — the row is stamped")
+                .isFalse();
+        verify(jdbcTemplate).execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
+        verify(jdbcTemplate).queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class);
+        verify(jdbcTemplate).update(RoleAssignmentService.DELETE_AUTHORIZATIONS_BY_PRINCIPAL, subject);
+        verify(eventPublisher).publishEvent(any(UserRoleAssignmentRevoked.class));
+    }
+
+    // ------------------------------------------------------------------
     // The read — the account's active set
     // ------------------------------------------------------------------
 

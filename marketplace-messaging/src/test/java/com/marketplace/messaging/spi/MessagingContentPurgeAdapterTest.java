@@ -28,6 +28,15 @@ import static org.mockito.Mockito.when;
  * the erasure. The pin guards the SQL's own predicates; the
  * against-the-real-schema round-trip (the armored lead scrubbed base
  * and mirror, idempotent re-run) lives in LeadsIntegrationTest.
+ *
+ * <p>Adversarial-review 2026-11-10 finding G2 (rulebook B5, the family
+ * law): both LIVE statements must ADVANCE the row's optimistic-lock
+ * {@code version} atomically with the erasure. A statement that purges
+ * the text without advancing the version lets a provider's inbox
+ * transition (transitionLead) holding a pre-purge ListingLead snapshot
+ * flush its stale entity THROUGH the passed optimistic-lock check and
+ * resurrect the erased contact identifiers on the live row (plus a new
+ * Envers revision) — the CWE-362 resurrection race.</p>
  */
 @ExtendWith(MockitoExtension.class)
 class MessagingContentPurgeAdapterTest {
@@ -113,5 +122,31 @@ class MessagingContentPurgeAdapterTest {
                 .toList();
         assertThat(matches).as("exactly one statement starts with: " + prefix).hasSize(1);
         return matches.get(0);
+    }
+
+    // ---------- G2 (adversarial review 2026-11-10): the optimistic-lock
+    // ---------- advance rides every LIVE statement, never a mirror ----------
+
+    @Test
+    void purgeAuthoredTexts_advancesTheLiveRowVersionAtomicallyWithTheErasure() {
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        new MessagingContentPurgeAdapter(jdbcTemplate).purgeAuthoredTexts(userId);
+
+        // Both LIVE statements carry the advance — the messages leg
+        // (insert-only today, but the table carries the version column and
+        // the family's single shape applies to both legs now) and the
+        // listing_leads leg (the PII contact columns).
+        assertThat(capturedSqlStartingWith("UPDATE messages SET"))
+                .contains("version = version + 1");
+        assertThat(capturedSqlStartingWith("UPDATE listing_leads SET"))
+                .contains("version = version + 1");
+        // The two Envers mirrors carry NO version reference — _aud rows
+        // are immutable history keyed by revision, exactly like every
+        // sibling adapter's mirror discipline.
+        assertThat(capturedSqlStartingWith("UPDATE messages_aud SET"))
+                .doesNotContain("version");
+        assertThat(capturedSqlStartingWith("UPDATE listing_leads_aud SET"))
+                .doesNotContain("version");
     }
 }
