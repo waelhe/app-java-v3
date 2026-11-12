@@ -13,9 +13,13 @@ import java.util.UUID;
  *
  * <p>Provider choice is a deployment decision, exactly like the MAIL and
  * MEDIA_S3 gates: when no credentials are bound, no channel beans exist
- * (see {@link StripeChannelConfiguredCondition}) and {@code processIntent}
- * keeps running the existing internal-intent behavior byte-for-byte. The
- * capability is OFF, not broken.
+ * (see {@link StripeChannelConfiguredCondition}) and the money paths that
+ * REQUIRE a provider answer 503 SU-001 — {@code processIntent} and the
+ * Stripe webhook both route through the service's {@code requireChannel()}
+ * choke point (W3, the adversarial review's fifth provider gate): the
+ * capability is OFF, not broken, and no local-only PROCESSING money path
+ * can start. Refund edges that find no remote link keep the documented
+ * inert local disposition (money that never left the house).
  *
  * <p>Idempotency: callers pass a deterministic key (derived from the local
  * intent id). Retries of the same request replay the same remote intent —

@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -34,8 +36,10 @@ import static org.mockito.Mockito.when;
 /**
  * Pins the channel-activation semantics of the PSP layer (roadmap B3):
  * <ul>
- *   <li>inert channel — processIntent keeps the byte-for-byte legacy behavior
- *       (no remote call, null clientSecret)</li>
+ *   <li>inert channel — processIntent answers 503 SU-001 (the W3 fifth
+ *       provider gate) BEFORE any local write: no PROCESSING flip, no
+ *       Payment row, no event (the pre-fix shape started a local-only
+ *       PROCESSING money path no provider could ever move)</li>
  *   <li>bound channel — remote intent created with the deterministic
  *       idempotency key, psp_intent_id link assigned, clientSecret returned</li>
  *   <li>Stripe webhook — 503 SU-001 when unbound; verified dispatch with
@@ -81,21 +85,29 @@ class PaymentsServicePspTest {
         UUID consumerId = intent.getConsumerId();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(consumerId);
         when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
-        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+        // lenient: the W3 gate test never reaches the payment save (the 503
+        // fires before any local write) — strict stubs would flag the stub.
+        lenient().when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
         return intent;
     }
 
     @Test
-    void processIntent_inertChannel_keepsLegacyBehavior() {
+    void processIntent_inertChannel_answers503BeforeAnyLocalWrite() {
         PaymentIntent intent = ownedIntent();
         when(inertChannel.getIfAvailable()).thenReturn(null);
 
-        PaymentsService.ProcessIntentResult result =
-                service(inertChannel).processIntent(intent.getId(), authentication);
+        // W3 — the fifth provider gate: an unbound channel is a capability
+        // that is OFF, not broken. The consumer money path never STARTS a
+        // local-only PROCESSING (the pre-fix shape answered 200 with money
+        // that no provider could ever move).
+        ServiceUnavailableException ex = assertThrows(ServiceUnavailableException.class,
+                () -> service(inertChannel).processIntent(intent.getId(), authentication));
 
-        assertEquals(PaymentIntentStatus.PROCESSING, result.intent().getStatus());
-        assertNull(result.clientSecret(), "inert channel must not leak a client secret");
-        assertNull(result.intent().getPspIntentId(), "inert channel must not link a PSP intent");
+        assertThat(ex.getBody().getProperties().get("errorCode")).isEqualTo("SU-001");
+        assertEquals(PaymentIntentStatus.CREATED, intent.getStatus(),
+                "the gate fires BEFORE the PROCESSING flip — the intent stays as it was");
+        verify(paymentRepository, never()).save(any(Payment.class));
+        verify(eventPublisher, never()).publishEvent(any());
         verifyNoInteractions(pspChannel);
     }
 
