@@ -49,23 +49,25 @@ class MediaPurgeAdapterTest {
         // Degree 1 + Degree 2: the keys are collected on the SAME
         // <> PURGED predicate the tombstone statements filter on, then the
         // batch destruction receives exactly them (originals + thumbnails +
-        // review media keys). The read side is driven EXPLICITLY: the
-        // captured RowCallbackHandler is fed one fully-stubbed ResultSet
-        // per read (a deterministic hand-rolled row set — the read's own
-        // contract, no Mockito answer indirection).
+        // review media keys). The read side serves REAL ResultSet
+        // implementations (the interface's own default methods cover the
+        // unread surface; next()/getString(int) are implemented over a
+        // plain row cursor) — zero Mockito answer machinery over the JDBC
+        // surface, the deterministic harness after the mock forms each
+        // measured a distinct CI failure.
         UUID subject = UUID.randomUUID();
         org.mockito.Mockito.doAnswer(inv -> {
-                    String sql = inv.getArgument(0);
-                    RowCallbackHandler handler = inv.getArgument(1);
-                    if (sql.contains("media_assets")) {
-                        handler.processRow(resultSet(
-                                new String[]{"listings/1/a.jpg", "listings/1/a.jpg/thumb"},
-                                new String[]{"posts/2/b.jpg", null}));
-                    } else {
-                        handler.processRow(resultSet(new String[]{"review-media/3/c.jpg"}));
-                    }
-                    return null;
-                }).when(jdbcTemplate).query(anyString(), any(RowCallbackHandler.class), eq(subject));
+            String sql = inv.getArgument(0);
+            RowCallbackHandler handler = inv.getArgument(1);
+            if (sql.contains("media_assets")) {
+                handler.processRow(rowSet(new String[][]{
+                        {"listings/1/a.jpg", "listings/1/a.jpg/thumb"},
+                        {"posts/2/b.jpg", null}}));
+            } else {
+                handler.processRow(rowSet(new String[][]{{"review-media/3/c.jpg"}}));
+            }
+            return null;
+        }).when(jdbcTemplate).query(anyString(), any(RowCallbackHandler.class), eq(subject));
         when(jdbcTemplate.update(anyString(), eq(subject))).thenReturn(2, 1);
 
         int purged = new MediaPurgeAdapter(jdbcTemplate, mediaService).purgeAuthoredTexts(subject);
@@ -120,27 +122,34 @@ class MediaPurgeAdapterTest {
     }
 
     /**
-     * A deterministic in-memory ResultSet for one read's rows: a SINGLE
-     * stateful answer per method — next() advances a plain cursor, and
-     * getString(column) resolves the CURRENT row's value through the
-     * cursor (one mock, one answer, no stub-on-stub interactions at
-     * all — the stable form after the varargs-spread and
-     * consecutive-value forms each measured a distinct CI failure). A
-     * null thumb and a single-column read are plain answer values.
+     * A REAL minimal ResultSet over the read's rows: next() walks a plain
+     * cursor, getString(column) resolves the current row's value (a null
+     * thumb and a single-column read are plain values), and the interface's
+     * own default methods cover every unread member — the JDBC surface with
+     * zero Mockito machinery.
      */
-    private static ResultSet resultSet(String[]... rows) throws java.sql.SQLException {
-        ResultSet rs = mock(ResultSet.class);
-        java.util.concurrent.atomic.AtomicInteger cursor = new java.util.concurrent.atomic.AtomicInteger(-1);
-        when(rs.next()).thenAnswer(inv -> cursor.incrementAndGet() < rows.length);
-        when(rs.getString(org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> {
-            int row = cursor.get();
-            int column = inv.getArgument(0);
-            if (row < 0 || row >= rows.length || column > rows[row].length) {
-                return null;
-            }
-            return rows[row][column - 1];
-        });
-        return rs;
-    }
+    private static ResultSet rowSet(String[][] rows) {
+        return new ResultSet() {
+            int cursor = -1;
 
-}
+            @Override
+            public boolean next() {
+                cursor++;
+                return cursor < rows.length;
+            }
+
+            @Override
+            public String getString(int columnIndex) {
+                int row = cursor;
+                if (row < 0 || row >= rows.length || columnIndex > rows[row].length) {
+                    return null;
+                }
+                return rows[row][columnIndex - 1];
+            }
+
+            @Override
+            public boolean wasNull() {
+                return false;
+            }
+        };
+    }}
