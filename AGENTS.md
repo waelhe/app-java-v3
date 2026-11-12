@@ -24,8 +24,13 @@ This file adds project-specific conventions.
      - إصلاح أخر               → الملف المعني + CODING_STANDARDS.md
 4. ثم الشجرة المستهدفة من خريطة §10
 5. نظام معرفة العيوب `docs/governance/defect-knowledge/` — **إلزامي مع كل تعديل كود**: `change-protocol.md` (قبل/أثناء/بعد) + قواعد `rulebook.md` §B المُحمّلة اختيارياً بمحفزات الخطر + `pattern-catalog.md` عند أي شك في نمط متكرر
+6. سياسة المهارات `docs/governance/agent-skills-policy.md` وسجل التثبيت `docs/governance/plans/agent-skills-pins.json`؛ حمّل فقط `SKILL.md` المثبتة ذات الصلة بالمهمة، مع احترام أولوية المراجع الحاكمة. لا تشغّل مثبت مهارات يكتب نسخة غير مثبتة.
 ```
 قاعدة: «الملف الحاكم» = المستند الذي يملك قرارات المهمة. لا يقبَل إجراء بلا إسناد صريح إليه.
+
+**مرجعية تقنية عامة لكل التقنيات:** لكل قرار أو تنفيذ أو إعداد أو تكامل، استخدم الوثائق الرسمية للإصدار الفعلي والمستودع الرسمي/مصدر التنفيذ والمعايير المنشورة ذات الصلة. تُستخدم تجارب المجتمع الموثوقة كدليل مساند فقط، ولا تتجاوز العقد أو الوثائق الرسمية. لا تنفذ إجراءً لا يمكن إسناده إلى مصدر موثوق. لا يعني ذلك منع كتابة كود مخصص؛ يُسمح به فقط عبر واجهات التوسعة أو التكوين أو دورة الحياة الموثقة رسمياً. فضّل الإدارة التلقائية والآليات المضمنة عندما توثق التقنية أنها تغطي الحالة، ولا تحذف تخصيصاً يدوياً مدعوماً قبل إثبات أنه مخالف أو غير مطلوب.
+
+**المهارات:** قبل التنفيذ، افحص سياسة `docs/governance/agent-skills-policy.md` وسجل `agent-skills-pins.json`، وحمّل المهارات المثبتة ذات الصلة. المهارات مدخلات مرجعية وليست سلطة أعلى من العقود والخطط والكود والاختبارات. ممنوع تشغيل `npx skills add` أو أي مثبت يحدّث نسخ `.agents/skills/` خارج عملية التثبيت الموثقة والمراجعة.
 
 قاعدة خاصة بـSaleor (ملزمة): أي عمل على Dashboard/عقد التجارة/مخطط GraphQL يخضع حصريًا لـ`docs/governance/plans/saleor-dashboard-full-commerce-canonical-plan.md`. الوثيقتان `saleor-dashboard-marketplace-adaptation-plan.md` و`saleor-schema-parity-plan.md` تاريخيتان فقط ولا يجوز اختيار أي منهما ملفًا حاكمًا. يتحقق CI من علامة الإلغاء ورابط الخطة الجديدة؛ لا تُحذف أدلة التاريخ. كل اختلاف عن العقد المرجعي يجب تسجيله في `docs/governance/plans/saleor-contract-divergences.csv` مع مالك واختبارات وحالة موافقة/ADR؛ لا يمر P7 مع اختلاف غير معتمد. لا تُحسب مطابقة أسماء الجذور على أنها اكتمال دلالي.
 
@@ -48,16 +53,19 @@ This file adds project-specific conventions.
 
 ## Additional Rules
 
-- **CI**: Run `mvn clean verify -pl <module>` before pushing
+- **CI**: GitHub Actions والبوابات المطلوبة على رأس PR هي سجل التحقق الإلزامي. يمكن تشغيل Maven محلياً كفحص إضافي عندما تكون بيئة التنفيذ متاحة، لكنه لا يحل محل CI ولا يمنع مسار GitHub-first عندما لا تتوفر بيئة محلية.
 - **Testing**: All integration tests MUST have `@ActiveProfiles("test")` and `@Testcontainers(disabledWithoutDocker = true)` or `@Container`
 - **Flyway**: Any schema change = new V{number} migration file. Never modify existing migrations
 - **Envers**: All domain entities MUST have `@Audited`
 - **`@ConfigurationProperties` binding**: a nested record section with absent keys binds to `null` (official constructor-binding rule); prime the component with an empty `@DefaultValue` to always bind a non-null defaulted instance (Spring Boot reference — Features › Externalized Configuration › Constructor binding)
 - **Protocols enforced**: Planning → Execution → Surgical Editing (see global AGENTS.md)
 
-## 1. بروتوكول تشغيل الوكيل — النسخة الدائمة على GitHub (مضاف 2026-09-28)
+## 1. بروتوكول تشغيل الوكيل — النسخة الدائمة على GitHub (محدث 2026-11-03)
 
 - الوكيل الذي يستلم المستودع **بذاكرة صفرية** يبدأ من `docs/agent-protocol.md` — طبقة الإقلاع والاستحواذ التي تربط عائلة ملفات الجذر (هذا الملف / SYSTEM.md / PROJECT_MAP.md / docs/METHODOLOGY.md / CONTRIBUTING.md) في سلسلة واحدة تُبنى من GitHub وحده. ومهارة الإقلاع القابلة للاشتقاق لأي نظام وكلاء في `docs/agent-skill.md`.
 - عند أي خلاف بين الملف العالمي المحلي (`~/.config/opencode/AGENTS.md`) أو مهارة `protocol-enforcer` المحلية وهذين التوأمين: **التوأم في المستودع يحكم** وتُرقَّى النسخ المحلية لمطابقته (النسخ المحلية conveniences تُعاد بناؤها منه، لا اعتماديات).
 - سياسة اللغة (ملزمة): الإنجليزية لطبقة الآلة (الكود، عناوين الـcommits، الوثائق التقنية الموجهة للـAI)؛ العربية لطبقة المالك (الردود، أجسام الـPRs بالأرقام المقاسة) — ملفات الجذر القائمة تبقى كما هي.
 - لا دمج إلى `main` إلا بكلمة صريحة من المالك عبر بوابات الدمج الثلاث المقيسة — الدمج نفسه مُحرّك النشر إلى الإنتاج (auto-deploy).
+- **GitHub-first:** التعديلات الدائمة تكون على فرع بعيد وPR؛ لا دفع مباشر إلى `main`. استخدم SHA رأس الفرع كمرجع، وتحقق من نتائج GitHub Actions على الرأس الحالي. الاختبارات المحلية إضافية وليست بديلاً عن البوابات البعيدة.
+- **عدم الانتظار:** لا تتوقف بلا عمل بسبب CI أو CodeRabbit؛ نفّذ عملاً مستقلاً على فرع منفصل أو أكمل التحليل والمراجعة، مع مراقبة محدودة للنتائج. لا تُعلن نجاح فحص لم يكتمل، ولا تتجاوز أي بوابة دمج مطلوبة.
+- **المراجعات:** اطلب `@coderabbitai review` عندما تسمح حالة PR وإعدادات المستودع بذلك. إن تجاوز التغيير حد الملفات المدعوم، اتبع آلية التغطية المقسمة والبوابة fail-closed القائمة؛ لا تنشئ شرائح بديلة ولا تعتبرها قابلة للدمج.
