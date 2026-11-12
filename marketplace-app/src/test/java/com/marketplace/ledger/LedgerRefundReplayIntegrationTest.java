@@ -204,6 +204,29 @@ class LedgerRefundReplayIntegrationTest {
         assertThat(ledgerService.getBalances(providerId)).hasSize(1);
         assertThat(ledgerService.getBalances(providerId).get(0).availableCents()).isZero();
         assertThat(ledgerService.getBalances(providerId).get(0).currency()).isEqualTo("SAR");
+
+        // 5 — CodeRabbit round 6 (nitpick, adopted): publish the SAME refund
+        //     event AGAIN after the successful delivery — a fresh publication
+        //     the registry records and delivers, booked against the SAME
+        //     idempotent ledger. The re-delivery is awaited THROUGH the
+        //     registry itself (a COMPLETED publication carrying the REFUNDED
+        //     state — the archived original is gone from event_publication,
+        //     so the row this poll awaits is the replayed one), and the
+        //     ledger is unchanged: still exactly the four movements, still
+        //     the zero balance — the "no entry is duplicated" contract the
+        //     test's own description promises.
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitRefundedPublicationCompleted();
+        var statementAfterRedelivery = ledgerEntryRepository.findByProviderIdOrderByCreatedAtDescIdDesc(
+                providerId, PageRequest.of(0, 50));
+        assertThat(statementAfterRedelivery.getContent())
+                .as("the re-published refund delivery books nothing — the mirrors are "
+                        + "structurally idempotent")
+                .hasSize(4);
+        assertThat(ledgerService.getBalances(providerId).get(0).availableCents())
+                .as("the balance stays at the honest zero")
+                .isZero();
     }
 
     /**
@@ -216,6 +239,25 @@ class LedgerRefundReplayIntegrationTest {
                     "select count(*) from event_publication where listener_id like ?"
                             + " and status = ? and completion_attempts >= ?",
                     Long.class, LISTENER_PATTERN, status, minAttempts);
+            return count != null && count > 0;
+        });
+    }
+
+    /**
+     * The house poll for the re-published refund's OWN completed delivery:
+     * the original FAILED publication moved into the archive when its
+     * resubmission completed, so the COMPLETED REFUNDED row this poll awaits
+     * in {@code event_publication} is the re-published event's fresh
+     * delivery — the registry's own record that the replayed listener ran
+     * (the Modulith reference's distinction between a failed and a completed
+     * delivery).
+     */
+    private void awaitRefundedPublicationCompleted() {
+        poll("the re-published refund delivery completed", () -> {
+            Long count = jdbc.queryForObject(
+                    "select count(*) from event_publication where listener_id like ?"
+                            + " and status = 'COMPLETED' and serialized_event like ?",
+                    Long.class, LISTENER_PATTERN, "%\"REFUNDED\"%");
             return count != null && count > 0;
         });
     }

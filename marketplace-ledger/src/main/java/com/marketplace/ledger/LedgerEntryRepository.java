@@ -36,19 +36,24 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
 
     /**
      * R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's currency):
-     * the provider's windowed net movement PER CURRENCY — credits minus
-     * commission debits minus refund debits (the L25 sign convention),
+     * the provider's windowed net movement PER CURRENCY — credits (the payment
+     * credit AND the full refund's commission REVERSAL credit, A2 round 6)
+     * minus debits (commission, refund, ad bill — the L25 sign convention),
      * grouped by the entry's ISO 4217 currency (the plan's own wording:
      * aggregations group by the {@code (provider, currency)} pair). The
      * pre-fix single-currency sum mixed different currencies into one
-     * number and is gone with the port it served. Rows come back as
-     * {@code [currency (String), netCents (Long)]} tuples ordered by
+     * number and is gone with the port it served; the pre-A2 CASE subtracted
+     * the reversal credit like a debit, so a window covering a fully
+     * refunded settlement netted MINUS twice the commission instead of the
+     * honest zero — the round-6 full-review's third sign finding. Rows come
+     * back as {@code [currency (String), netCents (Long)]} tuples ordered by
      * currency; the COALESCE per group keeps an all-debit window at its
      * honest negative, and an empty window returns no rows at all.
      */
     @Query("""
             SELECT e.currency AS currency,
                    COALESCE(SUM(CASE WHEN e.entryType = com.marketplace.ledger.LedgerEntryType.PAYMENT_CREDIT
+                                        OR e.entryType = com.marketplace.ledger.LedgerEntryType.COMMISSION_REVERSAL_CREDIT
                                      THEN e.amountCents ELSE -e.amountCents END), 0) AS netCents
             FROM LedgerEntry e
             WHERE e.providerId = :providerId

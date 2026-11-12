@@ -90,6 +90,13 @@ class LedgerModuleIntegrationTest {
     @Autowired
     private LedgerService ledgerService;
 
+    /**
+     * The repository the stats net window reads through — the round-6
+     * sign-fix proof's own access path (sumNetCentsByCurrencyForProviderBetween).
+     */
+    @Autowired
+    private LedgerEntryRepository ledgerEntryRepository;
+
     @Autowired
     private ApplicationEventPublisher events;
 
@@ -375,6 +382,126 @@ class LedgerModuleIntegrationTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 UUID.nameUUIDFromBytes(("refund-" + paymentIntentId).getBytes()),
                                 LedgerEntryType.REFUND_DEBIT, priceCents));
+    }
+
+    /**
+     * A2 + CodeRabbit round 6 (nitpick, adopted — the ORDER twin): the
+     * order-settlement's full refund reverses the seller's credit AND its
+     * commission mirror on the REAL slice — the four movements, the
+     * pre-settlement zero, the same proof the BOOKING journey carries, one
+     * port hop away (the OrderSellerPort seam).
+     */
+    @Test
+    void orderRefundedEvent_reversesBothTheCreditAndItsCommissionMirror() {
+        UUID sellerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        UUID ownerUserId = UUID.randomUUID();
+        long amountCents = 17400L;
+        long commissionCents = 1740L; // 17400 × 0.10 HALF_UP
+
+        PaymentIntentDetails completed = new PaymentIntentDetails(paymentIntentId, null,
+                consumerId, null, "COMPLETED", "ORDER", amountCents, "SAR", orderId, null, null);
+        PaymentIntentDetails refunded = new PaymentIntentDetails(paymentIntentId, null,
+                consumerId, null, "REFUNDED", "ORDER", amountCents, "SAR", orderId, null, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(completed), Optional.of(refunded));
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(sellerId)).thenReturn(Optional.of(
+                new ProviderSummary(sellerId, "A2 Order Seller", "VERIFIED", ownerUserId)));
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+        awaitBalance(sellerId, amountCents - commissionCents);
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitBalance(sellerId, 0L);
+
+        Page<LedgerEntry> statement = ledgerService.getStatementForOwner(sellerId, PageRequest.of(0, 10));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getSourceId, LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(paymentIntentId, LedgerEntryType.PAYMENT_CREDIT, amountCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_DEBIT, commissionCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("refund-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.REFUND_DEBIT, amountCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-reversal-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_REVERSAL_CREDIT, commissionCents));
+
+        // The round-6 sign-fix proof rides the same journey: a stats window
+        // covering the WHOLE refunded settlement nets the provider ZERO —
+        // the reversal credit adds to the net exactly as the settlement's
+        // commission subtracted (the pre-fix CASE read it as a debit: minus
+        // twice the commission).
+        var net = ledgerEntryRepository.sumNetCentsByCurrencyForProviderBetween(
+                sellerId, Instant.now().minusSeconds(3600), Instant.now().plusSeconds(3600));
+        assertThat(net)
+                .as("the net window answers one currency row")
+                .hasSize(1);
+        assertThat(net.get(0)[0])
+                .as("the net window's currency is the settlement's own")
+                .isEqualTo("SAR");
+        assertThat(((Number) net.get(0)[1]).longValue())
+                .as("the net window over a fully refunded settlement is the honest zero")
+                .isZero();
+    }
+
+    /**
+     * A2 + CodeRabbit round 6 (nitpick, adopted — the LOAN twin): the
+     * loan-fee settlement's full refund reverses the owner's credit AND its
+     * commission mirror on the REAL slice — the LoanOwnerPort seam's own
+     * four-movement journey to zero.
+     */
+    @Test
+    void loanRefundedEvent_reversesBothTheCreditAndItsCommissionMirror() {
+        UUID ownerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID loanId = UUID.randomUUID();
+        UUID borrowerId = UUID.randomUUID();
+        UUID ownerUserId = UUID.randomUUID();
+        long amountCents = 9000L;
+        long commissionCents = 900L; // 9000 × 0.10 HALF_UP
+
+        PaymentIntentDetails completed = new PaymentIntentDetails(paymentIntentId, null,
+                borrowerId, null, "COMPLETED", "LOAN", amountCents, "SAR", null, loanId, null);
+        PaymentIntentDetails refunded = new PaymentIntentDetails(paymentIntentId, null,
+                borrowerId, null, "REFUNDED", "LOAN", amountCents, "SAR", null, loanId, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(completed), Optional.of(refunded));
+        when(loanOwnerPort.ownerOf(loanId)).thenReturn(ownerId);
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(ownerId)).thenReturn(Optional.of(
+                new ProviderSummary(ownerId, "A2 Loan Owner", "VERIFIED", ownerUserId)));
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+        awaitBalance(ownerId, amountCents - commissionCents);
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitBalance(ownerId, 0L);
+
+        Page<LedgerEntry> statement = ledgerService.getStatementForOwner(ownerId, PageRequest.of(0, 10));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getSourceId, LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(paymentIntentId, LedgerEntryType.PAYMENT_CREDIT, amountCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_DEBIT, commissionCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("refund-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.REFUND_DEBIT, amountCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-reversal-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_REVERSAL_CREDIT, commissionCents));
     }
 
     /**
