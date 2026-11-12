@@ -177,82 +177,6 @@ class LedgerModuleIntegrationTest {
                 events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
 
     /**
-     * A3 (adversarial review 2026-11-10, owner-gate batch 6a — the documented
-     * gate's OWN required proof): two concurrent webhook snapshots on the
-     * SAME delivery batch (cumulative 300 and 700) must post EXACTLY the
-     * highest cumulative to PSP_CLEARING — 700, never the pre-fix 1000
-     * (the racing double-read of `findTopBy…(cumulative DESC)` both seeing
-     * `previous = 0`). The transaction-scoped advisory lock
-     * (pg_advisory_xact_lock over the per-batch key) serializes the whole
-     * read-modify-write critical section; EITHER interleaving is legal —
-     * 300-then-700 posts REFUND:300 (delta 300) + REFUND:700 (delta 400),
-     * 700-then-300 posts REFUND:700 (delta 700) and the monotonicity guard
-     * no-ops the 300 — and BOTH land exactly 700 total. The sum invariant
-     * is the assertion (the pre-fix shape answers 1000).
-     */
-    @Test
-    void concurrentDeliveryRefundSnapshotsPostExactlyTheHighestCumulative() throws Exception {
-        UUID deliveryRequestId = UUID.randomUUID();
-        UUID paymentIntentId = UUID.randomUUID();
-        UUID consumerId = UUID.randomUUID();
-        long fare = 1000L;
-
-        // Plant the capture the refund path requires (its own transaction).
-        transactions.executeWithoutResult(tx -> journalService.capture(
-                new PaymentIntentDetails(paymentIntentId, null, consumerId, null,
-                        "SUCCEEDED", "DELIVERY", fare, "SAR", null, null, null,
-                        deliveryRequestId, 0L)));
-
-        // The two concurrent webhook snapshots — two independent transactions,
-        // started together (the racing shape the ledger's finding measured).
-        PaymentIntentDetails snapshot300 = new PaymentIntentDetails(paymentIntentId, null,
-                consumerId, null, "PARTIALLY_REFUNDED", "DELIVERY", fare, "SAR",
-                null, null, null, deliveryRequestId, 300L);
-        PaymentIntentDetails snapshot700 = new PaymentIntentDetails(paymentIntentId, null,
-                consumerId, null, "PARTIALLY_REFUNDED", "DELIVERY", fare, "SAR",
-                null, null, null, deliveryRequestId, 700L);
-
-        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
-        Runnable refund300 = () -> {
-            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
-            catch (Exception e) { throw new RuntimeException(e); }
-            transactions.executeWithoutResult(tx -> journalService.refund(snapshot300));
-        };
-        Runnable refund700 = () -> {
-            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
-            catch (Exception e) { throw new RuntimeException(e); }
-            transactions.executeWithoutResult(tx -> journalService.refund(snapshot700));
-        };
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
-        try {
-            var f300 = pool.submit(refund300);
-            var f700 = pool.submit(refund700);
-            f300.get(60, java.util.concurrent.TimeUnit.SECONDS);
-            f700.get(60, java.util.concurrent.TimeUnit.SECONDS);
-        } finally {
-            pool.shutdownNow();
-        }
-
-        // The invariant: the batch's refund postings sum to EXACTLY the highest
-        // cumulative — 700, never 1000 (the pre-fix racing double-delta).
-        Long posted = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(amount_minor), 0) FROM ledger_journal_postings "
-                        + "WHERE source_type = 'DELIVERY' AND source_id = ? "
-                        + "AND operation_key LIKE 'REFUND:%'",
-                Long.class, deliveryRequestId);
-        assertThat(posted)
-                .as("A3: the two concurrent snapshots post exactly the highest cumulative "
-                        + "(700), never the racing double-delta (1000)")
-                .isEqualTo(700L);
-        Long highestCumulative = jdbcTemplate.queryForObject(
-                "SELECT MAX(cumulative_refund_minor) FROM ledger_journal_postings "
-                        + "WHERE source_type = 'DELIVERY' AND source_id = ? "
-                        + "AND operation_key LIKE 'REFUND:%'",
-                Long.class, deliveryRequestId);
-        assertThat(highestCumulative).isEqualTo(700L);
-    }
-
-    /**
      * Polls the async balance projection until the predicate holds
      * (AFTER_COMMIT event-listener delivery).
      */
@@ -650,6 +574,82 @@ class LedgerModuleIntegrationTest {
      * reactor. R9: the poll reads the SAR row (the seeded booking's
      * currency) through the composite key.
      */
+    /**
+     * A3 (adversarial review 2026-11-10, owner-gate batch 6a — the documented
+     * gate's OWN required proof): two concurrent webhook snapshots on the
+     * SAME delivery batch (cumulative 300 and 700) must post EXACTLY the
+     * highest cumulative to PSP_CLEARING — 700, never the pre-fix 1000
+     * (the racing double-read of `findTopBy…(cumulative DESC)` both seeing
+     * `previous = 0`). The transaction-scoped advisory lock
+     * (pg_advisory_xact_lock over the per-batch key) serializes the whole
+     * read-modify-write critical section; EITHER interleaving is legal —
+     * 300-then-700 posts REFUND:300 (delta 300) + REFUND:700 (delta 400),
+     * 700-then-300 posts REFUND:700 (delta 700) and the monotonicity guard
+     * no-ops the 300 — and BOTH land exactly 700 total. The sum invariant
+     * is the assertion (the pre-fix shape answers 1000).
+     */
+    @Test
+    void concurrentDeliveryRefundSnapshotsPostExactlyTheHighestCumulative() throws Exception {
+        UUID deliveryRequestId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        long fare = 1000L;
+
+        // Plant the capture the refund path requires (its own transaction).
+        transactions.executeWithoutResult(tx -> journalService.capture(
+                new PaymentIntentDetails(paymentIntentId, null, consumerId, null,
+                        "SUCCEEDED", "DELIVERY", fare, "SAR", null, null, null,
+                        deliveryRequestId, 0L)));
+
+        // The two concurrent webhook snapshots — two independent transactions,
+        // started together (the racing shape the ledger's finding measured).
+        PaymentIntentDetails snapshot300 = new PaymentIntentDetails(paymentIntentId, null,
+                consumerId, null, "PARTIALLY_REFUNDED", "DELIVERY", fare, "SAR",
+                null, null, null, deliveryRequestId, 300L);
+        PaymentIntentDetails snapshot700 = new PaymentIntentDetails(paymentIntentId, null,
+                consumerId, null, "PARTIALLY_REFUNDED", "DELIVERY", fare, "SAR",
+                null, null, null, deliveryRequestId, 700L);
+
+        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+        Runnable refund300 = () -> {
+            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (Exception e) { throw new RuntimeException(e); }
+            transactions.executeWithoutResult(tx -> journalService.refund(snapshot300));
+        };
+        Runnable refund700 = () -> {
+            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (Exception e) { throw new RuntimeException(e); }
+            transactions.executeWithoutResult(tx -> journalService.refund(snapshot700));
+        };
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var f300 = pool.submit(refund300);
+            var f700 = pool.submit(refund700);
+            f300.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            f700.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // The invariant: the batch's refund postings sum to EXACTLY the highest
+        // cumulative — 700, never 1000 (the pre-fix racing double-delta).
+        Long posted = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(amount_minor), 0) FROM ledger_journal_postings "
+                        + "WHERE source_type = 'DELIVERY' AND source_id = ? "
+                        + "AND operation_key LIKE 'REFUND:%'",
+                Long.class, deliveryRequestId);
+        assertThat(posted)
+                .as("A3: the two concurrent snapshots post exactly the highest cumulative "
+                        + "(700), never the racing double-delta (1000)")
+                .isEqualTo(700L);
+        Long highestCumulative = jdbcTemplate.queryForObject(
+                "SELECT MAX(cumulative_refund_minor) FROM ledger_journal_postings "
+                        + "WHERE source_type = 'DELIVERY' AND source_id = ? "
+                        + "AND operation_key LIKE 'REFUND:%'",
+                Long.class, deliveryRequestId);
+        assertThat(highestCumulative).isEqualTo(700L);
+    }
+
     private void awaitBalance(UUID providerId, long expectedCents) {
         long deadline = System.nanoTime() + 30_000_000_000L;
         long last = Long.MIN_VALUE;
