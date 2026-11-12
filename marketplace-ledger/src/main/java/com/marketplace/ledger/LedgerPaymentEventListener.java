@@ -202,6 +202,21 @@ public class LedgerPaymentEventListener {
         // pre-settlement zero instead of a commission-sized negative.
         if (intent.isOrderOrigin()) {
             java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
+            // CodeRabbit round 2 (major — stability), the guard BEFORE ANY
+            // WRITE: a refund that outruns the settlement's commission
+            // posting (the REFUNDED and COMPLETED listeners both run
+            // asynchronously with no ordering between them) must RETRY —
+            // the explicit refusal keeps the publication incomplete and the
+            // registry replays it after the posting lands (the S12
+            // discipline). Nothing is touched at all while the posting is
+            // absent — the strongest fail-closed form.
+            if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()) {
+                throw new IllegalStateException(
+                        "Order refund arrived before its settlement's commission posting "
+                                + "(intent " + intent.paymentIntentId()
+                                + ") — no ledger movement was booked; the publication stays "
+                                + "recoverable for replay after the settlement lands");
+            }
             ledgerService.debitFromRefund(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
             // CodeRabbit round 1 (major — data integrity): the mirror reverses
@@ -210,21 +225,6 @@ public class LedgerPaymentEventListener {
             // legacy null-rate row's settlement and refund both read the
             // LIVE rate: a rate change between them would reverse a different
             // number than was posted).
-            // CodeRabbit round 2 (major — stability): the read FAILS CLOSED
-            // while the settlement's commission posting has not landed (the
-            // REFUNDED listener runs asynchronously with no ordering against
-            // the COMPLETED listener — a refund that outruns the settlement
-            // must RETRY, never silently skip: the publication stays
-            // incomplete and the registry replays it after the posting lands.
-            // The S12 discipline — the explicit refusal, the recoverable
-            // publication, monitoring sees it).
-            if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()) {
-                throw new IllegalStateException(
-                        "Order refund arrived before its settlement's commission posting "
-                                + "(intent " + intent.paymentIntentId()
-                                + ") — no ledger mirror was booked; the publication stays "
-                                + "recoverable for replay after the settlement lands");
-            }
             ledgerService.creditFromCommissionReversal(
                     sellerId, intent.paymentIntentId(),
                     ledgerService.postedCommissionCents(intent.paymentIntentId()).orElseThrow(),
@@ -239,18 +239,19 @@ public class LedgerPaymentEventListener {
         // the commission reversal mirror with it.
         if (intent.isLoanOrigin()) {
             java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
-            ledgerService.debitFromRefund(ownerId, intent.paymentIntentId(),
-                    intent.amountCents(), intent.currency());
-            // CodeRabbit round 1: the posted row's own amount (the order
-            // branch's identical discipline). Round 2: the same fail-closed
-            // ordering guard (the loan twin).
+            // CodeRabbit round 2: the guard BEFORE ANY WRITE (the order
+            // branch's strongest fail-closed form — the loan twin).
             if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()) {
                 throw new IllegalStateException(
                         "Loan refund arrived before its settlement's commission posting "
                                 + "(intent " + intent.paymentIntentId()
-                                + ") — no ledger mirror was booked; the publication stays "
+                                + ") — no ledger movement was booked; the publication stays "
                                 + "recoverable for replay after the settlement lands");
             }
+            ledgerService.debitFromRefund(ownerId, intent.paymentIntentId(),
+                    intent.amountCents(), intent.currency());
+            // CodeRabbit round 1: the posted row's own amount (the order
+            // branch's identical discipline).
             ledgerService.creditFromCommissionReversal(
                     ownerId, intent.paymentIntentId(),
                     ledgerService.postedCommissionCents(intent.paymentIntentId()).orElseThrow(),
@@ -271,17 +272,18 @@ public class LedgerPaymentEventListener {
             // R9: the refund mirrors the ORIGINAL credit — same amount, same
             // currency — so the debit lands on the balance the credit moved.
             String currency = bookingInfo.currency();
-            ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
-            // CodeRabbit round 1: the posted row's own amount (the order
-            // branch's identical discipline). Round 2: the same fail-closed
-            // ordering guard (the booking twin).
+            // CodeRabbit round 2: the guard BEFORE ANY WRITE (the order
+            // branch's strongest fail-closed form — the booking twin).
             if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()) {
                 throw new IllegalStateException(
                         "Booking refund arrived before its settlement's commission posting "
                                 + "(intent " + intent.paymentIntentId()
-                                + ") — no ledger mirror was booked; the publication stays "
+                                + ") — no ledger movement was booked; the publication stays "
                                 + "recoverable for replay after the settlement lands");
             }
+            ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
+            // CodeRabbit round 1: the posted row's own amount (the order
+            // branch's identical discipline).
             ledgerService.creditFromCommissionReversal(
                     bookingInfo.providerId(), intent.paymentIntentId(),
                     ledgerService.postedCommissionCents(intent.paymentIntentId()).orElseThrow(),
