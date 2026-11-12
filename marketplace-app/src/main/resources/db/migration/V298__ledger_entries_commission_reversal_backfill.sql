@@ -25,12 +25,14 @@
 -- Atomicity and re-run safety: ONE data-modifying CTE statement — the
 -- entry INSERT rides the V19 source_id UNIQUE (ON CONFLICT DO NOTHING),
 -- and the balance moves as a UPSERT whose DO UPDATE side adds exactly
--- the inserted rows' amounts (RETURNING restricts it to rows this run
--- actually inserted). A second execution finds every reversal row
--- already present, inserts nothing, returns nothing, and moves nothing —
--- the V57 re-runnable letter. The migration itself writes no Envers
--- revisions (the V73/V82 precedent: SQL-level convergence is not a
--- business revision).
+-- the amounts this run actually inserted (RETURNING restricts it to rows
+-- this run created), aggregated to ONE row per (provider_id, currency) —
+-- a provider with two deserving pre-fix refunds moves his balance once,
+-- by the sum of both reversals (CodeRabbit round 7). A second execution
+-- finds every reversal row already present, inserts nothing, returns
+-- nothing, and moves nothing — the V57 re-runnable letter. The migration
+-- itself writes no Envers revisions (the V73/V82 precedent: SQL-level
+-- convergence is not a business revision).
 --
 -- Zero-commission pre-fix refunds (rate 0.00 or a computed zero) wrote no
 -- COMMISSION_DEBIT row at all — the join finds nothing for them and they
@@ -78,10 +80,19 @@ inserted AS (
     FROM missing m
     ON CONFLICT (source_id) DO NOTHING
     RETURNING provider_id, currency, amount_cents
+),
+inserted_by_balance AS (
+    -- CodeRabbit round 7: ONE row per balance key — a provider with TWO
+    -- deserving pre-fix refunds (same (provider, currency)) moves his
+    -- balance once, by the SUM of the two reversals, never two separate
+    -- upserts racing the same key inside one statement.
+    SELECT i.provider_id, i.currency, SUM(i.amount_cents) AS amount_cents
+    FROM inserted i
+    GROUP BY i.provider_id, i.currency
 )
 INSERT INTO provider_balances (provider_id, currency, available_cents, created_at, updated_at)
-SELECT i.provider_id, i.currency, i.amount_cents, now(), now()
-FROM inserted i
+SELECT b.provider_id, b.currency, b.amount_cents, now(), now()
+FROM inserted_by_balance b
 ON CONFLICT (provider_id, currency)
     DO UPDATE SET available_cents = provider_balances.available_cents + EXCLUDED.available_cents,
                   updated_at = now();

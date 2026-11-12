@@ -91,13 +91,18 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
         UUID deservingProvider = UUID.randomUUID();   // the A2 defect's own residue
         UUID fixedProvider = UUID.randomUUID();        // the post-fix shape: mirror already present
         UUID zeroProvider = UUID.randomUUID();         // the zero-commission refund: nothing to reverse
+        UUID sumProvider = UUID.randomUUID();           // CodeRabbit round 7: TWO deserving refunds, one balance key
         UUID deservingIntent = UUID.randomUUID();
         UUID fixedIntent = UUID.randomUUID();
         UUID zeroIntent = UUID.randomUUID();
+        UUID sumIntentOne = UUID.randomUUID();
+        UUID sumIntentTwo = UUID.randomUUID();
 
         seedProviderWorld(deservingProvider, consumerId, deservingIntent);
         seedProviderWorld(fixedProvider, consumerId, fixedIntent);
         seedProviderWorld(zeroProvider, consumerId, zeroIntent);
+        seedProviderWorld(sumProvider, consumerId, sumIntentOne);
+        seedProviderWorld(sumProvider, consumerId, sumIntentTwo);
 
         // ---- The deserving case: settlement pair + refund debit, NO mirror ----
         insertEntry(deservingProvider, deservingIntent, "PAYMENT_CREDIT", PRICE_CENTS);
@@ -116,6 +121,18 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
         insertEntry(zeroProvider, zeroIntent, "PAYMENT_CREDIT", PRICE_CENTS);
         insertEntry(zeroProvider, refundSource(zeroIntent), "REFUND_DEBIT", PRICE_CENTS);
         seedBalance(zeroProvider, 0L);
+
+        // ---- CodeRabbit round 7: TWO deserving refunds on the SAME provider
+        //      and currency — the balance sits at minus BOTH commissions and
+        //      must return to zero in ONE move by the SUM of the two reversals
+        //      (one balance key, one upsert, never two writes racing the row). ----
+        insertEntry(sumProvider, sumIntentOne, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(sumProvider, commissionSource(sumIntentOne), "COMMISSION_DEBIT", COMMISSION_CENTS);
+        insertEntry(sumProvider, refundSource(sumIntentOne), "REFUND_DEBIT", PRICE_CENTS);
+        insertEntry(sumProvider, sumIntentTwo, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(sumProvider, commissionSource(sumIntentTwo), "COMMISSION_DEBIT", COMMISSION_CENTS);
+        insertEntry(sumProvider, refundSource(sumIntentTwo), "REFUND_DEBIT", PRICE_CENTS);
+        seedBalance(sumProvider, 2 * (PRICE_CENTS - COMMISSION_CENTS - PRICE_CENTS)); // minus both commissions
 
         // ---- execute the actual V298 script (the real file from the
         // classpath; the migration is one atomic data-modifying CTE, so the
@@ -152,6 +169,20 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
         assertThat(balanceOf(zeroProvider))
                 .as("the zero-commission provider's balance is untouched")
                 .isZero();
+
+        // ---- The round-7 aggregation outcome: two deserving refunds, one
+        //      balance key — both reversal rows exist and the balance moved
+        //      by their SUM in the single upsert ----
+        assertThat(countEntries(reversalSource(sumIntentOne), "COMMISSION_REVERSAL_CREDIT"))
+                .as("the first deserving refund of the shared provider gains its reversal row")
+                .isEqualTo(1);
+        assertThat(countEntries(reversalSource(sumIntentTwo), "COMMISSION_REVERSAL_CREDIT"))
+                .as("the second deserving refund of the shared provider gains its reversal row")
+                .isEqualTo(1);
+        assertThat(balanceOf(sumProvider))
+                .as("the shared provider's balance returns from minus-both-commissions to zero "
+                        + "— the two reversals moved it by their SUM in one aggregated upsert")
+                .isEqualTo(0L);
 
         // ---- Idempotency: the second execution moves nothing ----
         long entriesBefore = totalEntries();
