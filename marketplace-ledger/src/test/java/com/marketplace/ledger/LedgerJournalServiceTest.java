@@ -6,6 +6,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.InOrder;
+import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +19,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class) class LedgerJournalServiceTest{
  @Mock LedgerJournalPostingRepository postings;
+ @Mock JdbcTemplate jdbcTemplate;
  @Test void captureCreatesOneBalancedPairAndReplayIsIdempotent(){
   var service=new LedgerJournalService(postings);UUID request=UUID.randomUUID(),payment=UUID.randomUUID();
   var intent=new PaymentIntentDetails(payment,null,UUID.randomUUID(),null,"SUCCEEDED","DELIVERY",1234,"SAR",null,null,null,request,0L);
