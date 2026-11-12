@@ -846,9 +846,33 @@ public class PaymentsService implements PaymentsSpi {
      * stable across that window: one return, one remote refund, replayed
      * safely on retry. The full-refund path keeps the state-derived key
      * (null scope) — its own scope is single-shot.
+     *
+     * <p><b>A4 (adversarial review 2026-11-10, owner-gate batch 6b — the
+     * direct B2 fix):</b> this is the overload the transactional CARRIERS
+     * call (the return's {@code OrderRefundAdapter} from
+     * {@code OrderReturnsService.complete}, the dispute's
+     * {@code PaymentRefundAdapter} from the resolve) — and it runs under
+     * {@code @Retry}. Under the default REQUIRED propagation a first
+     * attempt that throws a retryable channel exception crosses this
+     * method's boundary and marks the SHARED carrier transaction
+     * rollback-only (Spring Framework Reference, Declarative Transaction
+     * Management: a runtime exception thrown through a participating
+     * REQUIRED scope marks the whole transaction rollback-only — the
+     * successful retry then joins the same poisoned transaction and
+     * commits nothing, surfacing {@code UnexpectedRollbackException} at
+     * the carrier's commit, AFTER the remote refund executed).
+     * {@code REQUIRES_NEW} breaks the poisoning at the root — the SAME
+     * pattern the settlement twin applied
+     * ({@code PaymentIntentSettlementService.confirm}, CodeRabbit #431)
+     * and the four auto-refund siblings in this class carry: each retry
+     * attempt owns its own transaction, a failed attempt rolls back only
+     * itself, and the carrier is never marked. The dispute journal's own
+     * REQUIRES_NEW freeze/EXECUTED records already survive this carrier's
+     * rollback by construction.</p>
      */
     @PreAuthorize("hasRole('ADMIN')")
     @Retry(name = "paymentProcessing")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public RefundedPayment refundPayment(UUID paymentId, @Min(1) Long amountCents,
                                          StableRefundScope idempotencyScope) {
         Payment payment = paymentRepository.findById(paymentId)
