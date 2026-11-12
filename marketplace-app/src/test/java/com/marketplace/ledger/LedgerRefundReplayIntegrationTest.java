@@ -57,9 +57,12 @@ import static org.mockito.Mockito.when;
  * enabled, {@code ddl-auto=none}, a dedicated container per class. The
  * booking seam is the standard {@code @MockitoBean} boundary (the L21
  * convention) while every money path in between is production code; the
- * intent lookup is the same boundary the module-slice proof uses, stubbed
- * sequentially: REFUNDED first (the outrunning refund), then COMPLETED
- * (the settlement), then REFUNDED again (the registry replay).</p>
+ * intent lookup is the same boundary the module-slice proof uses — the
+ * port is SHARED by every consumer of the payment-state event, so each
+ * phase states its own answer explicitly and re-stubs only AFTER the
+ * previous phase completed (never a call-order guess): REFUNDED for the
+ * outrunning refund, COMPLETED for the settlement, REFUNDED again for
+ * the registry replay.</p>
  */
 @SpringBootTest(properties = {
         "spring.flyway.enabled=true",
@@ -126,15 +129,19 @@ class LedgerRefundReplayIntegrationTest {
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
                 providerId, consumerId, "CONFIRMED", PRICE_CENTS, "SAR",
                 Instant.now(), Instant.now()));
-        // The intent lookup's three deliveries: the outrunning refund, the
-        // settlement, then the registry's replay of the SAME refund.
         PaymentIntentDetails refundedIntent = new PaymentIntentDetails(paymentIntentId, bookingId,
                 consumerId, null, "REFUNDED", "BOOKING", 25000L, "SAR", null, null, null);
         PaymentIntentDetails completedIntent = new PaymentIntentDetails(paymentIntentId, bookingId,
                 consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null);
-        when(paymentIntentLookupPort.findById(paymentIntentId))
-                .thenReturn(Optional.of(refundedIntent), Optional.of(completedIntent),
-                        Optional.of(refundedIntent));
+        // CodeRabbit round 4 (actionable): the lookup port is SHARED — the
+        // full application's other PaymentStateChangedEvent consumers
+        // (DeliveryService.onPaymentStateChanged among them) read the SAME
+        // mock for the SAME intent, so consecutive thenReturn values would
+        // be consumed in an unpredictable interleaving. Each phase therefore
+        // states its OWN answer explicitly, re-stubbed only after the
+        // previous phase completed — the ledger listener always reads the
+        // phase's intent regardless of who else asks.
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(refundedIntent));
 
         // 1 — the refund outruns the settlement: the guard refuses to book
         //     ANY movement and the publication is recorded FAILED.
@@ -148,7 +155,11 @@ class LedgerRefundReplayIntegrationTest {
                 providerId, PageRequest.of(0, 50))).isEmpty();
 
         // 2 — the settlement lands: the COMPLETED pair (credit + commission
-        //     debit) books through the real listener chain.
+        //     debit) books through the real listener chain. The lookup now
+        //     answers the settlement's intent for EVERY consumer of the
+        //     event (phase 2's explicit answer — re-stubbed AFTER phase 1
+        //     completed, never a call-order guess).
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(completedIntent));
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
         awaitBalance(providerId, PRICE_CENTS - COMMISSION_CENTS);
@@ -157,6 +168,9 @@ class LedgerRefundReplayIntegrationTest {
         //     reads the POSTED commission, books the refund debit AND the
         //     commission-reversal credit, and the provider returns to the
         //     pre-settlement zero (the ADR-0013 D3 §3 mirror rule, recovered).
+        //     Phase 3's explicit answer — the lookup returns to the refund's
+        //     intent for the replayed delivery and every other consumer.
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(refundedIntent));
         resubmission.resubmitDue(Instant.now());
         awaitBalance(providerId, 0L);
 
