@@ -12,7 +12,6 @@ import org.springframework.jdbc.core.RowCallbackHandler;
 import java.sql.ResultSet;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -50,20 +49,24 @@ class MediaPurgeAdapterTest {
         // Degree 1 + Degree 2: the keys are collected on the SAME
         // <> PURGED predicate the tombstone statements filter on, then the
         // batch destruction receives exactly them (originals + thumbnails +
-        // review media keys).
+        // review media keys). The read side is driven EXPLICITLY: the
+        // captured RowCallbackHandler is fed one fully-stubbed ResultSet
+        // per read (a deterministic hand-rolled row set — the read's own
+        // contract, no Mockito answer indirection).
         UUID subject = UUID.randomUUID();
-        doAnswer(inv -> {
-            String sql = inv.getArgument(0);
-            RowCallbackHandler handler = inv.getArgument(1);
-            if (sql.contains("media_assets")) {
-                handler.processRow(rows(new Object[][]{
-                        {"listings/1/a.jpg", "listings/1/a.jpg/thumb"},
-                        {"posts/2/b.jpg", null}}));
-            } else {
-                handler.processRow(rows(new Object[][]{{"review-media/3/c.jpg"}}));
-            }
-            return null;
-        }).when(jdbcTemplate).query(anyString(), any(RowCallbackHandler.class), eq(subject));
+        when(jdbcTemplate.query(anyString(), any(RowCallbackHandler.class), eq(subject)))
+                .thenAnswer(inv -> {
+                    String sql = inv.getArgument(0);
+                    RowCallbackHandler handler = inv.getArgument(1);
+                    if (sql.contains("media_assets")) {
+                        handler.processRow(resultSet(
+                                new String[]{"listings/1/a.jpg", "listings/1/a.jpg/thumb"},
+                                new String[]{"posts/2/b.jpg", null}));
+                    } else {
+                        handler.processRow(resultSet(new String[]{"review-media/3/c.jpg"}));
+                    }
+                    return null;
+                });
         when(jdbcTemplate.update(anyString(), eq(subject))).thenReturn(2, 1);
 
         int purged = new MediaPurgeAdapter(jdbcTemplate, mediaService).purgeAuthoredTexts(subject);
@@ -118,24 +121,26 @@ class MediaPurgeAdapterTest {
     }
 
     /**
-     * A minimal sequential in-memory ResultSet: one mock per row-set; the
-     * cursor advances through next(), and getString(column) answers from
-     * the CURRENT row directly (the answer consults the cursor — no nested
-     * stubbing at all, so a null thumb is a plain answer value, and a
-     * single-column read simply has no second column to serve).
+     * A fully-stubbed sequential ResultSet for one read's rows: the
+     * consecutive-value form stubs getString(1)/(2) with one value per row
+     * (Mockito's documented consecutive-returns), and next() walks a plain
+     * cursor — every stub exists BEFORE the handler's first call, so the
+     * read is deterministic with zero answer indirection (the CI-measured
+     * NPE class the nested-answer form produced).
      */
-    private static ResultSet rows(Object[][] rows) throws java.sql.SQLException {
+    private static ResultSet resultSet(String[]... rows) throws java.sql.SQLException {
         ResultSet rs = mock(ResultSet.class);
-        AtomicInteger cursor = new AtomicInteger(-1);
-        when(rs.next()).thenAnswer(inv -> cursor.incrementAndGet() < rows.length);
-        when(rs.getString(org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> {
-            int row = cursor.get();
-            int column = inv.getArgument(0);
-            if (row < 0 || row >= rows.length || column > rows[row].length) {
-                return null;
-            }
-            return (String) rows[row][column - 1];
-        });
+        // next(): true once per row, then false — built as an explicit
+        // Boolean sequence (the consecutive-value form's own rule).
+        Boolean[] sequence = new Boolean[rows.length + 1];
+        java.util.Arrays.fill(sequence, true);
+        sequence[rows.length] = false;
+        org.mockito.Mockito.when(rs.next()).thenReturn(sequence[0], java.util.Arrays.copyOfRange(sequence, 1, sequence.length));
+        org.mockito.Mockito.when(rs.getString(1)).thenReturn(
+                java.util.Arrays.stream(rows).map(r -> r[0]).toArray(String[]::new));
+        org.mockito.Mockito.when(rs.getString(2)).thenReturn(
+                java.util.Arrays.stream(rows).map(r -> r.length > 1 ? r[1] : null).toArray(String[]::new));
         return rs;
     }
+
 }
