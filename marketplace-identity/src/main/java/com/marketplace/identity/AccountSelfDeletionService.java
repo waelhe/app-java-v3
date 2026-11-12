@@ -1,5 +1,6 @@
 package com.marketplace.identity;
 
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.beans.factory.ObjectProvider;
@@ -65,6 +66,20 @@ import java.util.UUID;
  * text (the administrative surface's {@code reason} field belongs to the
  * administrator's judgment — the self-service journey has exactly one
  * reason, and the client has nothing to narrate).</p>
+ *
+ * <p><b>B2 (adversarial review 2026-11-10, owner-gate batch 6a — the A-04
+ * extension to the erasure door):</b> a DISABLED account does not write —
+ * the documented invariant the login, token-issuance and update doors
+ * already apply. The self-service erasure is a write of the highest order
+ * (GDPR-grade, irreversible), so the door joins the invariant: while
+ * {@code auth_users.enabled} is false, the self trigger answers the honest
+ * 409 CONFLICT-001 and mutates nothing — closing the window where a
+ * disabled account (with a still-live ≤900s access token and its valid
+ * password) completes an irreversible purge while under administrative
+ * suspension. The supervisory erasure seam stays live BY DESIGN (the B8
+ * rule: owner/data-management doors stay live) — an administrator purges
+ * a suspended account through the administrative surface exactly as
+ * before; only the suspended account's own hand is stayed.</p>
  */
 @Service
 @Transactional
@@ -112,6 +127,15 @@ public class AccountSelfDeletionService {
      *       presented password against the stored verifier with the official
      *       {@link PasswordEncoder#matches} primitive. A miss answers 401
      *       AUTHN-001 and mutates nothing.</li>
+     *   <li><b>B2:</b> refuse while the account is disabled — the enabled bit
+     *       the framework manager itself carries ({@code auth_users.enabled},
+     *       the same bit {@code updateUserStatus} flips and the login chain's
+     *       {@code DisabledException} consults). The refusal runs AFTER the
+     *       credential proof (the double-verification contract is unchanged —
+     *       no state oracle before the password gate) and BEFORE any store is
+     *       touched: 409 CONFLICT-001, zero mutation. The administrative
+     *       erasure seam stays live (B8) — the owner's channel is the
+     *       administrative surface, untouched here.</li>
      *   <li>Delegate to {@link UserService#pseudonymizeAccount} — the
      *       existing one-transaction erasure (last-ADMIN guard, idempotence,
      *       identifier replacement, login-identity death, authorization
@@ -127,6 +151,11 @@ public class AccountSelfDeletionService {
      * @throws BadCredentialsException   the presented password does not
      *                                   match the stored verifier — 401
      *                                   AUTHN-001, zero mutation
+     * @throws ConflictException        B2: the account is currently DISABLED
+     *                                   ({@code auth_users.enabled} false) —
+     *                                   the suspended account does not write
+     *                                   (409 CONFLICT-001, zero mutation; the
+     *                                   administrative seam stays live — B8)
      */
     @Observed(name = "user.self.deletion")
     public void deleteOwnAccount(String subject, String rawPassword) {
@@ -151,6 +180,21 @@ public class AccountSelfDeletionService {
         // a wrong password leaves every store byte-identical.
         if (!passwordEncoder.getObject().matches(rawPassword, stored.getPassword())) {
             throw new BadCredentialsException("Password verification failed");
+        }
+
+        // B2 (owner-gate batch 6a — the A-04 extension to the erasure door):
+        // the suspended account does not write. The check runs AFTER the
+        // credential proof (the double-verification contract stands — a
+        // disabled account with a wrong password answers the same 401, no
+        // state oracle before the password gate) and BEFORE any store is
+        // touched: the irreversible self-service erasure joins the invariant
+        // the login/token/update doors already carry, while the
+        // administrative erasure seam stays live by design (B8).
+        if (!stored.isEnabled()) {
+            throw new ConflictException(
+                    "A disabled account cannot execute the self-service deletion — "
+                            + "the account is under administrative suspension "
+                            + "(request the erasure through the data-management channel)");
         }
 
         // The existing GDPR purge — A.3's "قائم": the identical operation the

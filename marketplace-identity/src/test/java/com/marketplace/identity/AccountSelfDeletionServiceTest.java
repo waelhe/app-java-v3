@@ -163,4 +163,85 @@ class AccountSelfDeletionServiceTest {
         verify(encoder).matches(RAW_PASSWORD, bcryptRow.getPassword());
         verifyNoInteractions(userService);
     }
+
+    // ---- B2 (owner-gate batch 6a — the A-04 extension to the erasure door) ----
+
+    /**
+     * B2's own required proof (the documented gate recommendation): a
+     * DISABLED account with its VALID password and a still-live access
+     * token answers the honest 409 CONFLICT-001 and mutates nothing —
+     * the suspended account does not write through the self-service
+     * erasure door. {@code User.withUsername(...).disabled(true)} drives
+     * the same enabled bit {@code updateUserStatus} flips through the
+     * manager ({@code auth_users.enabled}).
+     */
+    @Test
+    void deleteOwnAccount_disabledAccountAnswers409AndMutatesNothing() {
+        User user = member();
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
+        UserDetails disabledRow = org.springframework.security.core.userdetails.User
+                .withUsername(EMAIL)
+                .password("{noop}" + RAW_PASSWORD)
+                .roles("CONSUMER")
+                .disabled(true)
+                .build();
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(disabledRow);
+
+        assertThatThrownBy(() -> service.deleteOwnAccount(EMAIL, RAW_PASSWORD))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("disabled account cannot execute the self-service deletion");
+
+        // Zero mutation: the standing erasure is never reached while the
+        // account is under administrative suspension.
+        verifyNoInteractions(userService);
+    }
+
+    /**
+     * B2 order discipline: the disabled refusal runs AFTER the credential
+     * proof — a disabled account with a WRONG password answers the same
+     * 401 the healthy path answers (no state oracle before the password
+     * gate; the double-verification contract stands).
+     */
+    @Test
+    void deleteOwnAccount_disabledAccountWithWrongPasswordStillAnswers401Not409() {
+        User user = member();
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
+        UserDetails disabledRow = org.springframework.security.core.userdetails.User
+                .withUsername(EMAIL)
+                .password("{noop}" + RAW_PASSWORD)
+                .roles("CONSUMER")
+                .disabled(true)
+                .build();
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(disabledRow);
+
+        assertThatThrownBy(() -> service.deleteOwnAccount(EMAIL, "wrong-password"))
+                .isInstanceOf(BadCredentialsException.class);
+
+        verifyNoInteractions(userService);
+    }
+
+    /**
+     * B2's seam guard (the B8 rule): the SELF door refuses while the
+     * account is disabled — the ADMINISTRATIVE erasure seam stays live by
+     * design. The guard is bound to this service's own door only: the
+     * delegation target ({@code UserService.pseudonymizeAccount}) is the
+     * SAME operation the administrative surface triggers, and no enabled
+     * check was added anywhere on that channel (the untouched seam is
+     * what makes the disabled account's erasure still executable — by
+     * the owner's hand, not the suspended account's own).
+     */
+    @Test
+    void deleteOwnAccount_enabledAccountPathIsUnchangedTheSeamStaysAdministrative() {
+        User user = member();
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(loginRow());
+
+        service.deleteOwnAccount(EMAIL, RAW_PASSWORD);
+
+        // The healthy path delegates exactly as before — B2 added no
+        // friction to the enabled account's own erasure.
+        verify(userService).pseudonymizeAccount(
+                user.getId(), AccountSelfDeletionService.SELF_DELETION_REASON,
+                AccountSelfDeletionService.SELF_ACTOR);
+    }
 }
