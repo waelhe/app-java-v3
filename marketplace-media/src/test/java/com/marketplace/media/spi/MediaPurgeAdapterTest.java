@@ -120,34 +120,26 @@ class MediaPurgeAdapterTest {
     }
 
     /**
-     * A fully-stubbed sequential ResultSet for one read's rows: the
-     * consecutive-value form stubs getString(1)/(2) with one value per row
-     * and next() with a true-per-row-then-false sequence — Mockito's
-     * documented consecutive-returns, built through the OngoingStubbing's
-     * own chained thenReturn calls (one per value — the documented form
-     * that keeps an arbitrary row count legal). Every stub exists BEFORE
-     * the handler's first call, so the read is deterministic with zero
-     * answer indirection (the CI-measured NPE class the nested-answer
-     * form produced).
+     * A deterministic in-memory ResultSet for one read's rows: a SINGLE
+     * stateful answer per method — next() advances a plain cursor, and
+     * getString(column) resolves the CURRENT row's value through the
+     * cursor (one mock, one answer, no stub-on-stub interactions at
+     * all — the stable form after the varargs-spread and
+     * consecutive-value forms each measured a distinct CI failure). A
+     * null thumb and a single-column read are plain answer values.
      */
     private static ResultSet resultSet(String[]... rows) throws java.sql.SQLException {
         ResultSet rs = mock(ResultSet.class);
-        // next(): true once per row, then false — one chained thenReturn per
-        // step (an arbitrary-length sequence stays legal).
-        org.mockito.stubbing.OngoingStubbing<Boolean> nextStub = org.mockito.Mockito.when(rs.next());
-        for (int i = 0; i <= rows.length; i++) {
-            nextStub = nextStub.thenReturn(i < rows.length);
-        }
-        // getString(1)/(2): one chained thenReturn per row (a null thumb is
-        // a plain legal consecutive value).
-        org.mockito.stubbing.OngoingStubbing<String> col1 = org.mockito.Mockito.when(rs.getString(1));
-        for (String[] r : rows) {
-            col1 = col1.thenReturn(r[0]);
-        }
-        org.mockito.stubbing.OngoingStubbing<String> col2 = org.mockito.Mockito.when(rs.getString(2));
-        for (String[] r : rows) {
-            col2 = col2.thenReturn(r.length > 1 ? r[1] : null);
-        }
+        java.util.concurrent.atomic.AtomicInteger cursor = new java.util.concurrent.atomic.AtomicInteger(-1);
+        when(rs.next()).thenAnswer(inv -> cursor.incrementAndGet() < rows.length);
+        when(rs.getString(org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> {
+            int row = cursor.get();
+            int column = inv.getArgument(0);
+            if (row < 0 || row >= rows.length || column > rows[row].length) {
+                return null;
+            }
+            return rows[row][column - 1];
+        });
         return rs;
     }
 
