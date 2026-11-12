@@ -13,6 +13,8 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.marketplace.payments.BoundFakePspChannelConfig;
+import org.springframework.context.annotation.Import;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -136,6 +138,7 @@ import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(BoundFakePspChannelConfig.class)
 class OrderLegDeliveryJourneyIntegrationTest {
 
     @Container
