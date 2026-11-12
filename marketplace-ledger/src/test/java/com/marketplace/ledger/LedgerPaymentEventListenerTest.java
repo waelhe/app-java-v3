@@ -71,6 +71,9 @@ class LedgerPaymentEventListenerTest {
 
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(bookingInfo);
+        // CodeRabbit round 3: the durable settlement signal — the credit row
+        // landed, so the refund mirror may run.
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
         // CodeRabbit round 1: the mirror reverses the POSTED commission —
         // the ledger's own COMMISSION_DEBIT row's amount (the settlement's
         // 10% value, already booked).
@@ -223,7 +226,9 @@ class LedgerPaymentEventListenerTest {
                 "ORDER", 17400L, "SAR", orderId, null, null);
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
-        // CodeRabbit round 1: the POSTED commission the mirror reverses.
+        // CodeRabbit round 3: the durable settlement signal (the credit row
+        // landed) + round 1: the POSTED commission the mirror reverses.
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
         when(ledgerService.postedCommissionCents(paymentIntentId))
                 .thenReturn(Optional.of(1740L));
 
@@ -281,7 +286,9 @@ class LedgerPaymentEventListenerTest {
                 "LOAN", 9000L, "SAR", null, loanId, null);
         when(loanOwnerPort.ownerOf(loanId)).thenReturn(ownerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
-        // CodeRabbit round 1: the POSTED commission the mirror reverses.
+        // CodeRabbit round 3: the durable settlement signal (the credit row
+        // landed) + round 1: the POSTED commission the mirror reverses.
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
         when(ledgerService.postedCommissionCents(paymentIntentId))
                 .thenReturn(Optional.of(900L));
 
@@ -447,6 +454,10 @@ class LedgerPaymentEventListenerTest {
                 "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, null);
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // CodeRabbit round 3: the durable signal — NO settlement credit row
+        // (the refund outran the settlement's listener transaction), so the
+        // guard fails closed regardless of the commission signal.
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(false);
         when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
 
         assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
@@ -455,6 +466,36 @@ class LedgerPaymentEventListenerTest {
         // (the debit also did not land — the single transaction rolled back).
         verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
         verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void aZeroCommissionSettlementRefundsWithoutAReversalRow() {
+        // CodeRabbit round 3 (major — data integrity): a settlement that
+        // completed at a ZERO commission — rate 0.00, or a computed zero —
+        // writes its PAYMENT_CREDIT but NO COMMISSION_DEBIT row (the
+        // zero-amount rule). The credit row is the durable proof the refund
+        // must proceed with the debit ALONE: the pre-fix guard saw "no
+        // commission row" and failed closed FOREVER — a permanent retry
+        // deadlock the refund could never leave.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // The settlement landed (its credit row exists); its commission is
+        // zero — no COMMISSION_DEBIT row was ever written.
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+
+        listener.onPaymentCompleted(event);
+
+        // The debit mirrors the credit; the reversal is invoked at the
+        // documented ZERO no-op (nothing posted, nothing to reverse).
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId, 0L, "SAR");
     }
 
     @Test
@@ -475,11 +516,13 @@ class LedgerPaymentEventListenerTest {
                 "REFUNDED", "ORDER", 20000L, "SAR", orderId, null, frozenRate);
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
-        // CodeRabbit round 1's own scenario, answered by the fix: the rate
-        // changed AFTER settlement (the live construction carries 0.10) —
-        // the posted row still holds the settlement's frozen 0.05 value,
-        // and the mirror reverses EXACTLY that (1000), never the live
-        // recomputation (2000).
+        // CodeRabbit round 3: the durable settlement signal (the credit row
+        // landed) — the frozen-rate mirror may run. Round 1's own scenario,
+        // answered by the fix: the rate changed AFTER settlement (the live
+        // construction carries 0.10) — the posted row still holds the
+        // settlement's frozen 0.05 value, and the mirror reverses EXACTLY
+        // that (1000), never the live recomputation (2000).
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
         long postedFrozenCommission = BigDecimal.valueOf(20000L)
                 .multiply(frozenRate)
                 .setScale(0, RoundingMode.HALF_UP)

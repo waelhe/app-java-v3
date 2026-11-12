@@ -117,6 +117,33 @@ public class LedgerService {
     }
 
     /**
+     * A2 + CodeRabbit round 3 (major — data integrity): the DURABLE signal
+     * that the settlement's own listener transaction LANDED — the
+     * {@code PAYMENT_CREDIT} row keyed by the intent id itself. The credit
+     * and the commission debit are written in ONE settlement transaction
+     * (the listener's own atomicity), so once the credit row exists the
+     * commission row either exists (a positive commission) or was
+     * deliberately skipped: a ZERO commission — rate {@code 0.00}, or a
+     * computed zero (an amount whose HALF_UP fee rounds to nothing) —
+     * writes NO row at all (the zero-amount rule
+     * {@link #debitFromCommission} keeps). The refund guard needs exactly
+     * this separation: no credit row means the settlement has NOT posted
+     * yet (the refund outran it — fail closed and let the registry replay);
+     * a credit row with no commission row means the settlement completed
+     * at a legitimate zero and the refund must proceed with the debit alone
+     * (the reversal credit at zero is the documented no-op). Without this
+     * signal the guard could only see "no commission row" and would retry a
+     * zero-commission refund forever — a permanent deadlock the round-3
+     * review measured.
+     */
+    @Transactional(readOnly = true)
+    public boolean paymentCreditPosted(UUID paymentIntentId) {
+        return entryRepository.findBySourceId(paymentIntentId)
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.PAYMENT_CREDIT)
+                .isPresent();
+    }
+
+    /**
      * A2 (adversarial review 2026-11-10, owner-gate batch 6a — the
      * ADR-0013 D3 §3 mirror rule): the full refund's commission REVERSAL
      * credit — the exact mirror image of {@link #debitFromCommission},

@@ -202,17 +202,21 @@ public class LedgerPaymentEventListener {
         // pre-settlement zero instead of a commission-sized negative.
         if (intent.isOrderOrigin()) {
             java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
-            // CodeRabbit round 2 (major — stability), the guard BEFORE ANY
-            // WRITE: a refund that outruns the settlement's commission
-            // posting (the REFUNDED and COMPLETED listeners both run
-            // asynchronously with no ordering between them) must RETRY —
-            // the explicit refusal keeps the publication incomplete and the
-            // registry replays it after the posting lands (the S12
-            // discipline). Nothing is touched at all while the posting is
-            // absent — the strongest fail-closed form.
-            if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()) {
+            // CodeRabbit round 2 (major — stability) + round 3 (major — data
+            // integrity), the guard BEFORE ANY WRITE: a refund that outruns
+            // the settlement's OWN listener transaction (the REFUNDED and
+            // COMPLETED listeners both run asynchronously with no ordering
+            // between them) must RETRY — the explicit refusal keeps the
+            // publication incomplete and the registry replays it after the
+            // posting lands (the S12 discipline). The durable signal is the
+            // settlement's PAYMENT_CREDIT row (the credit and the commission
+            // debit land in ONE transaction): a settlement that completed at
+            // a ZERO commission (rate 0.00, or a computed zero) deliberately
+            // writes no COMMISSION_DEBIT row — its credit row is the proof
+            // the refund must proceed with the debit alone, never a deadlock.
+            if (!ledgerService.paymentCreditPosted(intent.paymentIntentId())) {
                 throw new IllegalStateException(
-                        "Order refund arrived before its settlement's commission posting "
+                        "Order refund arrived before its settlement's ledger posting "
                                 + "(intent " + intent.paymentIntentId()
                                 + ") — no ledger movement was booked; the publication stays "
                                 + "recoverable for replay after the settlement lands");
@@ -224,10 +228,13 @@ public class LedgerPaymentEventListener {
             // COMMISSION_DEBIT row's own amount, never a recomputation (a
             // legacy null-rate row's settlement and refund both read the
             // LIVE rate: a rate change between them would reverse a different
-            // number than was posted).
+            // number than was posted). Round 3: a zero-commission settlement
+            // posts no row at all — orElse(0L) makes the reversal the
+            // documented no-op it is at zero (nothing posted, nothing to
+            // reverse).
             ledgerService.creditFromCommissionReversal(
                     sellerId, intent.paymentIntentId(),
-                    ledgerService.postedCommissionCents(intent.paymentIntentId()).orElseThrow(),
+                    ledgerService.postedCommissionCents(intent.paymentIntentId()).orElse(0L),
                     intent.currency());
             log.info("Ledger processed: debited {} {} from seller {} — the order refund "
                             + "mirrors its settlement credit (intent {})",
@@ -239,11 +246,14 @@ public class LedgerPaymentEventListener {
         // the commission reversal mirror with it.
         if (intent.isLoanOrigin()) {
             java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
-            // CodeRabbit round 2: the guard BEFORE ANY WRITE (the order
-            // branch's strongest fail-closed form — the loan twin).
-            if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()) {
+            // CodeRabbit round 2 + round 3: the guard BEFORE ANY WRITE (the
+            // order branch's strongest fail-closed form — the loan twin);
+            // the durable signal is the settlement's PAYMENT_CREDIT row, so
+            // a ZERO-commission settlement refunds with the debit alone (the
+            // order branch's identical zero-separation).
+            if (!ledgerService.paymentCreditPosted(intent.paymentIntentId())) {
                 throw new IllegalStateException(
-                        "Loan refund arrived before its settlement's commission posting "
+                        "Loan refund arrived before its settlement's ledger posting "
                                 + "(intent " + intent.paymentIntentId()
                                 + ") — no ledger movement was booked; the publication stays "
                                 + "recoverable for replay after the settlement lands");
@@ -251,10 +261,11 @@ public class LedgerPaymentEventListener {
             ledgerService.debitFromRefund(ownerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
             // CodeRabbit round 1: the posted row's own amount (the order
-            // branch's identical discipline).
+            // branch's identical discipline). Round 3: a zero-commission
+            // settlement posts no row — orElse(0L) is the documented no-op.
             ledgerService.creditFromCommissionReversal(
                     ownerId, intent.paymentIntentId(),
-                    ledgerService.postedCommissionCents(intent.paymentIntentId()).orElseThrow(),
+                    ledgerService.postedCommissionCents(intent.paymentIntentId()).orElse(0L),
                     intent.currency());
             log.info("Ledger processed: debited {} {} from owner {} — the loan-fee refund "
                             + "mirrors its settlement credit (intent {})",
@@ -272,21 +283,25 @@ public class LedgerPaymentEventListener {
             // R9: the refund mirrors the ORIGINAL credit — same amount, same
             // currency — so the debit lands on the balance the credit moved.
             String currency = bookingInfo.currency();
-            // CodeRabbit round 2: the guard BEFORE ANY WRITE (the order
-            // branch's strongest fail-closed form — the booking twin).
-            if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()) {
+            // CodeRabbit round 2 + round 3: the guard BEFORE ANY WRITE (the
+            // order branch's strongest fail-closed form — the booking twin);
+            // the durable signal is the settlement's PAYMENT_CREDIT row, so
+            // a ZERO-commission settlement refunds with the debit alone (the
+            // order branch's identical zero-separation).
+            if (!ledgerService.paymentCreditPosted(intent.paymentIntentId())) {
                 throw new IllegalStateException(
-                        "Booking refund arrived before its settlement's commission posting "
+                        "Booking refund arrived before its settlement's ledger posting "
                                 + "(intent " + intent.paymentIntentId()
                                 + ") — no ledger movement was booked; the publication stays "
                                 + "recoverable for replay after the settlement lands");
             }
             ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
             // CodeRabbit round 1: the posted row's own amount (the order
-            // branch's identical discipline).
+            // branch's identical discipline). Round 3: a zero-commission
+            // settlement posts no row — orElse(0L) is the documented no-op.
             ledgerService.creditFromCommissionReversal(
                     bookingInfo.providerId(), intent.paymentIntentId(),
-                    ledgerService.postedCommissionCents(intent.paymentIntentId()).orElseThrow(),
+                    ledgerService.postedCommissionCents(intent.paymentIntentId()).orElse(0L),
                     currency);
             log.info("Ledger processed: debited {} {} from provider {} — the refund mirrors the original credit",
                     priceCents, currency, bookingInfo.providerId());

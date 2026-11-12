@@ -265,6 +265,119 @@ class LedgerModuleIntegrationTest {
     }
 
     /**
+     * A2 + CodeRabbit round 3 (major — data integrity), rate 0: a
+     * settlement that froze a ZERO commission posts its PAYMENT_CREDIT but
+     * NO COMMISSION_DEBIT row (the zero-amount rule) — the refund then
+     * debits the credit alone, with NO reversal row, and the balance
+     * returns to its pre-settlement zero through the credit's full amount.
+     * The pre-fix guard deadlocked this refund forever: it read "no
+     * commission row" as "settlement not posted yet" and failed closed on
+     * every replay — the credit row is the durable signal that separates
+     * the two cases.
+     */
+    @Test
+    void refundedEvent_onAZeroCommissionRateSettlement_debitsWithoutAReversalRow() {
+        UUID providerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        UUID ownerUserId = UUID.randomUUID();
+        long priceCents = 5000L;
+
+        PaymentIntentDetails completed = new PaymentIntentDetails(paymentIntentId, bookingId,
+                consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null,
+                new java.math.BigDecimal("0.00"));
+        PaymentIntentDetails refunded = new PaymentIntentDetails(paymentIntentId, bookingId,
+                consumerId, null, "REFUNDED", "BOOKING", 25000L, "SAR", null, null,
+                new java.math.BigDecimal("0.00"));
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(completed), Optional.of(refunded));
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
+                providerId, consumerId, "CONFIRMED", priceCents, "SAR",
+                Instant.now(), Instant.now()));
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "A2 Zero Provider", "VERIFIED", ownerUserId)));
+
+        // The settlement: the FULL price lands — the frozen 0.00 posts no
+        // commission row at all.
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+        awaitBalance(providerId, priceCents);
+
+        // The refund: the debit alone — no commission row existed, so no
+        // reversal row exists either; the balance returns to zero.
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitBalance(providerId, 0L);
+
+        var balances = ledgerService.getBalancesForOwner(providerId);
+        assertThat(balances).hasSize(1);
+        assertThat(balances.get(0).availableCents()).isZero();
+        assertThat(balances.get(0).currency()).isEqualTo("SAR");
+
+        // The whole statement: exactly the credit and its refund mirror —
+        // NO commission row, NO reversal row (the zero commission's own
+        // shape, the round-3 separation proven on the real slice).
+        Page<LedgerEntry> statement = ledgerService.getStatementForOwner(providerId, PageRequest.of(0, 10));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getSourceId, LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(paymentIntentId, LedgerEntryType.PAYMENT_CREDIT, priceCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("refund-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.REFUND_DEBIT, priceCents));
+    }
+
+    /**
+     * A2 + CodeRabbit round 3 (major — data integrity), the computed zero:
+     * a booking whose HALF_UP fee rounds to nothing (4 minor units at the
+     * live 0.10 rate) settles with NO commission row — the refund then
+     * debits the credit alone and the balance returns to zero. The same
+     * separation the frozen-rate zero proof pins, through the LIVE rate's
+     * own arithmetic.
+     */
+    @Test
+    void refundedEvent_onAComputedZeroCommission_debitsWithoutAReversalRow() {
+        UUID providerId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        UUID ownerUserId = UUID.randomUUID();
+        long priceCents = 4L; // 4 × 0.10 = 0.4 — HALF_UP rounds to ZERO
+
+        PaymentIntentDetails completed = new PaymentIntentDetails(paymentIntentId, bookingId,
+                consumerId, null, "COMPLETED", "BOOKING", 25000L, "SAR", null, null, null);
+        PaymentIntentDetails refunded = new PaymentIntentDetails(paymentIntentId, bookingId,
+                consumerId, null, "REFUNDED", "BOOKING", 25000L, "SAR", null, null, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(completed), Optional.of(refunded));
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(new BookingInfo(
+                providerId, consumerId, "CONFIRMED", priceCents, "SAR",
+                Instant.now(), Instant.now()));
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(providerId)).thenReturn(Optional.of(
+                new ProviderSummary(providerId, "A2 Computed Zero Provider", "VERIFIED", ownerUserId)));
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+        awaitBalance(providerId, priceCents);
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitBalance(providerId, 0L);
+
+        Page<LedgerEntry> statement = ledgerService.getStatementForOwner(providerId, PageRequest.of(0, 10));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getSourceId, LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(paymentIntentId, LedgerEntryType.PAYMENT_CREDIT, priceCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("refund-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.REFUND_DEBIT, priceCents));
+    }
+
+    /**
      * ADR-0013 (D2 — the commission freeze): the COMPLETED settlement of
      * an intent that froze a NON-default rate posts the FROZEN commission,
      * not the live configuration — the module-slice proof on the real
