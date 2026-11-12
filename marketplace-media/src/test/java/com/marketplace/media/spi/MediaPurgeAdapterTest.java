@@ -122,34 +122,41 @@ class MediaPurgeAdapterTest {
     }
 
     /**
-     * A REAL minimal ResultSet over the read's rows: next() walks a plain
-     * cursor, getString(column) resolves the current row's value (a null
-     * thumb and a single-column read are plain values), and the interface's
-     * own default methods cover every unread member — the JDBC surface with
-     * zero Mockito machinery.
+     * A minimal ResultSet over the read's rows, through the JDK's own
+     * dynamic proxy (java.lang.reflect.Proxy over the java.sql.ResultSet
+     * interface — every member answered without implementing the whole
+     * contract by hand): next() walks a plain cursor, getString(column)
+     * resolves the current row's value (a null thumb and a single-column
+     * read are plain values), and any unread member refuses loudly (never
+     * a silent wrong answer). The JDBC surface with zero Mockito
+     * machinery — the deterministic harness after the mock forms each
+     * measured a distinct CI failure.
      */
     private static ResultSet rowSet(String[][] rows) {
-        return new ResultSet() {
-            int cursor = -1;
-
-            @Override
-            public boolean next() {
-                cursor++;
-                return cursor < rows.length;
-            }
-
-            @Override
-            public String getString(int columnIndex) {
-                int row = cursor;
-                if (row < 0 || row >= rows.length || columnIndex > rows[row].length) {
-                    return null;
-                }
-                return rows[row][columnIndex - 1];
-            }
-
-            @Override
-            public boolean wasNull() {
-                return false;
-            }
-        };
+        int[] cursor = {-1};
+        return (ResultSet) java.lang.reflect.Proxy.newProxyInstance(
+                ResultSet.class.getClassLoader(),
+                new java.lang.Class<?>[]{ResultSet.class},
+                (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "next" -> {
+                            cursor[0]++;
+                            return cursor[0] < rows.length;
+                        }
+                        case "getString" -> {
+                            int column = (Integer) args[0];
+                            int row = cursor[0];
+                            if (row < 0 || row >= rows.length || column > rows[row].length) {
+                                return null;
+                            }
+                            return rows[row][column - 1];
+                        }
+                        case "wasNull" -> {
+                            return false;
+                        }
+                        default -> throw new UnsupportedOperationException(
+                                "The purge adapter's read harness serves next/getString(int) only — got: "
+                                        + method.getName());
+                    }
+                });
     }}
