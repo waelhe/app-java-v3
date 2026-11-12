@@ -75,6 +75,16 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         verify(ledgerService).debitFromRefund(providerId, paymentIntentId, priceCents, "USD");
+        // A2 (owner-gate batch 6a — ADR-0013 D3 §3): the full refund also
+        // reverses the commission MIRROR — the same 10% commission the
+        // settlement posted, credited back on the same balance, so the
+        // booking's refund returns the balance to its pre-settlement zero.
+        verify(ledgerService).creditFromCommissionReversal(providerId, paymentIntentId,
+                BigDecimal.valueOf(priceCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "USD");
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
         verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong(), any());
     }
@@ -212,6 +222,16 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        // A2: the order refund's commission mirror reversal — the same
+        // frozen-rate commission the settlement posted, credited back in
+        // the same refund transaction (the seller's balance returns to its
+        // pre-settlement zero, not to a commission-sized negative).
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
+                BigDecimal.valueOf(17400L)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
         verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
     }
@@ -261,6 +281,14 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         verify(ledgerService).debitFromRefund(ownerId, paymentIntentId, 9000L, "SAR");
+        // A2: the loan-fee refund's commission mirror reversal (the order
+        // branch's twin).
+        verify(ledgerService).creditFromCommissionReversal(ownerId, paymentIntentId,
+                BigDecimal.valueOf(9000L)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
         verifyNoInteractions(bookingParticipantProvider, orderSellerPort);
     }
@@ -344,6 +372,10 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         verify(ledgerService).debitFromRefund(providerId, paymentIntentId, 7500L, "SAR");
+        // A2: NO commission reversal for the ad bill — the ad settlement
+        // posts no commission debit (the documented branch: "no
+        // commission"), so there is no mirror to reverse.
+        verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
         verifyNoInteractions(bookingParticipantProvider);
     }
 
@@ -388,6 +420,37 @@ class LedgerPaymentEventListenerTest {
         verifyNoInteractions(bookingParticipantProvider, orderSellerPort, loanOwnerPort);
         verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void postsTheFrozenCommissionRateReversalNotTheLiveConfiguration() {
+        // A2 (owner-gate batch 6a) + ADR-0013 D2: the commission REVERSAL
+        // posts the same FROZEN rate the settlement's debit posted — the
+        // listener was constructed with a LIVE rate of 0.10 (a config
+        // change after placement), the intent carries the frozen 0.05 the
+        // parties agreed to at creation, and the refunded commission is
+        // the FROZEN value: the mirror image of the settlement's own
+        // frozen-value proof.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        java.math.BigDecimal frozenRate = new java.math.BigDecimal("0.05");
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "ORDER", 20000L, "SAR", orderId, null, frozenRate);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 20000L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
+                BigDecimal.valueOf(20000L)
+                        .multiply(frozenRate)
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
     }
 
     @Test

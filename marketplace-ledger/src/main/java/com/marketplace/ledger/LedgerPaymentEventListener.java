@@ -180,6 +180,9 @@ public class LedgerPaymentEventListener {
         // the debit would leave the provider's balance holding a settled
         // credit the refund reversed. The debitFromRefund source key
         // {@code refund-<intentId>} mirrors once, structurally.
+        // A2 (ADR-0013 D3 §3): NO commission reversal here — the ad
+        // settlement posts no commission debit (the documented branch:
+        // "no commission"), so there is no mirror to reverse.
         if (intent.isAdOrigin()) {
             ledgerService.debitFromRefund(intent.consumerId(), intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
@@ -192,28 +195,43 @@ public class LedgerPaymentEventListener {
         // exactly — same seller, same amount, same currency — so the debit
         // lands on the balance the credit moved (the booking branch's R9
         // rule, one port hop away).
+        // A2 (owner-gate batch 6a — ADR-0013 D3 §3): the full refund also
+        // reverses the commission MIRROR — the same frozen-rate commission
+        // the settlement posted, credited back in the same refund
+        // transaction, so the seller's balance returns to its
+        // pre-settlement zero instead of a commission-sized negative.
         if (intent.isOrderOrigin()) {
             java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
             ledgerService.debitFromRefund(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            log.info("Ledger processed: debited {} {} from seller {} — the order refund "
-                            + "mirrors its settlement credit (intent {})",
-                    intent.amountCents(), intent.currency(), sellerId, intent.paymentIntentId());
+            ledgerService.creditFromCommissionReversal(sellerId, intent.paymentIntentId(),
+                    commissionCents(intent.amountCents(), intent), intent.currency());
+            log.info("Ledger processed: debited {} {} from seller {}, credited {} {} as the commission "
+                            + "reversal mirror — the order refund mirrors its settlement (intent {})",
+                    intent.amountCents(), intent.currency(), sellerId,
+                    commissionCents(intent.amountCents(), intent), intent.currency(), intent.paymentIntentId());
             return;
         }
         // Stage 8 (ADR-0004): the LOAN refund mirrors its settlement credit
-        // exactly (the order branch's twin).
+        // exactly (the order branch's twin) — and A2 (ADR-0013 D3 §3) twins
+        // the commission reversal mirror with it.
         if (intent.isLoanOrigin()) {
             java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
             ledgerService.debitFromRefund(ownerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            log.info("Ledger processed: debited {} {} from owner {} — the loan-fee refund "
-                            + "mirrors its settlement credit (intent {})",
-                    intent.amountCents(), intent.currency(), ownerId, intent.paymentIntentId());
+            ledgerService.creditFromCommissionReversal(ownerId, intent.paymentIntentId(),
+                    commissionCents(intent.amountCents(), intent), intent.currency());
+            log.info("Ledger processed: debited {} {} from owner {}, credited {} {} as the commission "
+                            + "reversal mirror — the loan-fee refund mirrors its settlement (intent {})",
+                    intent.amountCents(), intent.currency(), ownerId,
+                    commissionCents(intent.amountCents(), intent), intent.currency(), intent.paymentIntentId());
             return;
         }
         // The booking refund — the explicit named branch (the completion
         // path's twin; the audit's exhaustive-dispatch finding, PR #603).
+        // A2 (owner-gate batch 6a — ADR-0013 D3 §3): the commission mirror
+        // reversal rides the SAME refund branch (the booking settlement
+        // posted the commission on this exact balance).
         if (intent.isBookingOrigin()) {
             BookingInfo bookingInfo = bookingParticipantProvider.getBookingInfo(intent.bookingId());
             long priceCents = bookingInfo.priceCents();
@@ -221,8 +239,12 @@ public class LedgerPaymentEventListener {
             // currency — so the debit lands on the balance the credit moved.
             String currency = bookingInfo.currency();
             ledgerService.debitFromRefund(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
-            log.info("Ledger processed: debited {} {} from provider {} — the refund mirrors the original credit",
-                    priceCents, currency, bookingInfo.providerId());
+            ledgerService.creditFromCommissionReversal(bookingInfo.providerId(), intent.paymentIntentId(),
+                    commissionCents(priceCents, intent), currency);
+            log.info("Ledger processed: debited {} {} from provider {}, credited {} {} as the commission "
+                            + "reversal mirror — the refund mirrors the original credit",
+                    priceCents, currency, bookingInfo.providerId(),
+                    commissionCents(priceCents, intent), currency);
             return;
         }
         // Fail closed — the completion path's twin: no debit, the explicit

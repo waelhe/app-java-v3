@@ -92,6 +92,54 @@ public class LedgerService {
     }
 
     /**
+     * A2 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * ADR-0013 D3 §3 mirror rule): the full refund's commission REVERSAL
+     * credit — the exact mirror image of {@link #debitFromCommission},
+     * posted in the SAME refund transaction {@link #debitFromRefund}
+     * runs in, so a full refund returns the provider's balance to its
+     * pre-settlement zero instead of a commission-sized negative. The
+     * ADR's own words: «a full REFUND reverses the credit and its
+     * commission mirror» — the pre-fix code executed only the credit
+     * reversal (the ledger's own finding A2: every full refund on the
+     * three commission-carrying origins over-debited the seller by
+     * exactly the commission).
+     *
+     * <p>The deterministic
+     * {@code nameUUIDFromBytes("commission-reversal-<intentId>")} source
+     * id never collides with the commission debit's own
+     * {@code "commission-<intentId>"} key and makes replayed listeners
+     * no-ops — the reversal lands exactly once per refunded intent,
+     * {@link #debitFromCommission}'s own idempotent shape verbatim (the
+     * pre-check is the optimization, the V19 {@code source_id UNIQUE}
+     * backstop the guarantee — the #252 concurrent-delivery contract
+     * rides here too). B2 amount guard: negative amounts are rejected
+     * with VALIDATION (400); zero amounts return the current balance
+     * without writing an entry.</p>
+     *
+     * <p><b>R9:</b> the reversal is credited in the payment's own
+     * currency — the same currency the settlement's commission debit
+     * moved — so the mirror lands on the same
+     * {@code (provider, currency)} balance.</p>
+     */
+    @Observed(name = "ledger.credit.commission_reversal")
+    public ProviderBalance creditFromCommissionReversal(UUID providerId, UUID paymentIntentId,
+                                                          long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceOf(providerId, normalized);
+        }
+        UUID sourceId = UUID.nameUUIDFromBytes(("commission-reversal-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceOf(providerId, normalized);
+        }
+        entryRepository.save(LedgerEntry.commissionReversalCredit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
+        balance.credit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
+    /**
      * L24 (feature-expansion roadmap §5): the full refund's debit — mirrors
      * the original PAYMENT_CREDIT on the provider's balance. Same idempotent
      * shape as the credit: the derived {@code refund-<intentId>} source id
