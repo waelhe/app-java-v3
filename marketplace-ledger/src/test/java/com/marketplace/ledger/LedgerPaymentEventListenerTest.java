@@ -431,6 +431,33 @@ class LedgerPaymentEventListenerTest {
     }
 
     @Test
+    void aRefundThatOutrunsTheSettlementFailsClosedForReplay() {
+        // CodeRabbit round 2 (major — stability): the REFUNDED listener runs
+        // asynchronously with NO ordering against the COMPLETED listener — a
+        // refund that arrives before the settlement's commission posting
+        // must RETRY (the publication stays incomplete, the registry replays
+        // it after the posting lands), never silently skip the mirror (the
+        // S12 discipline; the three commission-carrying twins carry the same
+        // guard).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalStateException.class, () -> listener.onPaymentCompleted(event));
+
+        // No mirror, no refund debit: the WHOLE publication stays recoverable
+        // (the debit also did not land — the single transaction rolled back).
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
+    }
+
+    @Test
     void postsTheFrozenCommissionRateReversalNotTheLiveConfiguration() {
         // A2 (owner-gate batch 6a) + ADR-0013 D2: the commission REVERSAL
         // posts the same FROZEN rate the settlement's debit posted — the
