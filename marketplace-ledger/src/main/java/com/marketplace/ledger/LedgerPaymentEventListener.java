@@ -4,6 +4,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.OrderSellerPort;
+import com.marketplace.shared.api.OrderSettlementFacts;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
@@ -106,15 +107,37 @@ public class LedgerPaymentEventListener {
         // the OrderSellerPort seam — the ledger never imports the orders
         // module (the BookingParticipantProvider twin verbatim).
         if (intent.isOrderOrigin()) {
-            java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
+            // A1 (owner-gate batch 6a — the ADR-0013 D4 execution): the
+            // settlement reads the order's fulfillment FACTS beside the
+            // seller (the widened OrderSellerPort seam — the
+            // PaymentIntentDetails widening precedent: one carrier, one
+            // hop). The platform-delivery fee the checkout froze inside
+            // the total is the PLATFORM's own charge (the platform is
+            // the merchant of record, D1): the seller's allocation is
+            // the goods (+tax) value net of the fee, and the commission
+            // computes on the goods base — «رسم واحد لمالك واحد». The
+            // pre-fix branch credited the seller the FULL amount
+            // including the fee and computed the commission on it (the
+            // ledger's own finding A1).
+            OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
+            java.util.UUID sellerId = facts.sellerId();
+            long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
+            long goodsCents = intent.amountCents() - feeCents;
             ledgerService.creditFromPayment(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            long commissionCents = commissionCents(intent.amountCents(), intent);
+            long commissionCents = commissionCents(goodsCents, intent);
             ledgerService.debitFromCommission(sellerId, intent.paymentIntentId(), commissionCents, intent.currency());
-            log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission — "
-                            + "the order settlement (intent {})",
+            if (feeCents > 0) {
+                // The fee's own disclosed debit — the commission debit's
+                // disclosure discipline (D2: the seller's statement reads
+                // it): the platform keeps the fee to fund the carrier.
+                ledgerService.debitFromDeliveryFee(sellerId, intent.paymentIntentId(), feeCents, intent.currency());
+            }
+            log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission on the "
+                            + "goods base {} — the order settlement (intent {}, fee {} {} kept by the platform{})",
                     intent.amountCents(), intent.currency(), sellerId, commissionCents,
-                    intent.currency(), intent.paymentIntentId());
+                    intent.currency(), goodsCents, intent.paymentIntentId(), feeCents, intent.currency(),
+                    feeCents > 0 ? " (ADR-0013 D4)" : "");
             return;
         }
         // Stage 8 (ADR-0004): the LOAN settlement — the owner's fee credit

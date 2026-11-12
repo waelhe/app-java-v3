@@ -9,6 +9,7 @@ import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
 import com.marketplace.shared.api.ProviderLookupPort;
 import com.marketplace.shared.api.OrderSellerPort;
+import com.marketplace.shared.api.OrderSettlementFacts;
 import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.ProviderSummary;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -161,6 +162,67 @@ class LedgerModuleIntegrationTest {
 
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+
+    /**
+     * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the ADR-0013
+     * D4 execution): the platform-delivery ORDER settlement's split on the
+     * real @ApplicationModuleListener dispatch, real PostgreSQL. The
+     * checkout-frozen fee (already inside the intent's amount) is the
+     * PLATFORM's own charge funding the carrier: the seller is credited the
+     * collected amount, the commission computes on the GOODS base (net of
+     * the fee), and the fee rides its own disclosed DELIVERY_FEE_DEBIT —
+     * the balance lands {@code goods - commission}, and the statement reads
+     * all three movements with their deterministic source keys. The
+     * pre-fix branch computed the commission on the FULL amount and never
+     * moved the fee (finding A1).
+     */
+    @Test
+    void platformDeliveryOrderSettlementLandsTheD4Split() {
+        UUID sellerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        long feeCents = 4000L;
+        long totalCents = 17400L;
+        long goodsCents = totalCents - feeCents;
+        long commissionCents = 1340L; // 0.10 of the goods base 13400
+        UUID ownerUserId = UUID.randomUUID();
+
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(
+                new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                        "ORDER", totalCents, "SAR", orderId, null, null)));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(sellerId)).thenReturn(Optional.of(
+                new ProviderSummary(sellerId, "A1 Seller", "VERIFIED", ownerUserId)));
+
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+
+        // The balance: goods base minus the commission computed on it — the
+        // fee is out of the seller's allocation entirely.
+        awaitBalance(sellerId, goodsCents - commissionCents);
+
+        var balances = ledgerService.getBalancesForOwner(sellerId);
+        assertThat(balances).hasSize(1);
+        assertThat(balances.get(0).availableCents())
+                .as("A1: the seller's allocation is the goods base net of the commission — "
+                        + "never the full amount minus a full-amount commission")
+                .isEqualTo(goodsCents - commissionCents);
+
+        Page<LedgerEntry> statement = ledgerService.getStatementForOwner(sellerId, PageRequest.of(0, 10));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getSourceId, LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(paymentIntentId, LedgerEntryType.PAYMENT_CREDIT, totalCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_DEBIT, commissionCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.DELIVERY_FEE_DEBIT, feeCents));
+    }
 
     /**
      * Polls the async balance projection until the predicate holds

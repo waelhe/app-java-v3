@@ -192,6 +192,50 @@ public class LedgerService {
     }
 
     /**
+     * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * ADR-0013 D4 execution): the platform-delivery fee debit — the
+     * checkout-frozen fee the ONE order intent collected, charged to the
+     * seller's balance at settlement. Per D1/D4 the platform is the
+     * merchant of record and the fee is its own charge funding the
+     * carrier: the seller's allocation is the goods (+tax) value NET of
+     * the fee, and the commission computes on the goods base — the
+     * pre-fix settlement inflated the seller's owed balance by the fee
+     * and computed the commission on it (the ledger's own finding A1).
+     *
+     * <p>The deterministic
+     * {@code nameUUIDFromBytes("delivery-fee-<intentId>")} source id
+     * never collides with the commission debit's own key and makes
+     * replayed listeners no-ops — {@link #debitFromCommission}'s own
+     * idempotent shape verbatim (the pre-check is the optimization, the
+     * V19 {@code source_id UNIQUE} backstop the guarantee). B2 amount
+     * guard: negative amounts are rejected with VALIDATION (400); zero
+     * amounts return the current balance without writing an entry (a
+     * PICKUP order's zero fee posts nothing).</p>
+     *
+     * <p><b>R9:</b> the fee is debited in the payment's own currency —
+     * the same currency the credit wrote — so the fee moves the same
+     * {@code (provider, currency)} balance the settlement's pair
+     * moved.</p>
+     */
+    @Observed(name = "ledger.debit.delivery_fee")
+    public ProviderBalance debitFromDeliveryFee(UUID providerId, UUID paymentIntentId,
+                                                long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceOf(providerId, normalized);
+        }
+        UUID sourceId = UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceOf(providerId, normalized);
+        }
+        entryRepository.save(LedgerEntry.deliveryFeeDebit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
+        balance.debit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
+    /**
      * L24 (feature-expansion roadmap §5): the full refund's debit — mirrors
      * the original PAYMENT_CREDIT on the provider's balance. Same idempotent
      * shape as the credit: the derived {@code refund-<intentId>} source id

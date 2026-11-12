@@ -28,5 +28,24 @@ public enum LedgerEntryType {
      * V103/V104 + V290/V291 house shape: DROP/ADD NOT VALID, then the
      * VALIDATE under its own SHARE UPDATE EXCLUSIVE scan).
      */
-    COMMISSION_REVERSAL_CREDIT
+    COMMISSION_REVERSAL_CREDIT,
+    /**
+     * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * ADR-0013 D4 execution): the platform-delivery fee debited from the
+     * seller's balance at the ORDER settlement — the fee the checkout
+     * froze inside the order total and the ONE intent collected. Per
+     * D1/D4 the platform is the merchant of record and the fee is the
+     * platform's own charge funding the carrier: the seller's allocation
+     * is the goods (+tax) value NET of the fee, and the commission
+     * computes on the goods base («رسم واحد لمالك واحد» — the pre-fix
+     * settlement inflated the seller's owed balance by the fee and
+     * computed the commission on it: the ledger's own finding A1). The
+     * disclosure discipline is the commission debit's own (D2: the
+     * ledger's debit entries are the per-transaction disclosure of
+     * record — the seller's statement reads them). The database's
+     * closed set widens with this member through the V298/V299 pair
+     * (the same V103/V104 + V290/V291 house shape: DROP/ADD NOT VALID,
+     * then the VALIDATE under its own SHARE UPDATE EXCLUSIVE scan).
+     */
+    DELIVERY_FEE_DEBIT
 }

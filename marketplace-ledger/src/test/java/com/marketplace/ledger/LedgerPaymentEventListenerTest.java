@@ -3,6 +3,7 @@ package com.marketplace.ledger;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.OrderSellerPort;
+import com.marketplace.shared.api.OrderSettlementFacts;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
@@ -198,7 +199,10 @@ class LedgerPaymentEventListenerTest {
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
                 "ORDER", 17400L, "SAR", orderId, null, null);
-        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        // A1: the settlement reads the widened facts seam (PICKUP shape —
+        // no fee, the legacy-equivalent split).
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
         listener.onPaymentCompleted(event);
@@ -211,6 +215,76 @@ class LedgerPaymentEventListenerTest {
                         .longValue(),
                 "SAR");
         verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
+    }
+
+    // ---- A1 (owner-gate batch 6a — the ADR-0013 D4 execution) ----
+
+    @Test
+    void a1_platformDeliveryOrderSettlementSplitsTheFeeAndComputesCommissionOnTheGoodsBase() {
+        // ADR-0013 D4: the checkout-frozen platform-delivery fee (already
+        // inside the intent's amount) is the PLATFORM's own charge funding
+        // the carrier — the seller is credited the full collected amount,
+        // the commission computes on the GOODS base (amount net of the
+        // fee), and the fee itself rides its OWN disclosed debit
+        // (DELIVERY_FEE_DEBIT — the commission debit's disclosure
+        // discipline). The pre-fix branch computed the commission on the
+        // full amount and never moved the fee (finding A1).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long feeCents = 4000L;
+        long totalCents = 17400L;
+        long goodsCents = totalCents - feeCents;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        // The credit keeps the collected amount (the payment's own entry).
+        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, totalCents, "SAR");
+        // The commission computes on the GOODS base — never on the fee.
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
+                BigDecimal.valueOf(goodsCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
+        // The fee rides its own disclosed debit — the platform keeps it.
+        verify(ledgerService).debitFromDeliveryFee(sellerId, paymentIntentId, feeCents, "SAR");
+    }
+
+    @Test
+    void a1_pickupOrderSettlementStaysTheFullAmountShape() {
+        // The PICKUP twin: no fee exists (the V224 placement law — no
+        // destination and no fee), the full amount IS the goods base, and
+        // no fee debit is ever posted (the zero-fee path's own no-op).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long totalCents = 17400L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, totalCents, "SAR");
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
+                BigDecimal.valueOf(totalCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
+        verify(ledgerService, never()).debitFromDeliveryFee(any(), any(), anyLong(), any());
     }
 
     @Test
@@ -321,7 +395,8 @@ class LedgerPaymentEventListenerTest {
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
                 "COMPLETED", "ORDER", 20000L, "SAR", orderId, null, frozenRate);
-        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
         listener.onPaymentCompleted(event);
