@@ -179,6 +179,35 @@ public class RoleAssignmentService {
         RoleAssignment active = repository.findByUserIdAndRoleAndRevokedAtIsNull(userId, role)
                 .orElseThrow(() -> new ConflictException(
                         "No active " + role.name() + " role assignment to revoke for this account"));
+
+        // The last-active-ADMIN guard (adversarial review 2026-11-10, finding
+        // B1 — the fourth door carrying the invariant the three UserService
+        // doors already enforce): revoking the final effective human
+        // administrator must answer the honest 409, never succeed and lock
+        // the platform's admin surface behind break-glass credentials alone.
+        // The shape is the family's own: the transaction-scoped advisory
+        // lock serializes the decision (the EvalPlanQual re-read window the
+        // UserService CodeRabbit round 2 documented — two concurrent removals
+        // on a two-admin system can each count two and each proceed), and the
+        // count reads the SAME V188 effective-authorities view the other
+        // doors count — an administrator is counted exactly when the next
+        // login could act as one. The subject's membership in the count is
+        // the revoke's own honest scoping: the subject carries an ACTIVE
+        // ADMIN assignment (found above), so an ENABLED subject always
+        // counts — while a DISABLED subject never does (the view's
+        // u.enabled = true), and a drifted native-only admin (assignment
+        // revoked, auth_authorities row still there) survives the revoke in
+        // the count either way. One active admin left AND it is the subject:
+        // the refusal; anything else: the revoke changes nothing the count
+        // reads as the last one.
+        if (role == UserRole.ADMIN) {
+            jdbcTemplate.execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
+            List<String> activeAdmins = jdbcTemplate.queryForList(UserService.LOCK_ACTIVE_ADMINS, String.class);
+            if (activeAdmins.contains(user.getSubject()) && activeAdmins.size() <= 1) {
+                throw new ConflictException("Cannot remove the last active ADMIN role");
+            }
+        }
+
         active.revoke(clock.instant());
 
         // The refresh-resurrection kill (the L23 documented basis) — the
