@@ -50,8 +50,19 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
+        // The family law (rulebook B5: "version = version + 1 in the purge
+        // statement"): every LIVE-table statement below advances the row's
+        // optimistic-lock version atomically with the erasure — the exact
+        // shape the seven sibling adapters already carry (reviews/booking/
+        // disputes/search/knowledge/provider + jobs' own cover-message leg).
+        // A moderation or lifecycle transaction holding a pre-purge snapshot
+        // of a post/comment/event/market item/poll/option then flushes zero
+        // rows and fails with the framework's optimistic-lock exception,
+        // instead of restoring the erased text through the passed check and
+        // recreating it in a new Envers revision. The _aud mirrors carry no
+        // version column (Envers revisions) and stay untouched.
         int posts = jdbcTemplate.update(
-                "UPDATE neighborhood_posts SET title = ?, body = ? "
+                "UPDATE neighborhood_posts SET title = ?, body = ?, version = version + 1 "
                         + "WHERE author_id = ? AND (title <> ? OR body <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
@@ -61,7 +72,7 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
         int comments = jdbcTemplate.update(
-                "UPDATE post_comments SET body = ? "
+                "UPDATE post_comments SET body = ?, version = version + 1 "
                         + "WHERE author_id = ? AND body <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER);
@@ -77,7 +88,7 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
         // reaction row's own reasoning) — nothing to purge there.
         int events = jdbcTemplate.update(
                 "UPDATE neighborhood_events SET title = ?, description = ?, "
-                        + "location_label = ?, organizer_label = ? "
+                        + "location_label = ?, organizer_label = ?, version = version + 1 "
                         + "WHERE author_id = ? AND (title <> ? OR description <> ? "
                         + "OR location_label <> ? OR organizer_label <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
@@ -101,7 +112,7 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
         // own class) — nothing to purge there. V90's author index was born
         // NON-partial for exactly this seam (b-3's own reasoning).
         int marketItems = jdbcTemplate.update(
-                "UPDATE neighborhood_market_items SET title = ?, location_label = ? "
+                "UPDATE neighborhood_market_items SET title = ?, location_label = ?, version = version + 1 "
                         + "WHERE author_id = ? AND (title <> ? OR location_label <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
@@ -118,7 +129,7 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
         // relabeled row would evade and an identically-labeled stranger
         // would falsely match. Base table and the Envers mirror both.
         int polls = jdbcTemplate.update(
-                "UPDATE neighborhood_polls SET question = ?, author_label = ? "
+                "UPDATE neighborhood_polls SET question = ?, author_label = ?, version = version + 1 "
                         + "WHERE author_id = ? AND (question <> ? OR author_label <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,
                 userId, AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER);
@@ -145,7 +156,7 @@ public class CommunityContentPurgeAdapter implements AuthoredContentPurgePort {
         // provider services' own through-the-owner shape — the target
         // aliased, the owner joined).
         int pollOptions = jdbcTemplate.update(
-                "UPDATE neighborhood_poll_options o SET label = ? "
+                "UPDATE neighborhood_poll_options o SET label = ?, version = o.version + 1 "
                         + "FROM neighborhood_polls p "
                         + "WHERE p.id = o.poll_id AND p.author_id = ? AND o.label <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER,
