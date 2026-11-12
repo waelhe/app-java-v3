@@ -118,27 +118,23 @@ class MediaPurgeAdapterTest {
     }
 
     /**
-     * A minimal sequential in-memory ResultSet: each {@code next()} advances
-     * one row and seeds that row's positional {@code getString(1..n)}
-     * values; {@code next()} false past the last row. The adapter reads
-     * positionally only (getString(1)/getString(2)). Mockito's stubbed
-     * answers never throw, so the SQLException the JDBC surface declares
-     * never materializes — but the compiler still demands the throws clause
-     * RowCallbackHandler's own signature carries (the CI-measured
-     * unreported-exception error).
+     * A minimal sequential in-memory ResultSet: one mock per row-set; the
+     * cursor advances through next(), and getString(column) answers from
+     * the CURRENT row directly (the answer consults the cursor — no nested
+     * stubbing at all, so a null thumb is a plain answer value, and a
+     * single-column read simply has no second column to serve).
      */
     private static ResultSet rows(Object[][] rows) throws java.sql.SQLException {
         ResultSet rs = mock(ResultSet.class);
         AtomicInteger cursor = new AtomicInteger(-1);
-        when(rs.next()).thenAnswer(inv -> {
-            boolean advanced = cursor.incrementAndGet() < rows.length;
-            if (advanced) {
-                Object[] r = rows[cursor.get()];
-                for (int c = 0; c < r.length; c++) {
-                    when(rs.getString(c + 1)).thenReturn((String) r[c]);
-                }
+        when(rs.next()).thenAnswer(inv -> cursor.incrementAndGet() < rows.length);
+        when(rs.getString(org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> {
+            int row = cursor.get();
+            int column = inv.getArgument(0);
+            if (row < 0 || row >= rows.length || column > rows[row].length) {
+                return null;
             }
-            return advanced;
+            return (String) rows[row][column - 1];
         });
         return rs;
     }
