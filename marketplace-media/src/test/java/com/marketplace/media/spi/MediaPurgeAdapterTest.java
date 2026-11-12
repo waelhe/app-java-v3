@@ -123,23 +123,32 @@ class MediaPurgeAdapterTest {
     /**
      * A fully-stubbed sequential ResultSet for one read's rows: the
      * consecutive-value form stubs getString(1)/(2) with one value per row
-     * (Mockito's documented consecutive-returns), and next() walks a plain
-     * cursor — every stub exists BEFORE the handler's first call, so the
-     * read is deterministic with zero answer indirection (the CI-measured
-     * NPE class the nested-answer form produced).
+     * and next() with a true-per-row-then-false sequence — Mockito's
+     * documented consecutive-returns, built through the OngoingStubbing's
+     * own chained thenReturn calls (one per value — the documented form
+     * that keeps an arbitrary row count legal). Every stub exists BEFORE
+     * the handler's first call, so the read is deterministic with zero
+     * answer indirection (the CI-measured NPE class the nested-answer
+     * form produced).
      */
     private static ResultSet resultSet(String[]... rows) throws java.sql.SQLException {
         ResultSet rs = mock(ResultSet.class);
-        // next(): true once per row, then false — built as an explicit
-        // Boolean sequence (the consecutive-value form's own rule).
-        Boolean[] sequence = new Boolean[rows.length + 1];
-        java.util.Arrays.fill(sequence, true);
-        sequence[rows.length] = false;
-        org.mockito.Mockito.when(rs.next()).thenReturn(sequence[0], java.util.Arrays.copyOfRange(sequence, 1, sequence.length));
-        org.mockito.Mockito.when(rs.getString(1)).thenReturn(
-                java.util.Arrays.stream(rows).map(r -> r[0]).toArray(String[]::new));
-        org.mockito.Mockito.when(rs.getString(2)).thenReturn(
-                java.util.Arrays.stream(rows).map(r -> r.length > 1 ? r[1] : null).toArray(String[]::new));
+        // next(): true once per row, then false — one chained thenReturn per
+        // step (an arbitrary-length sequence stays legal).
+        org.mockito.Mockito.OngoingStubbing<Boolean> nextStub = org.mockito.Mockito.when(rs.next());
+        for (int i = 0; i <= rows.length; i++) {
+            nextStub = nextStub.thenReturn(i < rows.length);
+        }
+        // getString(1)/(2): one chained thenReturn per row (a null thumb is
+        // a plain legal consecutive value).
+        org.mockito.Mockito.OngoingStubbing<String> col1 = org.mockito.Mockito.when(rs.getString(1));
+        for (String[] r : rows) {
+            col1 = col1.thenReturn(r[0]);
+        }
+        org.mockito.Mockito.OngoingStubbing<String> col2 = org.mockito.Mockito.when(rs.getString(2));
+        for (String[] r : rows) {
+            col2 = col2.thenReturn(r.length > 1 ? r[1] : null);
+        }
         return rs;
     }
 
