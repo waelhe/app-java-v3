@@ -3,6 +3,7 @@ package com.marketplace.ledger;
 import com.marketplace.shared.api.DeliveryCompletedEvent;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import io.micrometer.observation.annotation.Observed;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Locale;
@@ -15,7 +16,11 @@ public class LedgerJournalService {
             ADVANCES="DELIVERY_CUSTOMER_ADVANCES", REVENUE="DELIVERY_REVENUE",
             REFUNDS="DELIVERY_REFUNDS", COURIER_PAYABLE="DELIVERY_COURIER_PAYABLE";
     private final LedgerJournalPostingRepository postings;
-    public LedgerJournalService(LedgerJournalPostingRepository postings) { this.postings=postings; }
+    private final JdbcTemplate jdbcTemplate;
+    public LedgerJournalService(LedgerJournalPostingRepository postings, JdbcTemplate jdbcTemplate) {
+        this.postings = postings;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     @Observed(name="ledger.delivery.payment.capture")
     public void capture(PaymentIntentDetails payment) {
