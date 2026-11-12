@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -120,6 +121,10 @@ class RefundCarrierPoisoningIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
+    // refundPayment carries @PreAuthorize("hasRole('ADMIN')") (PaymentsService:850)
+    // — the same documented mock-role pattern PaymentsServiceSecurityTest applies
+    // to reach the guarded service method from an integration replay.
+    @WithMockUser(roles = "ADMIN")
     void transientChannelFailureDoesNotPoisonTheCarrierCompletion() {
         TransactionTemplate carrier = new TransactionTemplate(transactionManager);
         UUID orderId = UUID.randomUUID();
