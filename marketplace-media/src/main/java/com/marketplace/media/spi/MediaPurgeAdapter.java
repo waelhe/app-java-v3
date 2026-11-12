@@ -75,22 +75,27 @@ public class MediaPurgeAdapter implements AuthoredContentPurgePort {
         // every statement below matches zero rows: the exact-count
         // idempotence the port's contract carries).
         List<String> objectKeys = new ArrayList<>();
+        // The locally-typed callback variables disambiguate the JdbcTemplate
+        // query overloads (a bare lambda over ResultSet matches BOTH the
+        // extractor and the callback shapes — the CI-measured ambiguity; the
+        // assignment context pins the callback interface).
+        org.springframework.jdbc.core.RowCallbackHandler assetKeys = rs -> {
+            objectKeys.add(rs.getString(1));
+            String thumb = rs.getString(2);
+            if (thumb != null) {
+                objectKeys.add(thumb);
+            }
+        };
         jdbcTemplate.query(
                 "SELECT object_key, thumb_object_key FROM media_assets "
                         + "WHERE provider_id = ? AND status <> 'PURGED'",
-                rs -> {
-                    objectKeys.add(rs.getString(1));
-                    String thumb = rs.getString(2);
-                    if (thumb != null) {
-                        objectKeys.add(thumb);
-                    }
-                },
-                userId);
+                assetKeys, userId);
+        org.springframework.jdbc.core.RowCallbackHandler reviewKeys =
+                rs -> objectKeys.add(rs.getString(1));
         jdbcTemplate.query(
                 "SELECT object_key FROM review_media "
                         + "WHERE uploader_id = ? AND status <> 'PURGED'",
-                rs -> objectKeys.add(rs.getString(1)),
-                userId);
+                reviewKeys, userId);
 
         // Degree 1: the tombstone statements (the version advance rides the
         // same statement — the B5 family law).
