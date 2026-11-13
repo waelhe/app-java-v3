@@ -68,9 +68,67 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
              "state": "open", "head": {"sha": "a" * 40}},
             [],
         )
+        body = MODULE.intake_body(
+            "waelhe/app-java-v3",
+            {"number": 14, "title": "sample", "state": "open", "head": {"sha": "a" * 40}},
+            [],
+        )
         self.assertIn(MODULE.SUMMARY_MARKER, summary)
         self.assertIn("Human triage notes and dispositions", summary)
         self.assertNotIn("# Review intake", summary)
+        self.assertNotIn("PR state at last synchronization", body)
+        self.assertNotIn("Latest source head:", body)
+
+    def test_sync_pr_reopens_issue_and_never_replaces_human_triage_body(self):
+        from unittest.mock import patch
+
+        repo = "waelhe/app-java-v3"
+        pr_number = 42
+        pr = {
+            "number": pr_number,
+            "title": "reviewed change",
+            "state": "open",
+            "updated_at": "2026-11-13T16:00:00Z",
+            "head": {"sha": "a" * 40},
+        }
+        reviews = [{
+            "id": 501,
+            "user": {"login": "coderabbitai"},
+            "submitted_at": "2026-11-13T16:01:00Z",
+            "state": "COMMENTED",
+            "html_url": f"https://github.com/{repo}/pull/{pr_number}#pullrequestreview-501",
+            "body": "A review signal",
+        }]
+        intake = {"number": 700, "state": "closed"}
+        calls = []
+
+        def fake_request(method, path, token, payload=None):
+            calls.append((method, path, payload))
+            if method == "GET" and path == f"/repos/{repo}/pulls/{pr_number}":
+                return pr
+            if method == "PATCH":
+                return {"number": 700, "state": "open"}
+            if method == "POST":
+                return {"id": 800}
+            raise AssertionError(f"unexpected GitHub API request: {method} {path}")
+
+        with (
+            patch.object(MODULE, "api_request", side_effect=fake_request),
+            patch.object(MODULE, "api_pages", side_effect=[reviews, [], [], []]),
+        ):
+            MODULE.sync_pr(repo, pr_number, "token", {pr_number: intake})
+
+        issue_patches = [
+            payload for method, path, payload in calls
+            if method == "PATCH" and path == f"/repos/{repo}/issues/{intake['number']}"
+        ]
+        self.assertEqual(issue_patches, [{"state": "open"}])
+        self.assertNotIn("body", issue_patches[0])
+        self.assertTrue(any(
+            method == "POST" and path == f"/repos/{repo}/issues/{intake['number']}/comments"
+            and "body" in (payload or {})
+            for method, path, payload in calls
+        ))
 
     def test_excerpt_escapes_untrusted_markup_and_limits_length(self):
         excerpt = MODULE.short_excerpt('<script>alert("x")</script>' + ("x" * 300))
@@ -121,11 +179,22 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
             836,
         )
 
-    def test_intake_workflow_uses_a_single_writer_group_for_all_event_kinds(self):
-        workflow = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "defect-knowledge-intake.yml"
-        content = workflow.read_text(encoding="utf-8")
+    def test_intake_workflow_uses_a_single_writer_group_and_privileged_workflow_run(self):
+        workflows = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+        content = (workflows / "defect-knowledge-intake.yml").read_text(encoding="utf-8")
+        capture = (workflows / "defect-knowledge-intake-capture.yml").read_text(encoding="utf-8")
         self.assertIn("group: defect-knowledge-intake-single-writer", content)
         self.assertIn("cancel-in-progress: false", content)
+        self.assertIn("workflow_run:", content)
+        self.assertIn("Defect Knowledge Intake Capture", content)
+        self.assertNotIn("pull_request_review:", content)
+        self.assertNotIn("pull_request_review_comment:", content)
+        self.assertIn("permissions: {}", capture)
+        self.assertIn("pull_request_review:", capture)
+        self.assertIn("pull_request_review_comment:", capture)
+        self.assertNotIn("actions/checkout", capture)
+        self.assertNotIn("GITHUB_TOKEN", capture)
+        self.assertNotIn("secrets.", capture)
 
 
     def test_build_intake_issue_index_reads_once_and_ignores_pr_issues(self):

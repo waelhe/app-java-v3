@@ -1,12 +1,14 @@
 name: Defect Knowledge Intake
 
 on:
-  pull_request_review:
-    types: [submitted, edited, dismissed]
-  pull_request_review_comment:
-    types: [created, edited, deleted]
-  issue_comment:
-    types: [created, edited, deleted]
+  # The unprivileged capture workflow runs for each source event. This workflow
+  # receives its completion via workflow_run, where GitHub grants this trusted
+  # default-branch workflow its explicitly scoped issues:write permission.
+  # It never downloads artifacts or checks out PR code; it re-fetches the
+  # authoritative current state from the GitHub API instead.
+  workflow_run:
+    workflows: ["Defect Knowledge Intake Capture"]
+    types: [completed]
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
@@ -25,45 +27,40 @@ permissions:
   pull-requests: read
   issues: write
 
-# Single-writer queue: issue_comment payloads carry the PR under
-# github.event.issue.number, not github.event.pull_request.number. A per-PR
-# group would therefore race with review events/scheduled sweeps and could
-# create two intake issues before either run sees the other's issue. The
-# collector always fetches the complete source snapshot; if GitHub replaces
-# a pending run under concurrency limits, the daily sweep recovers it.
+# Single-writer queue: event notifications and recovery sweeps share one lock.
+# The collector fetches a complete API snapshot; it does not trust workflow_run
+# payload text or artifacts as a source of review content.
 concurrency:
   group: defect-knowledge-intake-single-writer
   cancel-in-progress: false
 
 jobs:
   ingest:
-    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request }}
+    if: \${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     name: Collect review signals without executing PR code
     runs-on: ubuntu-latest
     steps:
       - name: Checkout trusted default-branch workflow code
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: \${{ github.event.repository.default_branch }}
           fetch-depth: 1
 
       - name: Synchronize review submissions and comments
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
-          PR_NUMBER: ${{ inputs.pr_number }}
-          INCLUDE_CLOSED_SINCE: ${{ inputs.include_closed_since }}
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: \${{ github.repository }}
+          GITHUB_EVENT_NAME: \${{ github.event_name }}
+          GITHUB_EVENT_PATH: \${{ github.event_path }}
+          PR_NUMBER: \${{ inputs.pr_number }}
+          INCLUDE_CLOSED_SINCE: \${{ inputs.include_closed_since }}
         run: |
           set -eu
-          if [ -n "${PR_NUMBER:-}" ]; then
+          if [ -n "\${PR_NUMBER:-}" ]; then
             python3 .ci/defect_knowledge_intake.py --pr-number "$PR_NUMBER"
-          elif [ -n "${INCLUDE_CLOSED_SINCE:-}" ]; then
+          elif [ -n "\${INCLUDE_CLOSED_SINCE:-}" ]; then
             python3 .ci/defect_knowledge_intake.py --include-closed-since "$INCLUDE_CLOSED_SINCE"
-          elif [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            # Recover dropped/replaced pending event runs for EVERY PR created
-            # since rollout, including PRs subsequently closed.
+          elif [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
             python3 .ci/defect_knowledge_intake.py --include-closed-since "2026-11-13"
           else
             python3 .ci/defect_knowledge_intake.py --sweep-open
