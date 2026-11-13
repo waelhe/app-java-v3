@@ -72,7 +72,7 @@ this skill is patched to match.
    step 4 is the binding ritual step this item mirrors): before
    editing, load `change-protocol.md` and apply the pattern families
    it triggers (`pattern-catalog.md`, P1–P14); before writing a fix,
-   check `evidence-ledger.md` (E-01…E-32) and the rulebook rules
+   check `evidence-ledger.md` (E-01…E-49) and the rulebook rules
    (A/B/C/D) the change binds; after implementing, run the adversarial
    pass in `review-protocol.md`; when a guard fails, `enforcement-map.md`
    states the rule → enforcement binding. For every new code/runtime PR, create `change-records/PR-<number>.json` with the rule/pattern/case references, invariants, doors, sibling search, tests and stable finding fingerprints; run `.ci/check_defect_knowledge.py` and bind any fixed status to a reachable commit plus passing GitHub run. Review intake captures comments as untrusted signals; triage them before accepting or fixing findings. The system is permanent; the
