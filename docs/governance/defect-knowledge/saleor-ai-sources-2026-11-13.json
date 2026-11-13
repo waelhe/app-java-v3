@@ -43,6 +43,21 @@
         {
           "name": "Agent readability",
           "url": "https://docs.saleor.io/agent-readability.json"
+        },
+        {
+          "name": "Saleor MCP Overview",
+          "url": "https://docs.saleor.io/developer/app-store/apps/mcp/overview",
+          "purpose": "Live Saleor Cloud versus self-hosted read-only MCP; identity, permission-aware access, audited operations and limitations."
+        },
+        {
+          "name": "Saleor MCP Authentication",
+          "url": "https://docs.saleor.io/developer/app-store/apps/mcp/authentication",
+          "purpose": "User OAuth versus autonomous-agent access keys, scopes, permission levels, revocation and token handling."
+        },
+        {
+          "name": "Saleor MCP Tools",
+          "url": "https://docs.saleor.io/developer/app-store/apps/mcp/tools",
+          "purpose": "Authoritative tool contract, arguments, response shape, mutation summaries and pre-execution document checks."
         }
       ],
       "limitations": [
@@ -99,6 +114,54 @@
         "protocolDiscovery": {
           "authoritativeToolMetadata": "MCP tools/list",
           "rule": "Do not assume tools or arguments from a stale copy; inspect the connected server's advertised tool metadata."
+        },
+        "identityAndAccess": {
+          "userOAuth": "A staff-facing assistant acts as the signed-in staff user.",
+          "accessKey": "An unattended agent/automation acts as the app, limited by the key's area-level permissions.",
+          "levels": [
+            "Read",
+            "Edit",
+            "Full"
+          ],
+          "mutationRequirements": {
+            "run_mutation": "Edit",
+            "run_high_impact_mutation": "Full"
+          },
+          "scopeRule": "Requested OAuth scopes can narrow current access; they cannot widen access the user/app/group policy does not grant.",
+          "elevation": "Call connection_info first; request upgradePermissions only after the user explicitly agrees.",
+          "revocation": "Connections can be revoked; access-key changes and revocation take effect on the next request.",
+          "credentialBoundary": "MCP clients never receive Saleor tokens."
+        },
+        "operationSafety": {
+          "reviewedMutationsOnly": true,
+          "toolVisibility": "Mutation tools are exposed only when the connection has access to execute them.",
+          "response": "{ data, errors }; inspect the mutation's own errors before treating the action as successful.",
+          "activityLog": "Every tool call is visible in the app Activity tab; mutation summaries are retained for 90 days.",
+          "summaryMustAvoid": [
+            "names",
+            "emails",
+            "addresses",
+            "phone numbers",
+            "gift-card codes",
+            "voucher codes",
+            "passwords",
+            "tokens"
+          ],
+          "summaryGuidance": "Use object IDs and changed values; keep the explanation factual and minimal.",
+          "documentChecks": {
+            "queryAndMutationCannotBeMixed": true,
+            "subscriptionsSupported": false,
+            "blockedCredentialFields": [
+              "accessToken",
+              "authToken"
+            ],
+            "limits": {
+              "documentCharacters": 100000,
+              "documentTokens": 10000,
+              "rootFieldsPerOperation": 500
+            },
+            "note": "Saleor-specific MCP validation limits; do not adopt as app-java-v3 platform limits."
+          }
         }
       }
     },
