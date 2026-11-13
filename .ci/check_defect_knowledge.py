@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""Fail-closed validator for per-PR defect-knowledge receipts.
+
+The checker is run from the trusted base revision by CI and reads candidate
+files with git-show. It never imports or executes code from the PR head.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import unicodedata
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+ROLLOUT_AT = "2026-11-13T00:00:00Z"
+RECEIPT_DIR = "docs/governance/defect-knowledge/change-records"
+RULEBOOK = "docs/governance/defect-knowledge/rulebook.md"
+PATTERN_CATALOG = "docs/governance/defect-knowledge/pattern-catalog.md"
+EVIDENCE_LEDGER = "docs/governance/defect-knowledge/evidence-ledger.md"
+CODE_PREFIXES = (".ci/", ".github/workflows/", ".railway/")
+ROOT_POM_NAMES = {"pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"}
+
+
+class GateError(Exception):
+    """A precise defect-knowledge gate failure."""
+
+
+def git(*args: str, check: bool = True) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=Path.cwd(),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if check and result.returncode != 0:
+        raise GateError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def git_show(revision: str, path: str) -> str:
+    return git("show", f"{revision}:{path}")
+
+
+def normalize_fingerprint_part(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return " ".join(normalized.split())
+
+
+def make_fingerprint(domain: str, invariant: str, scenario: str) -> str:
+    """Stable identity: same domain + violated invariant + triggering scenario."""
+    parts = [
+        normalize_fingerprint_part(domain),
+        normalize_fingerprint_part(invariant),
+        normalize_fingerprint_part(scenario),
+    ]
+    canonical = "\n".join(parts).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def is_code_or_runtime_path(path: str) -> bool:
+    if path.startswith(CODE_PREFIXES):
+        return True
+    if path in ROOT_POM_NAMES or path.endswith("/pom.xml"):
+        return True
+    if path.startswith("marketplace-") and "/src/" in path:
+        return True
+    if "/db/migration/" in path or path.startswith("db/migration/"):
+        return True
+    if path.endswith((".yml", ".yaml", ".properties", ".toml")) and (
+        path.startswith("marketplace-") or path.startswith("config/")
+    ):
+        return True
+    return False
+
+
+def extract_rule_ids(rulebook: str) -> set[str]:
+    ids = set(re.findall(r"^### ([ABCD]\d+) — ", rulebook, re.MULTILINE))
+    ids.update(re.findall(r"^- \*\*([ABCD]\d+)\*\* ", rulebook, re.MULTILINE))
+    return ids
+
+
+def extract_pattern_ids(catalog: str) -> set[str]:
+    return {"P" + number for number in re.findall(r"^## P(\d+) ·", catalog, re.MULTILINE)}
+
+
+def extract_case_ids(ledger: str) -> set[str]:
+    return {"E-" + number for number in re.findall(r"^## E-(\d+) ·", ledger, re.MULTILINE)}
+
+
+def load_json_at_head(head_sha: str, path: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(git_show(head_sha, path))
+    except (json.JSONDecodeError, GateError) as exc:
+        raise GateError(f"Cannot read valid JSON from {path} at candidate head {head_sha}: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise GateError(f"{path} must contain a JSON object")
+    return parsed
+
+
+def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
+                     valid_rules: set[str], valid_patterns: set[str],
+                     valid_cases: set[str]) -> list[str]:
+    errors: list[str] = []
+
+    def require(condition: bool, message: str) -> None:
+        if not condition:
+            errors.append(message)
+
+    require(record.get("schemaVersion") == 1, "schemaVersion must be 1")
+    require(record.get("pullRequest") == pr_number, f"pullRequest must equal #{pr_number}")
+
+    for field in ("governingFiles", "rulesTriggered", "patternsReviewed",
+                  "historicalCasesReviewed", "invariants", "doors", "siblingSearch", "tests", "findings"):
+        require(isinstance(record.get(field), list), f"{field} must be an array")
+
+    governing = record.get("governingFiles", [])
+    require(bool(governing) and all(isinstance(x, str) and x.strip() for x in governing),
+            "governingFiles must name at least one non-empty authority path")
+
+    rules = record.get("rulesTriggered", [])
+    require(bool(rules), "rulesTriggered must identify the universal/conditional rules used")
+    unknown_rules = sorted(set(rules) - valid_rules) if isinstance(rules, list) else []
+    require(not unknown_rules, f"rulesTriggered contains unknown IDs: {unknown_rules}")
+
+    patterns = record.get("patternsReviewed", [])
+    unknown_patterns = sorted(set(patterns) - valid_patterns) if isinstance(patterns, list) else []
+    require(not unknown_patterns, f"patternsReviewed contains unknown IDs: {unknown_patterns}")
+    if isinstance(patterns, list) and not patterns:
+        require(bool(str(record.get("noApplicablePatternRationale", "")).strip()),
+                "empty patternsReviewed requires noApplicablePatternRationale")
+
+    cases = record.get("historicalCasesReviewed", [])
+    unknown_cases = sorted(set(cases) - valid_cases) if isinstance(cases, list) else []
+    require(not unknown_cases, f"historicalCasesReviewed contains unknown IDs: {unknown_cases}")
+
+    invariants = record.get("invariants", [])
+    require(bool(invariants) and all(isinstance(x, str) and x.strip() for x in invariants),
+            "invariants must list the behavioral laws this change preserves")
+    doors = record.get("doors", [])
+    no_more_doors = str(record.get("noAdditionalDoorsRationale", "")).strip()
+    require(bool(doors) or bool(no_more_doors),
+            "doors must enumerate affected entry points, or explain why no additional doors exist")
+
+    sibling = record.get("siblingSearch", [])
+    require(bool(sibling), "siblingSearch must record a search for the same mechanism in sibling paths")
+    for i, item in enumerate(sibling if isinstance(sibling, list) else []):
+        require(isinstance(item, dict), f"siblingSearch[{i}] must be an object")
+        if isinstance(item, dict):
+            require(bool(str(item.get("family", "")).strip()), f"siblingSearch[{i}].family is required")
+            require(bool(item.get("pathsSearched")) or bool(str(item.get("rationale", "")).strip()),
+                    f"siblingSearch[{i}] must list pathsSearched or a rationale")
+            require(bool(str(item.get("result", "")).strip()), f"siblingSearch[{i}].result is required")
+
+    tests = record.get("tests", [])
+    require(bool(tests), "tests must name executable acceptance evidence")
+    for i, test in enumerate(tests if isinstance(tests, list) else []):
+        require(isinstance(test, dict), f"tests[{i}] must be an object")
+        if isinstance(test, dict):
+            require(bool(str(test.get("name", "")).strip()), f"tests[{i}].name is required")
+            require(bool(str(test.get("command", "")).strip()), f"tests[{i}].command is required")
+            require(bool(str(test.get("verification", "")).strip()),
+                    f"tests[{i}].verification must identify the CI/local evidence source")
+
+    findings = record.get("findings", [])
+    if isinstance(findings, list) and not findings:
+        require(bool(str(record.get("noFindingsRationale", "")).strip()),
+                "empty findings requires noFindingsRationale")
+
+    allowed_classes = {
+        "confirmed_defect", "test_gap", "capability_gap", "decision_gap",
+        "environmental", "false_positive", "accepted_risk"
+    }
+    allowed_statuses = {"fixed", "open", "registered", "not_reproducible", "superseded"}
+    allowed_severities = {"critical", "high", "medium", "low", "informational", "unclassified"}
+    seen_fingerprints: set[str] = set()
+
+    for i, finding in enumerate(findings if isinstance(findings, list) else []):
+        prefix = f"findings[{i}]"
+        if not isinstance(finding, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        for field in ("key", "domain", "classification", "severity", "status", "scenario",
+                      "invariant", "sourceUrls", "fingerprint"):
+            require(bool(str(finding.get(field, "")).strip()), f"{prefix}.{field} is required")
+
+        require(finding.get("classification") in allowed_classes,
+                f"{prefix}.classification must be one of {sorted(allowed_classes)}")
+        require(finding.get("status") in allowed_statuses,
+                f"{prefix}.status must be one of {sorted(allowed_statuses)}")
+        require(finding.get("severity") in allowed_severities,
+                f"{prefix}.severity must be one of {sorted(allowed_severities)}")
+
+        urls = finding.get("sourceUrls", [])
+        require(isinstance(urls, list) and bool(urls) and all(
+            isinstance(url, str) and url.startswith("https://github.com/") for url in urls
+        ), f"{prefix}.sourceUrls must contain GitHub source links")
+
+        case_id = finding.get("caseId")
+        if case_id:
+            require(case_id in valid_cases, f"{prefix}.caseId {case_id!r} is not in evidence-ledger.md")
+
+        expected_fp = make_fingerprint(
+            str(finding.get("domain", "")),
+            str(finding.get("invariant", "")),
+            str(finding.get("scenario", "")),
+        )
+        require(finding.get("fingerprint") == expected_fp,
+                f"{prefix}.fingerprint does not match the canonical SHA-256 identity")
+        fp = str(finding.get("fingerprint", ""))
+        require(fp not in seen_fingerprints, f"{prefix} duplicates a fingerprint in this receipt")
+        seen_fingerprints.add(fp)
+
+        if finding.get("status") == "fixed":
+            fix = finding.get("fix", {})
+            require(isinstance(fix, dict), f"{prefix}.fix must be an object when status=fixed")
+            if isinstance(fix, dict):
+                commit_sha = str(fix.get("commitSha", ""))
+                require(bool(re.fullmatch(r"[0-9a-f]{40}", commit_sha)),
+                        f"{prefix}.fix.commitSha must be a full commit SHA")
+                if re.fullmatch(r"[0-9a-f]{40}", commit_sha):
+                    reachable = subprocess.run(
+                        ["git", "merge-base", "--is-ancestor", commit_sha, head_sha],
+                        cwd=Path.cwd(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
+                    ).returncode == 0
+                    require(reachable, f"{prefix}.fix.commitSha is not an ancestor of the PR head")
+                verification = fix.get("verification", {})
+                require(isinstance(verification, dict), f"{prefix}.fix.verification must be an object")
+                if isinstance(verification, dict):
+                    require(verification.get("status") == "passed",
+                            f"{prefix}.fix.verification.status must be passed before marking fixed")
+                    require(str(verification.get("workflowRunUrl", "")).startswith("https://github.com/"),
+                            f"{prefix}.fix.verification.workflowRunUrl must link to a GitHub run")
+
+        if finding.get("status") == "registered":
+            decision = finding.get("decision", {})
+            require(isinstance(decision, dict), f"{prefix}.decision must be an object")
+            if isinstance(decision, dict):
+                require(bool(str(decision.get("owner", "")).strip()),
+                        f"{prefix}.decision.owner is required for registered/accepted risk")
+                require(str(decision.get("url", "")).startswith("https://github.com/"),
+                        f"{prefix}.decision.url must link to an approved ADR/issue/record")
+
+        if finding.get("status") == "not_reproducible":
+            require(bool(str(finding.get("reproductionEvidence", "")).strip()),
+                    f"{prefix}.reproductionEvidence is required for non-reproducible findings")
+
+    return errors
+
+
+def validate_global_fingerprints(head_sha: str) -> list[str]:
+    errors: list[str] = []
+    listing = git("ls-tree", "-r", "--name-only", head_sha, RECEIPT_DIR)
+    previous: dict[str, tuple[str | None, str]] = {}
+    for path in [line.strip() for line in listing.splitlines() if line.strip().endswith(".json")]:
+        try:
+            data = json.loads(git_show(head_sha, path))
+        except (json.JSONDecodeError, GateError):
+            errors.append(f"{path} is not valid JSON")
+            continue
+        for item in data.get("findings", []) if isinstance(data, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            fp = item.get("fingerprint")
+            if not fp:
+                continue
+            case_id = item.get("caseId")
+            if fp in previous and previous[fp][0] != case_id:
+                errors.append(
+                    f"duplicate fingerprint {fp} maps to different case IDs: "
+                    f"{previous[fp][0]!r} in {previous[fp][1]} vs {case_id!r} in {path}"
+                )
+            else:
+                previous[fp] = (case_id, path)
+    return errors
+
+
+def validate_pr(pr_number: int, created_at: str, base_sha: str, head_sha: str) -> int:
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        cutoff = datetime.fromisoformat(ROLLOUT_AT.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise GateError(f"Invalid PR creation timestamp: {created_at!r}") from exc
+
+    if created < cutoff:
+        print(f"DEFECT-KNOWLEDGE: PR #{pr_number} predates rollout ({ROLLOUT_AT}); grandfathered.")
+        return 0
+
+    changed = git("diff", "--name-only", f"{base_sha}...{head_sha}").splitlines()
+    relevant = [path for path in changed if is_code_or_runtime_path(path)]
+    if not relevant:
+        print(f"DEFECT-KNOWLEDGE: PR #{pr_number} has no code/runtime paths; receipt not required.")
+        return 0
+
+    receipt_path = f"{RECEIPT_DIR}/PR-{pr_number}.json"
+    if receipt_path not in changed:
+        raise GateError(
+            f"PR #{pr_number} changes code/runtime paths but does not add/update {receipt_path}. "
+            "Follow change-protocol.md and add the structured defect-knowledge receipt."
+        )
+
+    record = load_json_at_head(head_sha, receipt_path)
+    rulebook = git_show(head_sha, RULEBOOK)
+    catalog = git_show(head_sha, PATTERN_CATALOG)
+    ledger = git_show(head_sha, EVIDENCE_LEDGER)
+
+    errors = validate_receipt(
+        record, pr_number, head_sha,
+        extract_rule_ids(rulebook),
+        extract_pattern_ids(catalog),
+        extract_case_ids(ledger),
+    )
+    errors.extend(validate_global_fingerprints(head_sha))
+    if errors:
+        raise GateError("Defect-knowledge receipt rejected:\n- " + "\n- ".join(errors))
+
+    print(f"DEFECT-KNOWLEDGE: PR #{pr_number} receipt valid for {len(relevant)} code/runtime paths.")
+    print(f"DEFECT-KNOWLEDGE: {len(record.get('findings', []))} finding(s), "
+          f"{len(record.get('patternsReviewed', []))} reviewed pattern(s), "
+          f"{len(record.get('historicalCasesReviewed', []))} historical case(s).")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    fp_parser = subparsers.add_parser("fingerprint", help="print the canonical finding fingerprint")
+    fp_parser.add_argument("--domain", required=True)
+    fp_parser.add_argument("--invariant", required=True)
+    fp_parser.add_argument("--scenario", required=True)
+
+    validate_parser = subparsers.add_parser("validate", help="validate a PR receipt")
+    validate_parser.add_argument("--pr-number", type=int, required=True)
+    validate_parser.add_argument("--created-at", required=True)
+    validate_parser.add_argument("--base-sha", required=True)
+    validate_parser.add_argument("--head-sha", required=True)
+
+    args = parser.parse_args()
+    try:
+        if args.command == "fingerprint":
+            print(make_fingerprint(args.domain, args.invariant, args.scenario))
+            return 0
+        return validate_pr(args.pr_number, args.created_at, args.base_sha, args.head_sha)
+    except GateError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
