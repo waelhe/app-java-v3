@@ -897,6 +897,121 @@ class PlatformGovernanceFilesTest {
     }
 
     @Test
+    void saleorReleasePinsAreCurrentAndCanonicalCiUsesTheManifest() throws Exception {
+        JsonNode pins = new ObjectMapper().readTree(
+                read("docs", "governance", "plans", "saleor-source-pins.json"));
+
+        JsonNode core = pins.path("referenceSchema");
+        assertThat(core.path("repository").asText()).isEqualTo("saleor/saleor");
+        assertThat(core.path("ref").asText()).isEqualTo("3.23.45");
+        assertThat(core.path("path").asText()).isEqualTo("saleor/graphql/schema.graphql");
+        assertThat(core.path("gitBlobSha1").asText())
+                .isEqualTo("b8fa0dd809081f76dc2834bb5c286561e5783276");
+        assertThat(core.path("totalRoots").asInt()).isEqualTo(458);
+
+        JsonNode dashboard = pins.path("dashboard");
+        assertThat(dashboard.path("tag").asText()).isEqualTo("3.23.41");
+        assertThat(dashboard.path("commit").asText())
+                .isEqualTo("ae7697bc635c46392d2fca5f88a34970097679f7");
+
+        String canonicalPlan = read("docs", "governance", "plans",
+                "saleor-dashboard-full-commerce-canonical-plan.md");
+        assertThat(canonicalPlan)
+                .contains("tag 3.23.41")
+                .contains("saleor/saleor@3.23.45:saleor/graphql/schema.graphql")
+                .contains("Official Saleor AI documentation and agent resources")
+                .contains("https://docs.saleor.io/developer/ai");
+
+        String knowledgeMap = read("docs", "governance", "campaign",
+                "saleor-domain-knowledge-map.md");
+        assertThat(knowledgeMap)
+                .contains("saleor/saleor@" + core.path("ref").asText())
+                .contains("saleor/saleor-dashboard@" + dashboard.path("tag").asText())
+                .contains(dashboard.path("commit").asText())
+                .doesNotContain("3.23.43", "3.23.39",
+                        "bc75e988da0fa4fbc3d47378a888d859d070746f");
+
+        String[] activeSaleorGuidance = {
+                read("docs", "governance", "campaign",
+                        "commerce-main-promotion-and-saleor-skills-plan.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-agent-skills-semantic-audit-directive.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-agent-skills-source-provenance-proposal.md"),
+                read("docs", "governance", "campaign",
+                        "saleor-multi-agent-execution-playbook.md"),
+                read("docs", "governance", "campaign",
+                        "A0-EXECUTION-DIRECTIVE-20261028.md"),
+                read("docs", "governance", "campaign", "README.md"),
+                read("docs", "governance", "campaign", "frozen-contracts.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-1-identity-cms-navigation.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-2-catalog-pricing.md"),
+                read("docs", "governance", "campaign", "agent-tasks",
+                        "agent-3-orders-payments-events.md"),
+                read("docs", "governance", "plans",
+                        "saleor-contract-divergences.csv")
+        };
+        for (String guidanceDocument : activeSaleorGuidance) {
+            assertThat(guidanceDocument)
+                    .doesNotContain("3.23.43", "3.23.39",
+                            "bc75e988da0fa4fbc3d47378a888d859d070746f");
+        }
+
+        // The 2026-11-02 #806 review follow-through (wave 10): the same
+        // stale-pin ban the governance documents carry also guards the LIVE
+        // SDL surface and the GraphQL adapter sources — the live schema
+        // files had kept the superseded historical 3.23.43 measurement
+        // while every governing document pinned 3.23.45 (blob b8fa0dd8,
+        // identical across both tags, so the declared signatures were
+        // byte-correct and only the pin string was stale). The adapter's
+        // own javaDoc pin references ride the same guard: a future stale
+        // pin can never regress into the live surface silently.
+        String[] liveSaleorSurfaces = {
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "schema.graphqls"),
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "agent-1-identity-cms.graphqls"),
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "agent-2-catalog-pricing.graphqls"),
+                read("marketplace-app", "src", "main", "resources", "graphql",
+                        "agent-3-orders-events.graphqls"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "CheckoutDataFetcher.java"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "CheckoutGraphQlMapper.java"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "CmsPageDataFetcher.java"),
+                read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                        "app", "graphql", "ProductMediaMutationDataFetcher.java"),
+                read("marketplace-catalog", "src", "main", "java", "com", "marketplace",
+                        "catalog", "spi", "ProductVariantSort.java")
+        };
+        for (String liveSurface : liveSaleorSurfaces) {
+            assertThat(liveSurface)
+                    .doesNotContain("3.23.43", "3.23.39",
+                            "bc75e988da0fa4fbc3d47378a888d859d070746f");
+        }
+
+        String skillPolicy = read("docs", "governance", "agent-skills-policy.md");
+        assertThat(skillPolicy)
+                .contains("3.23.45 reference schema (blob-verified)")
+                .contains("saleor/saleor-docs@2cdf6590e838929c3f74c16e982cfdc11073c2d8")
+                .doesNotContain("Official Saleor source: `saleor/agent-skills`");
+
+        assertThat(canonicalPlan)
+                .contains("https://docs.saleor.io/agent-readability.json")
+                .doesNotContain("https://docs.saleor.io/.well-known/agent-readability.json");
+
+        String workflow = read(".github", "workflows", "saleor-canonical-governance.yml");
+        assertThat(workflow)
+                .contains("['referenceSchema']['ref']")
+                .contains("saleor-source-pins.json")
+                .doesNotContain("SALEOR_REF: \"3.23.43\"");
+    }
+
+    @Test
     void agentSkillsVendoredContentIsRegisteredAndDriftIsDetected() throws Exception {
         // The .agents/skills surface vendors external agent skills (Neon
         // platform operations; the Saleor behavior reference) directly into
@@ -985,7 +1100,9 @@ class PlatformGovernanceFilesTest {
         // reference input only — never as wire-contract authority.
         JsonNode saleorCore = registered.get("saleor-core");
         assertThat(saleorCore).as("saleor-core must be vendored and registered").isNotNull();
-        assertThat(saleorCore.get("sourceRepository").asText()).isEqualTo("saleor/agent-skills");
+        assertThat(saleorCore.get("sourceRepository").asText()).isEqualTo("saleor/saleor-docs");
+        assertThat(saleorCore.get("pinnedCommit").asText())
+                .isEqualTo("2cdf6590e838929c3f74c16e982cfdc11073c2d8");
 
         // Precedence: the skills policy keeps the ladder explicit and pinned —
         // including its ORDER: the pins outrank the plan, the plan outranks the
@@ -1009,6 +1126,90 @@ class PlatformGovernanceFilesTest {
         assertThat(divergences).as("the precedence section must name the divergences ledger").isNotNegative();
         assertThat(pins).as("the pinned schema must outrank the canonical plan in the precedence ladder").isLessThan(plan);
         assertThat(plan).as("the canonical plan must outrank the divergences ledger in the precedence ladder").isLessThan(divergences);
+    }
+
+    @Test
+    void saleorAiResourceSurfaceIsPinnedAndSeparatesDiscoveryFromAuthority() throws Exception {
+        JsonNode surface = new ObjectMapper().readTree(
+                read("docs", "governance", "plans", "saleor-ai-resource-surface.json"));
+
+        assertThat(surface.path("sourceSnapshot").path("repository").asText())
+                .isEqualTo("saleor/saleor-docs");
+        assertThat(surface.path("sourceSnapshot").path("commit").asText())
+                .isEqualTo("2cdf6590e838929c3f74c16e982cfdc11073c2d8");
+
+        // The published docs schema at the pinned docs commit must remain the
+        // exact same Git blob as the canonical Saleor 3.23.45 schema pin.
+        JsonNode publishedSchema = surface.path("schema");
+        JsonNode sourcePins = new ObjectMapper().readTree(
+                read("docs", "governance", "plans", "saleor-source-pins.json"));
+        JsonNode referenceSchema = sourcePins.path("referenceSchema");
+        assertThat(publishedSchema.path("gitBlobSha1").asText())
+                .isEqualTo(referenceSchema.path("gitBlobSha1").asText());
+        assertThat(publishedSchema.path("pinnedSaleorVersion").asText())
+                .isEqualTo(referenceSchema.path("ref").asText());
+        assertThat(publishedSchema.path("bytes").asInt()).isEqualTo(1_101_635);
+        assertThat(referenceSchema.path("ref").asText()).isEqualTo("3.23.45");
+
+        JsonNode skills = surface.path("discoveryIndex").path("bundles");
+        assertThat(skills.isArray()).isTrue();
+        assertThat(skills.size()).isEqualTo(5);
+        Set<String> names = new HashSet<>();
+        for (JsonNode skill : skills) {
+            String name = skill.path("name").asText();
+            names.add(name);
+            assertThat(skill.path("digestSha256").asText())
+                    .as("%s must retain the official advertised bundle digest", name)
+                    .isEqualTo(switch (name) {
+                        case "saleor-app" ->
+                                "6d59d82871be13ff661a377b0d727c706bb7d5ee0f924900700e583db78d993f";
+                        case "saleor-configurator" ->
+                                "060bd86bed738043064c79279c657095d85434a88c2a148532e46604679b1c48";
+                        case "saleor-core" ->
+                                "257525713919a5f7490e65cbfad7e1d99fc6f93378c957b11289275ae545c6af";
+                        case "saleor-storefront" ->
+                                "f4949c787717a549a42ee2ff6289e77796296c522366eb11882bace242c7661d";
+                        case "storefront-builder" ->
+                                "e6cafd7686b459a5b268c876a3a428a963bd99b80acaaaf3ac2761f8ab341b50";
+                        default -> throw new AssertionError("Unexpected skill: " + name);
+                    });
+            assertThat(skill.path("adoptionState").asText())
+                    .as("%s adoption state must be explicit", name)
+                    .isIn("ADOPTED_PINNED", "NOT_ADOPTED");
+            if ("saleor-core".equals(name)) {
+                assertThat(skill.path("adoptionState").asText()).isEqualTo("ADOPTED_PINNED");
+                assertThat(skill.path("localPath").asText()).isEqualTo(".agents/skills/saleor-core");
+            } else {
+                assertThat(skill.path("adoptionState").asText()).isEqualTo("NOT_ADOPTED");
+                assertThat(skill.path("localPath").isNull()).isTrue();
+            }
+        }
+        assertThat(names).isEqualTo(Set.of(
+                "saleor-app", "saleor-configurator", "saleor-core",
+                "saleor-storefront", "storefront-builder"));
+
+        // The Documentation MCP is a discovery-only server. Keep it separate
+        // from the independent GraphQL MCP and the platform's actual API.
+        JsonNode mcp = surface.path("documentationMcp");
+        assertThat(mcp.path("readOnly").asBoolean()).isTrue();
+        assertThat(mcp.path("doesNotConnectToSaleorInstance").asBoolean()).isTrue();
+        assertThat(mcp.path("executesGraphqlOperations").asBoolean()).isFalse();
+        assertThat(mcp.path("transport").asText()).isEqualTo("streamable-http");
+        Set<String> mcpTools = new HashSet<>();
+        for (JsonNode tool : mcp.path("tools")) {
+            mcpTools.add(tool.path("name").asText());
+            assertThat(tool.path("readOnlyHint").asBoolean()).isTrue();
+            assertThat(tool.path("openWorldHint").asBoolean()).isFalse();
+        }
+        assertThat(mcpTools).isEqualTo(Set.of(
+                "search_docs", "get_page", "list_pages", "get_navigation"));
+        assertThat(mcp.path("liveProtocolInvocationStatus").asText())
+                .isEqualTo("METADATA_INSPECTED_ONLY");
+
+        assertThat(surface.path("documentationIndexes").path("llmsTxt")
+                .path("lineCountIsContract").asBoolean()).isFalse();
+        assertThat(surface.path("marketplaceRecipe").path("authorityForPlatformArchitecture")
+                .asBoolean()).isFalse();
     }
 
     private static void assumePython3() {
@@ -1036,6 +1237,59 @@ class PlatformGovernanceFilesTest {
         Files.write(dir.resolve("automatic-rewrite.patch"), patch);
         Files.write(dir.resolve("patches").resolve("batch-1.patch"), patch);
         return dir;
+    }
+
+    /**
+     * ORD-04 (the 2026-11-03 adversarial scan) — the config-that-lies
+     * guard for the anonymous GraphQL surface: the SecurityConfig comment
+     * enumerates the pre-login family in prose, while the WALL itself is
+     * {@code PreLoginGraphQlGate.PRE_LOGIN_OPERATIONS}. The comment used
+     * to list {@code accountDelete} — an operation the gate excludes (the
+     * pinned Saleor contract binds the deletion redemption to the
+     * authenticated caller), a security-relevant lie in the config's own
+     * explanation. This guard parses BOTH sources and pins them to set
+     * equality: the comment's enumeration must mirror the gate's family
+     * exactly — neither wider (a phantom member overstates the anonymous
+     * surface) nor narrower (a missing member understates the wall).
+     */
+    @Test
+    void securityConfigPreLoginCommentMirrorsTheGateFamilyExactly() throws Exception {
+        String gate = read("marketplace-app", "src", "main", "java", "com", "marketplace",
+                "app", "graphql", "PreLoginGraphQlGate.java");
+        String config = read("marketplace-platform-infra", "src", "main", "java", "com",
+                "marketplace", "shared", "security", "SecurityConfig.java");
+
+        // The gate's own declaration is the authority: the quoted members
+        // inside "PRE_LOGIN_OPERATIONS = Set.of(" up to the closing ");".
+        int setStart = gate.indexOf("PRE_LOGIN_OPERATIONS = Set.of(");
+        assertThat(setStart).as("PreLoginGraphQlGate must declare PRE_LOGIN_OPERATIONS").isGreaterThan(-1);
+        String setBody = gate.substring(setStart, gate.indexOf(");", setStart));
+        java.util.regex.Matcher member = java.util.regex.Pattern
+                .compile("\"([a-zA-Z]+)\"").matcher(setBody);
+        Set<String> gateFamily = new HashSet<>();
+        while (member.find()) {
+            gateFamily.add(member.group(1));
+        }
+        assertThat(gateFamily).isNotEmpty();
+
+        // The comment's enumeration: the parenthetical list that follows
+        // "pre-login family" in the SecurityConfig prose.
+        int familyNote = config.indexOf("pre-login family (");
+        assertThat(familyNote).as("SecurityConfig must explain the pre-login family enumeration").isGreaterThan(-1);
+        String commentList = config.substring(familyNote + "pre-login family (".length(),
+                config.indexOf(")", familyNote));
+        Set<String> commentFamily = new HashSet<>();
+        for (String token : commentList.split("[\\s,]+")) {
+            if (token.matches("[a-zA-Z]+")) {
+                commentFamily.add(token);
+            }
+        }
+        assertThat(commentFamily).isNotEmpty();
+
+        assertThat(commentFamily)
+                .as("the SecurityConfig pre-login enumeration must mirror PreLoginGraphQlGate's"
+                        + " family exactly — the gate is the single authority")
+                .isEqualTo(gateFamily);
     }
 
     private static ValidatorResult runPatchValidator(Path publicationDir) throws IOException, InterruptedException {
@@ -1104,6 +1358,131 @@ class PlatformGovernanceFilesTest {
         Path file = repoRoot.resolve(String.join("/", segments));
         assertThat(file).as("%s must exist", file).exists();
         return Files.readString(file);
+    }
+
+    @Test
+    void permanentAgentProtocolRemainsCrossTechnologyAndSynchronized() throws IOException {
+        String agents = read("AGENTS.md");
+        String protocol = read("docs", "agent-protocol.md");
+        String skill = read("docs", "agent-skill.md");
+        String methodology = read("docs", "METHODOLOGY.md");
+
+        // The bootstrap order is an operational contract: defect knowledge is
+        // loaded before optional specialist skills, in both the canonical
+        // protocol and its portable skill representation.
+        assertThat(agents)
+                .as("AGENTS.md must make cross-technology references and task skills mandatory")
+                .contains("مرجعية تقنية عامة لكل التقنيات")
+                .contains("docs/governance/agent-skills-policy.md")
+                .contains("GitHub-first")
+                .contains("عدم الانتظار");
+        int agentDefectStep = agents.indexOf("5. نظام معرفة العيوب");
+        int agentSkillStep = agents.indexOf("6. سياسة المهارات");
+        assertThat(agentDefectStep).as("AGENTS.md must load defect knowledge").isNotNegative();
+        assertThat(agentSkillStep).as("AGENTS.md must load task skills").isNotNegative();
+        assertThat(agentDefectStep).as("defect knowledge precedes specialist skills")
+                .isLessThan(agentSkillStep);
+
+        assertThat(protocol)
+                .as("the permanent protocol must preserve evidence, Saleor AI, and non-blocking execution rules")
+                .contains("## 12. Permanent execution rules — all technologies and every task")
+                .contains("https://docs.saleor.io/developer/ai")
+                .contains("Do not remain idle while CI")
+                .contains("weaken branch protection, skip CI")
+                .doesNotContain("`git log`");
+
+        assertThat(protocol)
+                .as("the protocol must not make a local Maven run a pre-push gate")
+                .contains("local full/targeted runs are supplementary feedback")
+                .doesNotContain("before any push (AGENTS.md)");
+        int protocolDefectStep = protocol.indexOf("4. **Load the defect-knowledge system**");
+        int protocolSkillStep = protocol.indexOf("5. **Activate task-specific skills");
+        assertThat(protocolDefectStep).as("protocol must load defect knowledge").isNotNegative();
+        assertThat(protocolSkillStep).as("protocol must activate task-specific skills").isNotNegative();
+        assertThat(protocolDefectStep).as("defect knowledge precedes specialist skills")
+                .isLessThan(protocolSkillStep);
+
+        int protocolDeclarationStep = protocol.indexOf("8. **Emit the §0.2 declaration");
+        int protocolBranchStep = protocol.indexOf("9. **Remote branch and durable edits on GitHub**");
+        assertThat(protocolDeclarationStep).as("protocol must carry the declaration step").isNotNegative();
+        assertThat(protocolBranchStep).as("protocol must carry the remote-branch step").isNotNegative();
+        assertThat(protocolDeclarationStep).as("the declaration precedes the branch creation")
+                .isLessThan(protocolBranchStep);
+        int protocolBootstrapStep = protocol.indexOf("1. **GitHub truth and access**");
+        assertThat(protocolBootstrapStep).as("protocol must carry the bootstrap step").isNotNegative();
+        assertThat(protocolBootstrapStep).as("bootstrap precedes the protocol declaration")
+                .isLessThan(protocolDeclarationStep);
+        assertThat(protocol.substring(protocolBootstrapStep, protocolDeclarationStep))
+                .as("no remote branch creation before the protocol declaration")
+                .doesNotContain("Remote branch and durable edits on GitHub");
+        // The six-field contract: the declaration step carries AGENTS.md
+        // §0.2's full field set — the defect-knowledge field included.
+        assertThat(protocol.substring(protocolDeclarationStep, protocolDeclarationStep + 700))
+                .as("the declaration lists the six §0.2 fields")
+                .contains("[معرفة العيوب]");
+
+        assertThat(skill)
+                .as("the portable skill must carry the same permanent operating rules")
+                .contains("name: app-java-v3-backend-agent")
+                .contains("https://docs.saleor.io/developer/ai")
+                .contains("Do not idle for pending CI/CodeRabbit")
+                .contains("No unsupported manual implementation");
+        int skillDefectStep = skill.indexOf("5. Defect-knowledge system");
+        int skillPolicyStep = skill.indexOf("6. Read `docs/governance/agent-skills-policy.md`");
+        assertThat(skillDefectStep).as("portable skill must load defect knowledge").isNotNegative();
+        assertThat(skillPolicyStep).as("portable skill must load the skill pin policy").isNotNegative();
+        assertThat(skillDefectStep).as("defect knowledge precedes specialist skills")
+                .isLessThan(skillPolicyStep);
+
+        // The CodeRabbit 2026-11-04 finding: GitHub reads and the §0.1 loads
+        // precede the §0.2 declaration, and only THEN the remote branch —
+        // no state-changing action runs before the declaration.
+        int skillDeclarationStep = skill.indexOf("9. Emit the AGENTS.md §0.2 declaration");
+        int skillBranchStep = skill.indexOf("10. Create the remote task branch");
+        assertThat(skillDeclarationStep).as("portable skill must carry the declaration step").isNotNegative();
+        assertThat(skillBranchStep).as("portable skill must carry the remote-branch step").isNotNegative();
+        assertThat(skillDeclarationStep).as("the skill's declaration precedes its branch creation")
+                .isLessThan(skillBranchStep);
+        // The CodeRabbit 2026-11-04 round-2 nitpick: the ordering pins
+        // compare heading POSITIONS only — the text of the steps that
+        // precede the declaration must not itself carry branch creation
+        // (a state-changing instruction living inside a "read" step
+        // would pass the heading check while violating the rule).
+        int skillBootstrapStep = skill.indexOf("1. Read current repository state");
+        assertThat(skillBootstrapStep).as("portable skill must carry the bootstrap step").isNotNegative();
+        assertThat(skillBootstrapStep).as("bootstrap precedes the skill declaration")
+                .isLessThan(skillDeclarationStep);
+        assertThat(skill.substring(skillBootstrapStep, skillDeclarationStep))
+                .as("no remote branch creation before the skill declaration")
+                .doesNotContain("Create the remote task branch");
+
+        assertThat(methodology)
+                .as("the master methodology must govern every technology with version-matched evidence")
+                .contains("across **every technology**")
+                .contains("The official source repository at the matching release/tag/commit")
+                .contains("**No unsupported manual work:**")
+                .contains("Trusted community experience may supplement")
+                .contains("https://github.com/spring-projects/spring-boot/")
+                .contains("https://github.com/apache/maven/")
+                .contains("https://github.com/saleor/saleor");
+
+        // The OpenRewrite workflow is required on Maven-sensitive PRs. It must
+        // invoke the repository wrapper (3.10.0), not an arbitrary runner Maven
+        // (the hosted runner supplied 3.9.15 and the Enforcer correctly failed).
+        String rewriteWorkflow = read(".github", "workflows", "openrewrite-catalog.yml");
+        assertThat(rewriteWorkflow)
+                .as("all OpenRewrite Maven invocations must use the pinned repository wrapper")
+                .contains("./mvnw --settings");
+        // The CodeRabbit 2026-11-04 nitpick: the literal exclusion caught one
+        // exact invocation shape only. A workflow-level pattern rejects EVERY
+        // direct runner-Maven call (line-start mvn, YAML list items, inline
+        // run: forms) while never matching ./mvnw — the '.' prefix and the
+        // \b after mvn both exclude the wrapper.
+        assertThat(java.util.regex.Pattern.compile("(?m)^\\s*(?:-\\s*)?(?:run:\\s*)?mvn\\b")
+                .matcher(rewriteWorkflow)
+                .find())
+                .as("no OpenRewrite workflow step may invoke runner Maven directly")
+                .isFalse();
     }
 
     @Test
