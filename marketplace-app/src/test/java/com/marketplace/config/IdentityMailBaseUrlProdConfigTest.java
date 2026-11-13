@@ -233,6 +233,31 @@ class IdentityMailBaseUrlProdConfigTest {
         assertThat(properties.mailBaseUrl()).isEqualTo("https://app.example.com");
     }
 
+    /**
+     * Review round 5 (2026-11-13, Minor): java.net.URI accepts ports beyond
+     * the TCP range verbatim (measured: getPort()=70000 parses fine — the
+     * parser validates digits, never the 0-65535 range), so the wall itself
+     * rejects out-of-range ports; an undefined port and valid ports —
+     * including the 65535 boundary — stay accepted.
+     */
+    @Test
+    void theRecordRejectsOutOfRangePortsAndAcceptsTheBoundary() {
+        assertThatThrownBy(() -> new IdentityMailProperties(
+                "https://app.example.com:70000",
+                java.time.Duration.ofMinutes(30),
+                java.time.Duration.ofHours(24),
+                java.time.Duration.ofSeconds(60)))
+                .as("origin port 70000 must be rejected")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("port within 0-65535");
+        var boundary = new IdentityMailProperties(
+                "https://app.example.com:65535",
+                java.time.Duration.ofMinutes(30),
+                java.time.Duration.ofHours(24),
+                java.time.Duration.ofSeconds(60));
+        assertThat(boundary.mailBaseUrl()).isEqualTo("https://app.example.com:65535");
+    }
+
     private String property(String yml, String key) throws java.io.IOException {
         List<PropertySource<?>> sources = loader.load(yml, new ClassPathResource(yml));
         assertThat(sources).as("%s must load", yml).isNotEmpty();

@@ -115,17 +115,24 @@ public record IdentityMailProperties(
         // "/account/reset-password", not the contract's route) — every path
         // except the root is rejected, and a lone trailing "/" is normalized
         // away so concatenation can never mint a double slash.
+        // Review round 5 (2026-11-13, Minor): java.net.URI accepts ports
+        // beyond the TCP range verbatim (measured: URI.create("https://host:70000")
+        // parses with getPort()=70000 — the parser validates digits, never
+        // the 0-65535 range), so the wall itself rejects out-of-range ports;
+        // an undefined port (-1) and valid ports stay accepted.
         String rawPath = origin.getRawPath();
         if (origin.getScheme() == null || origin.getHost() == null
                 || !(("http".equalsIgnoreCase(origin.getScheme())
                         || "https".equalsIgnoreCase(origin.getScheme())))
+                || origin.getPort() > 65535
                 || origin.getRawQuery() != null
                 || origin.getRawFragment() != null
                 || (rawPath != null && !rawPath.isBlank() && !"/".equals(rawPath))) {
             throw new IllegalArgumentException(
                     "marketplace.identity.mail-base-url '" + mailBaseUrl + "' must be an absolute "
-                            + "http(s) client origin (scheme + host, no path, no query or fragment) "
-                            + "— e.g. MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://app.example.com'.");
+                            + "http(s) client origin (scheme + host, no path, no query or fragment, "
+                            + "port within 0-65535) — e.g. "
+                            + "MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://app.example.com'.");
         }
         if ("/".equals(rawPath)) {
             mailBaseUrl = mailBaseUrl.substring(0, mailBaseUrl.length() - 1);
