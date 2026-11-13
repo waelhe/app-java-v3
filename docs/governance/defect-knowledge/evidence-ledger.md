@@ -362,3 +362,132 @@
 - **Status:** FIXED ON MAIN.
 - **Prevention:** P3/P12; include standards-permitted edge encodings in parser tests.
 
+
+## E-33 · Refund reversal must read the commission actually posted, not recompute a live rate [VERIFIED]
+
+- **Observed defect (PR #829 review, 2026-11-12/13):** legacy payment intents can have no frozen commission rate. Recomputing the reversal from the current configuration may credit a different amount from the original COMMISSION_DEBIT if the live rate changed.
+- **Violated invariant:** a reversal mirrors the original posted ledger entry byte-for-byte in amount/currency/provider; it does not re-price a completed transaction.
+- **Correction:** #829 reads the posted commission debit for the intent and reverses that amount. The merge commit is f92873c.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2/C2 + P4/P12; tests must cover legacy rows with no frozen rate and a configuration change after settlement.
+
+## E-34 · Asynchronous refund event can precede settlement commission posting [VERIFIED]
+
+- **Observed defect (PR #829 review):** both COMPLETED and REFUNDED are handled asynchronously. If REFUNDED runs first, a missing commission row can be treated as zero, allowing the refund event to complete without its commission reversal. The later settlement event then leaves an unreversed debit.
+- **Violated invariant:** absence of a posted commission is not evidence that the correct commission is zero; externally consequential event processing must remain replayable until prerequisites are durable.
+- **Correction:** #829 added a durable settlement-credit check and fails closed/retries when settlement has not posted; test covers a refund arriving first.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2 + P4/P12; test both event orders and prove retry/publication recovery.
+
+## E-35 · Zero commission must be distinguished from an unposted settlement [VERIFIED]
+
+- **Observed defect (PR #829 review):** a legitimate zero commission (zero configured rate or rounding to zero) creates no COMMISSION_DEBIT row. A guard that equates this absence with an unposted settlement can make the refund retry forever.
+- **Violated invariant:** zero-valued business outcomes and not-yet-committed outcomes are different states and require separate durable evidence.
+- **Correction:** #829 uses the posted payment-credit signal to distinguish a completed zero-commission settlement from one whose settlement event has not yet landed; the reversal is a no-op when the posted amount is zero.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2/C2 + P4; test configured zero, rounded zero, and not-yet-posted cases independently.
+
+## E-36 · Historical full refunds require reconciliation, including rolling-deploy overlap [VERIFIED]
+
+- **Observed defect (PR #829 review):** adding a new reversal-entry enum does not repair full refunds already completed before the runtime fix, because completed Modulith publications are not replayed. A backfill run while an old application instance is still processing refunds can also miss a refund committed after the migration's snapshot.
+- **Violated invariant:** data migrations and event-processing deployments must converge both historical rows and writes that overlap the rollout; a successful Flyway migration alone is not proof of financial convergence.
+- **Correction:** #829 added an idempotent historical backfill and a post-stop convergence sweep for stragglers after old instances are stopped.
+- **Status:** FIXED ON MAIN through #829. Operational execution of the migration/sweep must still be evidenced by deployment reconciliation; the code merge alone is not proof that production data was reconciled.
+- **Prevention:** B1/B2 + P1/P4/P8/P12; define pre-deploy, overlap and post-stop reconciliation phases for money migrations.
+
+## E-37 · One PostgreSQL UPSERT cannot update the same balance row twice in one statement [VERIFIED]
+
+- **Observed defect (PR #829 review):** a backfill that emits two commission reversals for the same provider/currency can return two source rows with the same conflict key. PostgreSQL ON CONFLICT DO UPDATE rejects a single command that would affect one target row more than once.
+- **Violated invariant:** a set-based upsert must reduce its source to at most one row per unique conflict key before updating the target.
+- **Correction:** #829 aggregates inserted reversal amounts by provider and currency before the provider_balances UPSERT; review evidence includes the two-deserving-refunds same-balance scenario.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2 + P12; every data-modifying CTE with ON CONFLICT must test repeated source keys for the same target row.
+
+## E-38 · Raw SQL balance reconciliation must advance the JPA optimistic version [VERIFIED]
+
+- **Observed defect (PR #829 review):** a raw UPSERT changed available_cents but not the ProviderBalance @Version column. A concurrent payment could save its stale entity with the unchanged version and overwrite the reconciliation amount; the reversal row would already exist, so a later replay would not repair the balance.
+- **Violated invariant:** every writer of a versioned row, including native SQL and migrations, participates in the same optimistic-lock protocol.
+- **Correction:** #829 increments version on conflict updates and initializes it for inserted balance rows; the runtime reconciliation query was updated consistently.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2 + P4/P12; concurrency tests must interleave native reconciliation with an ORM writer.
+
+## E-39 · Net-ledger aggregation must classify a reversal credit as positive [VERIFIED]
+
+- **Observed defect (PR #829 review):** the net-by-currency query treated every entry except PAYMENT_CREDIT as a debit. A new COMMISSION_REVERSAL_CREDIT was therefore subtracted, returning a non-zero net after a correctly refunded payment.
+- **Violated invariant:** ledger read models must classify each entry type by its accounting sign, not by a single positive-type exception.
+- **Correction:** #829 updated the aggregate classification and its real query-level test; the merge is on main.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** C2 + P3/P12; every ledger enum addition triggers a search of all sums, balances, DTOs and export/read models.
+
+## E-40 · Ledger response documentation must classify reversal credits as positive [VERIFIED]
+
+- **Observed defect (PR #829 review):** the ledger response description grouped COMMISSION_REVERSAL_CREDIT with negative entries although the API returns it as a positive credit. A downstream statement consumer following the description would calculate a wrong balance.
+- **Violated invariant:** API descriptions and consumer-facing metadata must agree with the actual sign and semantics of the wire value.
+- **Correction:** #829 updated the response description and kept commission/refund debits negative.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B4/C2 + P3/P6; contract review includes field meaning and arithmetic sign, not only type/name.
+
+## E-41 · Shared sequential mocks are not deterministic across asynchronous event consumers [VERIFIED]
+
+- **Observed defect (PR #829 review):** the integration test's PaymentIntentLookupPort mock used sequential answers. Delivery and ledger listeners both consumed the same mock, so the expected response depended on which event consumer called first.
+- **Violated invariant:** a test double must model the dependency by input/phase, not incidental invocation count when multiple consumers share it.
+- **Correction:** #829 changed fixture setup to phase-specific state and deterministic lookups.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** A2/P12; multi-listener integration tests use state keyed by intent/event and assert independent consumer outcomes.
+
+## E-42 · Scheduled reconciliation must not scan every payment intent indefinitely [VERIFIED]
+
+- **Observed defect (PR #829 review):** a periodic commission-reversal reconciliation began from all payment_intents and computed multiple UUID hashes per row on each run, making work scale with the entire table rather than the outstanding reconciliation set.
+- **Violated invariant:** recurring repair jobs must bound their scan to eligible work and measure database cost as the source table grows.
+- **Correction:** #829 narrowed the reconciliation query to eligible intents and addressed the repeated-scan performance concern before merge.
+- **Status:** FIXED ON MAIN; production query cost still requires measured EXPLAIN/operational telemetry at realistic cardinality.
+- **Prevention:** B6/C2 + P1/P12; periodic database repair jobs require a bounded predicate and an explainable access path.
+
+## E-43 · GraphQL error builder must not receive a null message [VERIFIED]
+
+- **Observed defect (PR #819 review):** the shared problem-detail GraphQL resolver passed exception.getMessage() directly to GraphqlErrorBuilder.message. A null detail can cause the error resolver itself to fail, losing the canonical taxonomy.
+- **Violated invariant:** error translation must be total for every valid exception state; the error handler must not fail while handling an error.
+- **Correction/status:** a fallback message was requested and the review thread resolved on PR #819. The PR remains open in the measured snapshot; **not fixed on main yet**.
+- **Prevention:** B4/P3/P12; include null detail and malformed optional fields in exception-mapping tests.
+
+## E-44 · Validation field errors must be localized using the request locale [VERIFIED]
+
+- **Observed defect (PR #821 review):** VAL-001 fieldErrors[].message was constructed directly in English even when the request locale was Arabic.
+- **Violated invariant:** every user-facing part of a localized API error follows the resolved request locale.
+- **Correction/status:** #821 moved field-error rendering into message bundles and added Arabic/English assertions; its review thread is resolved, but the PR remains open.
+- **Prevention:** B4/P3; test the entire error payload under every supported locale, not only the top-level detail.
+
+## E-45 · Type-mismatch ProblemDetail must preserve rejected field/value/type [VERIFIED]
+
+- **Observed defect (PR #821 review):** the generic VAL-001 detail key rendered only "Validation failed" and discarded the field, rejected value and expected type from the detail field, even though fieldErrors carried part of the information.
+- **Violated invariant:** the canonical error contract preserves the diagnostic data promised to clients without exposing secrets.
+- **Correction/status:** #821 added a type-mismatch-specific detail message and tests against the real MessageSource; the review thread is resolved but the PR remains open.
+- **Prevention:** B4/P3; assert the rendered ProblemDetail and fieldErrors together using the actual message source.
+
+## E-46 · MessageFormat can turn fallback validation text into a runtime exception [VERIFIED]
+
+- **Observed defect (PR #821 review):** AbstractMessageSource applies MessageFormat when arguments are supplied. An unresolved fallback containing a rejected value such as a brace/format expression can be interpreted as a pattern and throw IllegalArgumentException, preventing the VAL-001 response.
+- **Violated invariant:** untrusted rejected input is data, never a message template; fallback rendering must be safe when a translation key is absent.
+- **Correction/status:** #821 changed the fallback lookup/rendering path and added coverage; review thread resolved but the PR remains open.
+- **Prevention:** B4/B3 + P3/P12; test missing translation keys with adversarial braces, apostrophes and format tokens.
+
+## E-47 · Spring Boot can retain an unresolved placeholder as literal text [VERIFIED]
+
+- **Observed defect (PR #822 review):** removing a default from the mail base URL did not guarantee startup failure under the pinned Spring Boot 4.1.2 placeholder resolver; an unresolved placeholder could remain as a literal String and produce invalid customer-facing links.
+- **Violated invariant:** deployable customer-facing origins are validated as real absolute URLs at startup; unresolved template syntax must never be served as a link.
+- **Correction/status:** #822 added explicit properties validation and real binding tests. Review thread resolved; PR remains open in the measured snapshot.
+- **Prevention:** B6/P1/P12; test actual Spring binding/startup failure, not only YAML text.
+
+## E-48 · Mail origin with query or fragment produces malformed recovery links [VERIFIED]
+
+- **Observed defect (PR #822 review):** mailBaseUrl accepted query/fragment components (including empty query/fragment delimiters), while reset/verification paths append URI paths after the origin.
+- **Violated invariant:** the configured application origin is a path-safe absolute base URI, without query or fragment.
+- **Correction/status:** #822 added constructor rejection for query and fragment; review thread resolved, with explicit empty-delimiter tests requested in the follow-up. PR remains open.
+- **Prevention:** B6/P1/P3; URI validation tests include empty query/fragment delimiters and the actual URL composition.
+
+## E-49 · Repair-plan summary and counts drifted from the individual gate records [VERIFIED]
+
+- **Observed defect (PR #823 review):** the fix-plan summary said owner-gate items were still awaiting documentation while lower sections already documented them; it also retained an old count (17) although the current set was 15 and included E1/E4.
+- **Violated invariant:** derived document summaries and counts must match their detailed authoritative rows.
+- **Correction/status:** PR #823 updated the summary and counts; its review thread is resolved, but the PR remains open.
+- **Prevention:** A6/P6; extend guards to every load-bearing count/summary or date it with a command that derives the value.
