@@ -2,13 +2,19 @@
   "schemaVersion": 1,
   "pullRequest": 834,
   "governingFiles": [
+    ".ci/check_defect_knowledge.py",
+    ".ci/defect_knowledge_intake.py",
+    ".github/workflows/ci.yml",
+    ".github/workflows/coderabbit-gate.yml",
+    ".github/workflows/defect-knowledge-gate.yml",
+    ".github/workflows/defect-knowledge-intake.yml",
     "AGENTS.md",
     "docs/agent-protocol.md",
     "docs/governance/defect-knowledge/README.md",
     "docs/governance/defect-knowledge/change-protocol.md",
+    "docs/governance/defect-knowledge/enforcement-map.md",
     "docs/governance/defect-knowledge/review-protocol.md",
-    "docs/governance/defect-knowledge/rulebook.md",
-    "docs/governance/defect-knowledge/enforcement-map.md"
+    "docs/governance/defect-knowledge/rulebook.md"
   ],
   "rulesTriggered": [
     "A1",
