@@ -253,6 +253,13 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
         self.assertIn("status must be passed", joined)
         self.assertIn("workflowRunUrl", joined)
 
+        record["findings"][0]["fix"]["verification"].pop("testedHeadSha")
+        errors = MODULE.validate_receipt(
+            record, 901, "a" * 40, "waelhe/app-java-v3", "test-token",
+            {"A1"}, {"P11"}, set()
+        )
+        self.assertIn("testedHeadSha must be a full code-bearing commit SHA", "\n".join(errors))
+
     def test_fixed_claim_accepts_tested_code_head_when_only_receipt_changes_after_it(self):
         from unittest.mock import patch
 
