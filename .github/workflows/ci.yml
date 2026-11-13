@@ -101,6 +101,9 @@ jobs:
       - name: Test defect-knowledge receipt verifier
         run: python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v
 
+      - name: Test defect-knowledge review intake
+        run: python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v
+
       # The checker is loaded from the trusted PR base, then it reads the
       # candidate receipt as data via git-show. It never imports candidate code.
       - name: Validate defect-knowledge receipt
