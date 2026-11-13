@@ -68,6 +68,7 @@ permissions:
   pull-requests: read
   statuses: read
   checks: read
+  actions: read
 
 concurrency:
   group: coderabbit-gate-${{ github.event.pull_request.number || github.event.inputs.pr }}
@@ -117,6 +118,8 @@ jobs:
           PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -eu
           python3 .ci/check_defect_knowledge.py validate \
