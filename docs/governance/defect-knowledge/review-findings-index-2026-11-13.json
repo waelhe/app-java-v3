@@ -701,6 +701,18 @@
       ]
     },
     {
+      "id": "E-31",
+      "source": "https://github.com/waelhe/app-java-v3/pull/758",
+      "status": "fixed-main",
+      "summary": "BCrypt password reset must validate the 72-byte UTF-8 implementation bound before consuming a one-time token."
+    },
+    {
+      "id": "E-32",
+      "source": "https://github.com/waelhe/app-java-v3/pull/758",
+      "status": "fixed-main",
+      "summary": "JPEG marker scanning must accept legal repeated 0xFF fill bytes rather than treating them as a new marker."
+    },
+    {
       "id": "E-33",
       "source": "https://github.com/waelhe/app-java-v3/pull/829",
       "status": "fixed-main",
