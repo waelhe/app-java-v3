@@ -147,7 +147,7 @@ def fetch_workflow_run(run_id: int, repository: str, token: str) -> dict[str, An
 
 
 def validate_workflow_run_payload(
-    payload: dict[str, Any], repository: str, expected_head_sha: str
+    payload: dict[str, Any], repository: str, expected_head_sha: str, pr_number: int
 ) -> list[str]:
     errors: list[str] = []
     if payload.get("status") != "completed":
@@ -158,11 +158,25 @@ def validate_workflow_run_payload(
         errors.append("workflow run must target the exact PR head SHA")
     if payload.get("event") != "pull_request":
         errors.append("workflow run must be triggered by pull_request")
-    if payload.get("name") not in {"CI", "Integration Test"}:
-        errors.append("workflow run must be a repository CI or Integration Test workflow")
+    workflow_paths = {
+        "CI": ".github/workflows/ci.yml",
+        "Integration Test": ".github/workflows/integration-test.yml",
+    }
+    expected_path = workflow_paths.get(str(payload.get("name", "")))
+    actual_path = str(payload.get("path", "")).split("@", 1)[0]
+    if expected_path is None or actual_path != expected_path:
+        errors.append("workflow run must be the repository CI or Integration Test workflow")
     run_repository = (payload.get("repository") or {}).get("full_name")
-    if run_repository and run_repository.casefold() != repository.casefold():
-        errors.append("workflow run belongs to a different repository")
+    if run_repository != repository:
+        errors.append("workflow run repository does not match the target repository")
+    pull_requests = payload.get("pull_requests")
+    matching_pr = any(
+        item.get("number") == pr_number
+        and ((item.get("head") or {}).get("sha") == expected_head_sha)
+        for item in pull_requests if isinstance(item, dict)
+    ) if isinstance(pull_requests, list) else False
+    if not matching_pr:
+        errors.append("workflow run is not associated with this PR number and exact head SHA")
     if payload.get("id") is None:
         errors.append("workflow run response has no id")
     return errors
@@ -296,6 +310,14 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                         cwd=Path.cwd(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
                     ).returncode == 0
                     require(reachable, f"{prefix}.fix.commitSha is not an ancestor of the PR head")
+                regression_test = str(fix.get("regressionTest", "")).strip()
+                require(bool(regression_test), f"{prefix}.fix.regressionTest must name the test that proves this finding is fixed")
+                test_names = {
+                    str(test.get("name", "")).strip()
+                    for test in tests if isinstance(test, dict)
+                } if isinstance(tests, list) else set()
+                require(regression_test in test_names,
+                        f"{prefix}.fix.regressionTest must match a named test in the receipt tests array")
                 verification = fix.get("verification", {})
                 require(isinstance(verification, dict), f"{prefix}.fix.verification must be an object")
                 if isinstance(verification, dict):
@@ -309,7 +331,7 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                         try:
                             run_id = workflow_run_id_from_url(workflow_url, repository)
                             payload = fetch_workflow_run(run_id, repository, github_token)
-                            for run_error in validate_workflow_run_payload(payload, repository, head_sha):
+                            for run_error in validate_workflow_run_payload(payload, repository, head_sha, pr_number):
                                 errors.append(f"{prefix}.fix.verification: {run_error}")
                         except GateError as exc:
                             errors.append(f"{prefix}.fix.verification: {exc}")
