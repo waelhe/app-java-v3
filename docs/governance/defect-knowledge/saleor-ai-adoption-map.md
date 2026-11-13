@@ -39,13 +39,23 @@ The server card lists `search_docs`, `get_page`, `list_pages`, and `get_navigati
 
 Use it to discover and read official docs. Do not treat it as live runtime verification.
 
-### Saleor MCP — live data, not adopted
+### Saleor MCP — privileged live data, not adopted
 
-The docs distinguish a Saleor Cloud MCP app from an open-source self-hosted read-only MCP server. Neither is needed for app-java-v3: this platform does not deploy a Saleor backend. Do not connect a live store or introduce a Saleor database as part of defect-knowledge work.
+The official tool surface is distinct from Documentation MCP. For a real Saleor Cloud store, the documented operating sequence is:
+
+1. `connection_info` first — establish which store is connected and which access/upgrade state applies.
+2. `introspect_schema` — inspect the permitted store schema before planning an operation.
+3. `run_query` — read live store data within the connection's granted scope.
+4. `run_mutation` — perform a permitted write only when the caller's access allows it.
+5. `run_high_impact_mutation` — use the separately governed high-impact path; the server enforces its permission/approval boundary.
+
+The MCP server applies permission-aware access, keeps privileged store credentials server-side, and records activity. The self-hosted open-source MCP option is read-only; the live Saleor Cloud option is the privileged path. The complete tool contract is the server's current MCP `tools/list` response, not a copied or assumed schema.
+
+Neither live option is needed for app-java-v3: this platform does not deploy a Saleor backend or second Saleor database. Do not attach a live store to the defect-knowledge workflow, and do not confuse permission to read documentation with permission to query or mutate a store.
 
 ### Schema-only GraphQL MCP — contract inspection only
 
-Saleor also documents a GraphQL MCP server pointed at a downloaded schema. If used, it must consume the exact pinned SDL from this repository; it must not introspect upstream main or connect to a second backend.
+Saleor also documents a GraphQL MCP server pointed at a downloaded schema. If used, it is a schema-inspection tool only: consume the exact pinned SDL from this repository (Saleor 3.23.43), never introspect upstream `main`, and never use it as a connection to a second backend.
 
 ### Skills CLI — reference only
 
