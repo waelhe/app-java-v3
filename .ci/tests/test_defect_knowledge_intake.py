@@ -137,7 +137,7 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
             "defect-knowledge-intake-capture.yml",
         ):
             content = (workflows / name).read_text(encoding="utf-8")
-            self.assertNotIn(r"\\${{", content, name)
+            self.assertNotIn(r"\${{", content, name)
             self.assertIn("${{", content, name)
 
     def test_excerpt_escapes_untrusted_markup_and_limits_length(self):
