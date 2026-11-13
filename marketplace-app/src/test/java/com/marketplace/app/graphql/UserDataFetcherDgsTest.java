@@ -1,11 +1,25 @@
 package com.marketplace.app.graphql;
 
 import com.marketplace.catalog.spi.CatalogSpi;
+import com.marketplace.catalog.spi.ProductTypeReadSpi;
+import com.marketplace.catalog.spi.AttributeReadSpi;
+import com.marketplace.console.spi.CmsNavigationSpi;
+import com.marketplace.console.spi.CmsPageSpi;
+import com.marketplace.identity.spi.UserManagementSpi;
+import com.marketplace.identity.spi.CustomerTypeSpi;
+import com.marketplace.identity.spi.AddressManagementSpi;
+import com.marketplace.identity.spi.AccountLifecycleSpi;
+import com.marketplace.pricing.spi.DiscountReadSpi;
+import com.marketplace.catalog.spi.ProductVariantReadSpi;
+import com.marketplace.catalog.spi.ProductReadSpi;
+import com.marketplace.catalog.spi.CategoryReadSpi;
+import com.marketplace.catalog.spi.CategoryWriteSpi;
 import com.marketplace.catalog.spi.ProductAdminSpi;
 import com.marketplace.community.spi.NeighborhoodFeedPort;
 import com.marketplace.community.spi.NeighborhoodPostDetailPort;
 import com.marketplace.discovery.spi.DiscoverySpi;
 import com.marketplace.identity.spi.IdentitySpi;
+import com.marketplace.orders.spi.OrderReadSpi;
 import com.marketplace.identity.spi.UserAccountPage;
 import com.marketplace.identity.spi.UserAccountSort;
 import com.marketplace.identity.spi.UserAccountView;
@@ -29,6 +43,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
@@ -40,6 +55,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -107,6 +123,129 @@ class UserDataFetcherDgsTest {
     @MockitoBean
     private IdentitySpi identitySpi;
 
+    @MockitoBean
+    private com.marketplace.orders.spi.OrderCommandSpi orderCommandSpi;
+
+    @MockitoBean
+    private com.marketplace.orders.spi.CheckoutSpi checkoutSpi;
+
+    @MockitoBean
+    private ProductVariantReadSpi variantReadSpi;
+
+    // The product-variant mutation roots' owning write seam (agent-2
+    // follow-on packet) — the package slice wires every fetcher, so
+    // this seam gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductVariantWriteSpi productVariantWriteSpi;
+
+    // The translation mutation roots' owning write seam (agent-2
+    // follow-on packet) — the package slice wires every fetcher, so
+    // this seam gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.TranslationWriteSpi translationWriteSpi;
+
+    // The product-type attribute schema mutation roots' owning write
+    // seam (agent-2 follow-on packet) — the package slice wires every
+    // fetcher, so this seam gets its mock (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeAttributeWriteSpi productTypeAttributeWriteSpi;
+
+    @MockitoBean
+    private OrderReadSpi orderReadSpi;
+
+    @MockitoBean
+    private ProductReadSpi productReadSpi;
+
+    // The product-media mutation roots' owning seam (agent-2 N-slice) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.media.spi.ProductMediaWriteSpi productMediaWriteSpi;
+
+    @MockitoBean
+    private CategoryReadSpi categoryReadSpi;
+    // The category mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private CategoryWriteSpi categoryWriteSpi;
+
+    // The collection read/mutation roots' owning seams (agent-2 L-slice) —
+    // the package slice wires every fetcher, so these seams get their
+    // mocks (the sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionReadSpi collectionReadSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.CollectionWriteSpi collectionWriteSpi;
+    // The promotion/voucher read roots' owning seam (b5-b packet) — the
+    // sibling-test mock the packet's own precedent prescribed but did not
+    // complete; the package slice context cannot boot without it.
+    @MockitoBean
+    private com.marketplace.pricing.spi.DiscountReadSpi discountReadSpi;
+    // The package slice wires every fetcher; every seam the slice's other
+    // fetchers need gets its mock — the incomplete sibling fixes the
+    // b4/b5 packets left behind (committed against a red CI) completed
+    // here so the shared slice context can boot at all.
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeReadSpi attributeReadSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeReadSpi productTypeReadSpi;
+    // The voucher mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.pricing.spi.VoucherWriteSpi voucherWriteSpi;
+    // The product-type and product mutation roots' owning write seams
+    // (agent-2 packet) — the package slice wires every fetcher, so
+    // these seams get their mocks (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductTypeWriteSpi productTypeWriteSpi;
+    @MockitoBean
+    private com.marketplace.catalog.spi.ProductWriteSpi productWriteSpi;
+    // The attribute mutation roots' owning write seam (agent-2 packet) —
+    // the package slice wires every fetcher, so this seam gets its mock
+    // (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeWriteSpi attributeWriteSpi;
+    // The attribute-value mutation roots' owning write seam (agent-2
+    // packet) — the package slice wires every fetcher, so this seam
+    // gets its mock (the b5-a sibling-test precedent).
+    @MockitoBean
+    private com.marketplace.catalog.spi.AttributeValueWriteSpi attributeValueWriteSpi;
+    @MockitoBean
+    private AccountLifecycleSpi accountLifecycleSpi;
+    @MockitoBean
+    private AddressManagementSpi addressManagementSpi;
+    @MockitoBean
+    private CustomerTypeSpi customerTypeSpi;
+    @MockitoBean
+    private UserManagementSpi userManagementSpi;
+    @MockitoBean
+    private CmsPageSpi cmsPageSpi;
+    @MockitoBean
+    private CmsNavigationSpi cmsNavigationSpi;
+
+    // The post-merge integration round (PR #696 review): the slice scans
+    // ALL of com.marketplace.app.graphql, so it discovers the multi-instance
+    // rotation round's JdbcRefreshTokenRotationStore — a real @Component
+    // whose constructor needs a JdbcTemplate the containerless slice has
+    // no DataSource for. The mock satisfies the wiring; the store's REAL
+    // behavior (including the two-instance atomicity) is proven over real
+    // PostgreSQL/Flyway in PlatformTokenGrantRotationMultiInstanceIntegrationTest.
+    @MockitoBean
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    // The post-merge integration round's wiring completion (PR #696
+    // review): the slice scans ALL of com.marketplace.app.graphql, and
+    // A0's central assembly landed EVERY campaign fetcher in that one
+    // package — so the slice must satisfy the constructor seam of every
+    // discovered fetcher, not just its own domain's. The missing owning
+    // SPIs join the mocked seam set here (the declared interfaces, never
+    // the internals; the REAL implementations are proven in the owning
+    // modules' suites and the full-stack integration tests over real
+    // PostgreSQL/Flyway).
+    @MockitoBean
+    private PlatformTokenGrantService platformTokenGrantService;
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
@@ -165,10 +304,10 @@ class UserDataFetcherDgsTest {
         List<Map<String, Object>> permissions = (List<Map<String, Object>>) me.get("userPermissions");
         assertThat(permissions)
                 .extracting(p -> p.get("code"))
-                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_ORDERS");
+                .containsExactly("MANAGE_USERS", "MANAGE_STAFF", "MANAGE_DISCOUNTS", "MANAGE_ORDERS");
         assertThat(permissions)
                 .extracting(p -> p.get("name"))
-                .containsExactly("Manage users.", "Manage staff.", "Manage orders.");
+                .containsExactly("Manage users.", "Manage staff.", "Manage discounts.", "Manage orders.");
     }
 
     /**
@@ -285,11 +424,13 @@ class UserDataFetcherDgsTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
         assertThat(edges).hasSize(2);
         assertThat(edges.get(0).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "email", "admin@example.com", "id", first))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("email", "admin@example.com", "id", first)),
+                        "staffUsers with the same sortBy", "email", true)));
         assertThat(edges.get(1).get("cursor"))
-                .isEqualTo(cursorStrategy.toCursor(ScrollPosition.forward(Map.of(
-                        "email", "provider@example.com", "id", second))));
+                .isEqualTo(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                        ScrollPosition.forward(Map.of("email", "provider@example.com", "id", second)),
+                        "staffUsers with the same sortBy", "email", true)));
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
         @SuppressWarnings("unchecked")
@@ -347,13 +488,214 @@ class UserDataFetcherDgsTest {
     void unauthenticatedCallerAnswersTheCredentialsError() {
         SecurityContextHolder.clearContext();
         // The fetcher's guard throws AuthenticationCredentialsNotFoundException;
-        // the resolver's leakage policy (measured) masks unknown exceptions to
-        // the generic internal sentence — the HTTP layer's 401 tripartite
+        // the resolver classifies it AUTHN (AUTH-01, the 2026-11-03
+        // adversarial scan): the fixed safe sentence and the AUTHN-001
+        // taxonomy — the HTTP layer's 401 tripartite
         // contract remains the anonymous boundary's own proof.
         assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath(
                 "query { me { id } }", "$"))
                 .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
-                .hasMessageContaining("An unexpected error occurred");
+                .hasMessageContaining("Authentication required");
+    }
+
+    /**
+     * The 2026-11-02 #806 review (Minor · Functional Correctness):
+     * REJECT_FAILED_ROWS rides the row-level mode at the identity SPI —
+     * the valid rows process, the refused row answers its own
+     * {@code results[i].errors} entry, and the batch never throws.
+     */
+    @Test
+    void customerBulkUpdateExecutesTheValidRowsAtRejectFailedRows() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID targetId = UUID.randomUUID();
+        when(userManagementSpi.bulkUpdateCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                argThat((List<UUID> ids) -> ids.size() == 2 && targetId.equals(ids.get(0))
+                        && ids.get(1) == null),
+                any(),
+                eq(true)))
+                .thenReturn(List.of(
+                        new com.marketplace.identity.spi.BulkRowResult(targetId, null, null),
+                        new com.marketplace.identity.spi.BulkRowResult(null, "INVALID",
+                                "The customer update was refused")));
+        when(identitySpi.findUserAccountById(eq(targetId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(providerView(targetId)));
+
+        String targetGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + targetId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "%s", input: {firstName: "Valid"}},
+                            {id: "not-a-global-id", input: {firstName: "Broken"}}],
+                        errorPolicy: REJECT_FAILED_ROWS) {
+                    count
+                    errors { code }
+                    results { customer { email } errors { message code } }
+                } }
+                """.formatted(targetGlobalId), "data.customerBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        assertThat(payload.get("errors")).isEqualTo(List.of());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> first = (Map<String, Object>) results.get(0).get("customer");
+        assertThat(first.get("email")).isEqualTo("provider@example.com");
+        assertThat(results.get(1).get("customer")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("INVALID");
+    }
+
+    /**
+     * At REJECT_EVERYTHING (the null default) one unresolvable row
+     * still fails the whole call — the all-or-nothing contract is
+     * unchanged; the owner never sees the batch.
+     */
+    @Test
+    void customerBulkUpdateFailsTheWholeCallForAnUnresolvableRowAtRejectEverything() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+
+        assertThatThrownBy(() -> dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "not-a-global-id", input: {firstName: "Broken"}}]) {
+                    count
+                } }
+                """, "$"))
+                .isInstanceOf(com.netflix.graphql.dgs.exceptions.QueryException.class)
+                .hasMessageContaining("Invalid global ID");
+        org.mockito.Mockito.verifyNoInteractions(userManagementSpi);
+    }
+
+    /**
+     * The 2026-11-03 #806 review (Minor · Functional Correctness): the
+     * row-level failure's OWN class answers — an unresolvable
+     * externalReference is a {@code NOT_FOUND} with the owner's
+     * authored sentence, never the generic {@code INVALID} the
+     * discarded-exception path used to answer for every failed row.
+     */
+    @Test
+    void customerBulkUpdateAnswersTheTransportFailuresOwnClassNotFoundForAnUnknownReference() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID targetId = UUID.randomUUID();
+        when(userManagementSpi.bulkUpdateCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                argThat((List<UUID> ids) -> ids.size() == 2 && targetId.equals(ids.get(0))
+                        && ids.get(1) == null),
+                any(),
+                eq(true)))
+                .thenReturn(List.of(
+                        new com.marketplace.identity.spi.BulkRowResult(targetId, null, null),
+                        // The owner never sees the failed row's content:
+                        // its wire result is the preserved transport
+                        // failure's OWN class, replacing whatever the
+                        // owner answered for the null-pairing.
+                        new com.marketplace.identity.spi.BulkRowResult(null, "INVALID",
+                                "The customer update was refused")));
+        when(identitySpi.findUserAccountById(eq(targetId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(providerView(targetId)));
+        when(identitySpi.findUserAccountBySubject(eq("unknown-subject"),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.empty());
+
+        String targetGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + targetId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "%s", input: {firstName: "Valid"}},
+                            {externalReference: "unknown-subject", input: {firstName: "Broken"}}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    results { customer { email } errors { message code } }
+                } }
+                """.formatted(targetGlobalId), "data.customerBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        assertThat(results.get(1).get("customer")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(1).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("NOT_FOUND");
+        assertThat(rowErrors.get(0).get("message"))
+                .isEqualTo("No user for the external reference: unknown-subject");
+    }
+
+    /**
+     * IDP-02 (the 2026-11-03 adversarial scan, P2): a row whose id
+     * RESOLVES but whose field conversion then FAILS (the classified
+     * not-implemented rejection for a supplied {@code customerType})
+     * must fail ITSELF with the null-pairing intact — the pre-fix shape
+     * added the resolved id to {@code ids} before converting the fields,
+     * so this exact row leaked its id unpaired ({@code ids.size()} =
+     * {@code rows.size()} + 1), shifted every later row's pairing and
+     * misrecorded the transport failure's index. The pin: the SPI
+     * receives [null, secondId] paired with [null, fields], the failed
+     * row answers its own classified error (INVALID with the §5 policy's
+     * fixed rejection sentence — a library IAE's text never rides the
+     * wire), and the LATER row still succeeds at its own index.
+     */
+    @Test
+    void customerBulkUpdateKeepsTheRowPairingWhenTheIdResolvesButTheFieldsFail() {
+        authenticateAs("dgs-admin-subject", "ADMIN");
+        UUID leakedCandidateId = UUID.randomUUID();
+        UUID secondTargetId = UUID.randomUUID();
+        when(userManagementSpi.bulkUpdateCustomers(
+                any(org.springframework.security.core.Authentication.class),
+                argThat((List<UUID> ids) -> ids.size() == 2 && ids.get(0) == null
+                        && secondTargetId.equals(ids.get(1))),
+                argThat((List<com.marketplace.identity.spi.UserWriteFields> rows) ->
+                        rows.size() == 2 && rows.get(0) == null && rows.get(1) != null),
+                eq(true)))
+                .thenReturn(List.of(
+                        new com.marketplace.identity.spi.BulkRowResult(null, "INVALID",
+                                "The operation was rejected"),
+                        new com.marketplace.identity.spi.BulkRowResult(secondTargetId, null, null)));
+        when(identitySpi.findUserAccountById(eq(secondTargetId),
+                any(org.springframework.security.core.Authentication.class)))
+                .thenReturn(java.util.Optional.of(providerView(secondTargetId)));
+
+        String firstGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + leakedCandidateId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String secondGlobalId = java.util.Base64.getEncoder()
+                .encodeToString(("User:" + secondTargetId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> payload = dgsQueryExecutor.executeAndExtractJsonPath("""
+                mutation { customerBulkUpdate(customers: [
+                            {id: "%s", input: {firstName: "First", customerType: "123"}},
+                            {id: "%s", input: {firstName: "Second"}}],
+                        errorPolicy: IGNORE_FAILED) {
+                    count
+                    results { customer { email } errors { message code } }
+                } }
+                """.formatted(firstGlobalId, secondGlobalId), "data.customerBulkUpdate");
+
+        assertThat(payload.get("count")).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) payload.get("results");
+        assertThat(results).hasSize(2);
+        // The failed row answers its OWN classified rejection at ITS index:
+        // code INVALID (the IAE's codeOf classification), message the §5
+        // payload policy's fixed rejection sentence — the IAE's own text
+        // is a library type's message and never rides the wire (only the
+        // owner modules' authored domain exceptions pass through).
+        assertThat(results.get(0).get("customer")).isNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rowErrors = (List<Map<String, Object>>) results.get(0).get("errors");
+        assertThat(rowErrors).hasSize(1);
+        assertThat(rowErrors.get(0).get("code")).isEqualTo("INVALID");
+        assertThat(rowErrors.get(0).get("message")).isEqualTo("The operation was rejected");
+        // The later row still succeeds at ITS index — the pairing never shifted.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> second = (Map<String, Object>) results.get(1).get("customer");
+        assertThat(second.get("email")).isEqualTo("provider@example.com");
     }
 
 }
