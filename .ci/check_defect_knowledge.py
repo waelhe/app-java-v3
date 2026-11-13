@@ -299,6 +299,8 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                     require(passed,
                             f"{prefix}.fix.verification.status must be passed before marking fixed")
                     workflow_url = str(verification.get("workflowRunUrl", ""))
+                    require(bool(workflow_url.strip()),
+                            f"{prefix}.fix.verification.workflowRunUrl is required")
                     if passed:
                         try:
                             run_id = workflow_run_id_from_url(workflow_url, repository)
