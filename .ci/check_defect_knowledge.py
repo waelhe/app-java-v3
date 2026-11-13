@@ -156,6 +156,10 @@ def validate_workflow_run_payload(
         errors.append("workflow run conclusion must be success")
     if payload.get("head_sha") != expected_head_sha:
         errors.append("workflow run must target the exact PR head SHA")
+    if payload.get("event") != "pull_request":
+        errors.append("workflow run must be triggered by pull_request")
+    if payload.get("name") not in {"CI", "Integration Test"}:
+        errors.append("workflow run must be a repository CI or Integration Test workflow")
     run_repository = (payload.get("repository") or {}).get("full_name")
     if run_repository and run_repository.casefold() != repository.casefold():
         errors.append("workflow run belongs to a different repository")
