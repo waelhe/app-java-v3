@@ -167,7 +167,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
                 "classification": "confirmed_defect",
                 "severity": "high",
                 "status": "fixed",
-                "fix": {"commitSha": "b" * 40, "verification": {"status": "pending", "workflowRunUrl": "https://github.com/waelhe/app-java-v3/actions/runs/123"}},
+                "fix": {"commitSha": "b" * 40, "verification": {"status": "pending", "workflowRunUrl": ""}},
             }],
         }
         errors = MODULE.validate_receipt(
