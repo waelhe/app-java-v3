@@ -214,15 +214,24 @@ def chunked(values: list[dict[str, Any]], size: int = BATCH_SIZE) -> list[list[d
     return [values[index:index + size] for index in range(0, len(values), size)]
 
 
-def find_intake_issue(repo: str, pr_number: int, token: str) -> dict[str, Any] | None:
-    marker = PR_MARKER_TEMPLATE.format(number=pr_number)
+def build_intake_issue_index(repo: str, token: str) -> dict[int, dict[str, Any]]:
+    """Read the repository issue list once; fail closed if an old duplicate exists."""
     issues = api_pages(f"/repos/{repo}/issues?state=all", token)
+    index: dict[int, dict[str, Any]] = {}
     for issue in issues:
         if issue.get("pull_request"):
             continue
-        if marker in (issue.get("body") or ""):
-            return issue
-    return None
+        match = re.search(r"<!-- defect-intake-pr:([0-9]+) -->", issue.get("body") or "")
+        if not match:
+            continue
+        source_pr = int(match.group(1))
+        if source_pr in index:
+            raise IntakeError(
+                f"Multiple defect-intake issues already exist for PR #{source_pr}: "
+                f"#{index[source_pr]['number']} and #{issue['number']}; reconcile the duplicate before writing."
+            )
+        index[source_pr] = issue
+    return index
 
 
 def intake_issue_comments(repo: str, issue_number: int, token: str) -> list[dict[str, Any]]:
@@ -290,14 +299,15 @@ def intake_body(repo: str, pr: dict[str, Any], items: list[dict[str, Any]]) -> s
     ])
 
 
-def sync_pr(repo: str, pr_number: int, token: str) -> None:
+def sync_pr(repo: str, pr_number: int, token: str,
+            intake_index: dict[int, dict[str, Any]]) -> None:
     pr = api_request("GET", f"/repos/{repo}/pulls/{pr_number}", token)
     reviews = api_pages(f"/repos/{repo}/pulls/{pr_number}/reviews", token)
     inline = api_pages(f"/repos/{repo}/pulls/{pr_number}/comments", token)
     discussions = api_pages(f"/repos/{repo}/issues/{pr_number}/comments", token)
     items = collect_items(repo, pr, reviews, inline, discussions)
 
-    intake = find_intake_issue(repo, pr_number, token)
+    intake = intake_index.get(pr_number)
     if not intake and not items:
         print(f"PR #{pr_number}: no review signals yet; no intake issue created.")
         return
@@ -308,6 +318,7 @@ def sync_pr(repo: str, pr_number: int, token: str) -> None:
             "title": f"Defect Intake: PR #{pr_number} — {str(pr.get('title', ''))[:120]}",
             "body": body,
         })
+        intake_index[pr_number] = intake
         print(f"PR #{pr_number}: created intake issue #{intake['number']}.")
         comments: list[dict[str, Any]] = []
         known: set[str] = set()
@@ -378,8 +389,9 @@ def main() -> int:
         pr_number = event_pull_request_number(event, args.event_name)
 
     try:
+        intake_index = build_intake_issue_index(args.repo, token)
         if pr_number is not None:
-            sync_pr(args.repo, pr_number, token)
+            sync_pr(args.repo, pr_number, token, intake_index)
             return 0
 
         if args.include_closed_since:
@@ -396,7 +408,7 @@ def main() -> int:
             )
 
         for pr in selected:
-            sync_pr(args.repo, int(pr["number"]), token)
+            sync_pr(args.repo, int(pr["number"]), token, intake_index)
         print(f"Completed intake sweep for {len(selected)} PR(s).")
         return 0
     except (IntakeError, urllib.error.URLError, json.JSONDecodeError) as exc:
