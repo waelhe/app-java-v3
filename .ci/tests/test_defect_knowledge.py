@@ -78,13 +78,11 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             ),
             12345,
         )
-        self.assertEqual(
+        with self.assertRaises(MODULE.GateError):
             MODULE.workflow_run_id_from_url(
                 "https://github.com/waelhe/app-java-v3/actions/runs/12345/attempts/2",
                 "waelhe/app-java-v3",
-            ),
-            12345,
-        )
+            )
         with self.assertRaises(MODULE.GateError):
             MODULE.workflow_run_id_from_url(
                 "https://github.com/attacker/other/actions/runs/12345",
@@ -104,10 +102,12 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             "head_sha": "a" * 40,
             "event": "pull_request",
             "name": "CI",
+            "path": ".github/workflows/ci.yml",
             "repository": {"full_name": "waelhe/app-java-v3"},
+            "pull_requests": [{"number": 901, "head": {"sha": "a" * 40}}],
         }
         self.assertEqual(
-            MODULE.validate_workflow_run_payload(run, "waelhe/app-java-v3", "a" * 40),
+            MODULE.validate_workflow_run_payload(run, "waelhe/app-java-v3", "a" * 40, 901),
             [],
         )
         self.assertIn(
@@ -116,6 +116,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
                 {**run, "status": "in_progress"},
                 "waelhe/app-java-v3",
                 "a" * 40,
+                901,
             ),
         )
         self.assertIn(
@@ -124,22 +125,25 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
                 {**run, "conclusion": "failure"},
                 "waelhe/app-java-v3",
                 "a" * 40,
+                901,
             ),
         )
         self.assertIn(
             "workflow run must target the exact PR head SHA",
             MODULE.validate_workflow_run_payload(
-                {**run, "head_sha": "b" * 40},
+                {**run, "head_sha": "b" * 40, "pull_requests": [{"number": 901, "head": {"sha": "b" * 40}}]},
                 "waelhe/app-java-v3",
                 "a" * 40,
+                901,
             ),
         )
         self.assertIn(
-            "workflow run belongs to a different repository",
+            "workflow run repository does not match the target repository",
             MODULE.validate_workflow_run_payload(
                 {**run, "repository": {"full_name": "attacker/other"}},
                 "waelhe/app-java-v3",
                 "a" * 40,
+                901,
             ),
         )
         self.assertIn(
@@ -148,14 +152,35 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
                 {**run, "event": "push"},
                 "waelhe/app-java-v3",
                 "a" * 40,
+                901,
             ),
         )
         self.assertIn(
-            "workflow run must be a repository CI or Integration Test workflow",
+            "workflow run must be the repository CI or Integration Test workflow",
             MODULE.validate_workflow_run_payload(
-                {**run, "name": "Request Copilot Code Review"},
+                {**run, "name": "Request Copilot Code Review", "path": ".github/workflows/copilot.yml"},
                 "waelhe/app-java-v3",
                 "a" * 40,
+                901,
+            ),
+        )
+
+        self.assertIn(
+            "workflow run must be the repository CI or Integration Test workflow",
+            MODULE.validate_workflow_run_payload(
+                {**run, "path": ".github/workflows/unrelated.yml"},
+                "waelhe/app-java-v3",
+                "a" * 40,
+                901,
+            ),
+        )
+        self.assertIn(
+            "workflow run is not associated with this PR number and exact head SHA",
+            MODULE.validate_workflow_run_payload(
+                {**run, "pull_requests": [{"number": 902, "head": {"sha": "a" * 40}}]},
+                "waelhe/app-java-v3",
+                "a" * 40,
+                901,
             ),
         )
 
@@ -185,7 +210,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
                 "classification": "confirmed_defect",
                 "severity": "high",
                 "status": "fixed",
-                "fix": {"commitSha": "b" * 40, "verification": {"status": "pending", "workflowRunUrl": ""}},
+                "fix": {"commitSha": "b" * 40, "regressionTest": "two-thread race", "verification": {"status": "pending", "workflowRunUrl": ""}},
             }],
         }
         errors = MODULE.validate_receipt(
