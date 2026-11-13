@@ -25,6 +25,8 @@ ITEM_MARKER = re.compile(r"<!-- defect-intake-item:([a-z]+-[0-9]+-r[a-z0-9]+) --
 PR_MARKER_TEMPLATE = "<!-- defect-intake-pr:{number} -->"
 SUMMARY_MARKER = "<!-- defect-intake-sync-summary -->"
 BATCH_SIZE = 25
+AUTOMATION_ACTOR = "github-actions[bot]"
+ISSUE_TITLE_MARKER = re.compile(r"^Defect Intake: PR #([0-9]+) — ")
 
 
 class IntakeError(RuntimeError):
@@ -214,17 +216,41 @@ def chunked(values: list[dict[str, Any]], size: int = BATCH_SIZE) -> list[list[d
     return [values[index:index + size] for index in range(0, len(values), size)]
 
 
+def is_automation_authored(item: dict[str, Any]) -> bool:
+    """Only the repository Actions bot owns collector control markers."""
+    return (item.get("user") or {}).get("login") == AUTOMATION_ACTOR
+
+
 def build_intake_issue_index(repo: str, token: str) -> dict[int, dict[str, Any]]:
-    """Read the repository issue list once; fail closed if an old duplicate exists."""
+    """Index only bot-owned intake issues; reject tampered managed records."""
     issues = api_pages(f"/repos/{repo}/issues?state=all", token)
     index: dict[int, dict[str, Any]] = {}
+    source_line_template = f"Source PR: https://github.com/{repo}/pull/{{number}}"
     for issue in issues:
-        if issue.get("pull_request"):
+        if issue.get("pull_request") or not is_automation_authored(issue):
             continue
-        match = re.search(r"<!-- defect-intake-pr:([0-9]+) -->", issue.get("body") or "")
-        if not match:
+        body = issue.get("body") or ""
+        body_match = re.search(r"<!-- defect-intake-pr:([0-9]+) -->", body)
+        title_match = ISSUE_TITLE_MARKER.match(str(issue.get("title") or ""))
+        # The reserved title namespace catches a bot-owned intake whose body
+        # marker was removed or altered by a later edit; fail closed, do not duplicate it.
+        if not body_match and not title_match:
             continue
-        source_pr = int(match.group(1))
+        if not body_match or not title_match:
+            raise IntakeError(
+                f"Bot-owned defect-intake issue #{issue.get('number')} has a missing control marker/title; reconcile it before writing."
+            )
+        source_pr = int(body_match.group(1))
+        title_pr = int(title_match.group(1))
+        if source_pr != title_pr:
+            raise IntakeError(
+                f"Bot-owned defect-intake issue #{issue.get('number')} has conflicting PR markers: body #{source_pr}, title #{title_pr}."
+            )
+        expected_source_line = source_line_template.format(number=source_pr)
+        if expected_source_line not in body.splitlines():
+            raise IntakeError(
+                f"Bot-owned defect-intake issue #{issue.get('number')} does not contain its exact source PR link."
+            )
         if source_pr in index:
             raise IntakeError(
                 f"Multiple defect-intake issues already exist for PR #{source_pr}: "
@@ -239,11 +265,23 @@ def intake_issue_comments(repo: str, issue_number: int, token: str) -> list[dict
 
 
 def existing_item_ids(comments: list[dict[str, Any]]) -> set[str]:
+    """Ignore markers in human comments; their text is evidence, never control state."""
     known: set[str] = set()
     for comment in comments:
+        if not is_automation_authored(comment):
+            continue
         body = comment.get("body") or ""
         known.update(ITEM_MARKER.findall(body))
     return known
+
+
+def find_sync_summary_comment(comments: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return only the automation-owned summary comment, never a human imitation."""
+    return next(
+        (comment for comment in comments
+         if is_automation_authored(comment) and SUMMARY_MARKER in (comment.get("body") or "")),
+        None,
+    )
 
 
 def render_sync_summary(repo: str, pr: dict[str, Any], items: list[dict[str, Any]]) -> str:
@@ -333,10 +371,7 @@ def sync_pr(repo: str, pr_number: int, token: str,
     # Keep the automatically refreshed snapshot in its own managed comment.
     # Never replace the issue body: people may have added triage decisions there.
     summary = render_sync_summary(repo, pr, items)
-    summary_comment = next(
-        (comment for comment in comments if SUMMARY_MARKER in (comment.get("body") or "")),
-        None,
-    )
+    summary_comment = find_sync_summary_comment(comments)
     if summary_comment is None:
         api_request("POST", f"/repos/{repo}/issues/{intake['number']}/comments", token, {"body": summary})
     elif summary_comment.get("body") != summary:
