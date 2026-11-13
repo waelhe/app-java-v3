@@ -98,6 +98,32 @@ jobs:
       - name: Test CodeRabbit coverage verifier
         run: python3 -m unittest discover -s .ci/tests -p 'test_coderabbit_review_coverage.py' -v
 
+      - name: Test defect-knowledge receipt verifier
+        run: python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v
+
+      # The checker is loaded from the trusted PR base, then it reads the
+      # candidate receipt as data via git-show. It never imports candidate code.
+      - name: Validate defect-knowledge receipt
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          checker="$RUNNER_TEMP/check_defect_knowledge.py"
+          if git cat-file -e "$PR_BASE_SHA:.ci/check_defect_knowledge.py" 2>/dev/null; then
+            git show "$PR_BASE_SHA:.ci/check_defect_knowledge.py" > "$checker"
+          else
+            cp .ci/check_defect_knowledge.py "$checker"
+          fi
+          python3 "$checker" validate \\
+            --pr-number "$PR_NUMBER" \\
+            --created-at "$PR_CREATED_AT" \\
+            --base-sha "$PR_BASE_SHA" \\
+            --head-sha "$PR_HEAD_SHA"
+
       - name: Gitleaks secret scan (high/critical policy)
         uses: gitleaks/gitleaks-action@v3
         env:
