@@ -71,11 +71,11 @@ this skill is patched to match.
    protocol §9's regression list is its quick view; protocol §3's
    step 4 is the binding ritual step this item mirrors): before
    editing, load `change-protocol.md` and apply the pattern families
-   it triggers (`pattern-catalog.md`, P1–P10); before writing a fix,
-   check `evidence-ledger.md` (E-01…E-23) and the rulebook rules
+   it triggers (`pattern-catalog.md`, P1–P14); before writing a fix,
+   check `evidence-ledger.md` (E-01…E-32) and the rulebook rules
    (A/B/C/D) the change binds; after implementing, run the adversarial
    pass in `review-protocol.md`; when a guard fails, `enforcement-map.md`
-   states the rule → enforcement binding. The system is permanent; the
+   states the rule → enforcement binding. For every new code/runtime PR, create `change-records/PR-<number>.json` with the rule/pattern/case references, invariants, doors, sibling search, tests and stable finding fingerprints; run `.ci/check_defect_knowledge.py` and bind any fixed status to a reachable commit plus passing GitHub run. Review intake captures comments as untrusted signals; triage them before accepting or fixing findings. The system is permanent; the
    quick view only points into it.
 6. Read `docs/governance/agent-skills-policy.md` and
    `docs/governance/plans/agent-skills-pins.json`; load only relevant,
