@@ -32,7 +32,7 @@ The system exists because the measured history shows the *same causal mechanisms
 | [`historical-reconciliation-2026-11-13.md`](historical-reconciliation-2026-11-13.md) | PR/review/repair history and explicit limits | pattern updates |
 | [`change-records/`](change-records/) | Structured evidence receipt per new code/runtime PR | CI/D11 |
 | [`.ci/defect_knowledge_intake.py`](../../../.ci/defect_knowledge_intake.py) + workflow | Idempotent, revision-aware GitHub review-signal intake; preserves human triage and supports recovery sweeps | triage queue |
-| [`.ci/check_defect_knowledge.py`](../../../.ci/check_defect_knowledge.py) + trusted-base workflow | Receipt validation and evidence-backed closure checks | D11 |
+| [`.ci/check_defect_knowledge.py`](../../../.ci/check_defect_knowledge.py) + trusted-base step in [`coderabbit-gate.yml`](../../../.github/workflows/coderabbit-gate.yml) | Receipt validation under the existing required gate; dedicated workflow is supplemental | D11 |
 
 ## Relationship to existing authority
 
