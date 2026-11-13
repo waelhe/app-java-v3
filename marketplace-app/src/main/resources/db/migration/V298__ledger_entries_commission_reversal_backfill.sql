@@ -44,6 +44,11 @@
 -- renumbers its own pair when it rebases onto the merged main.
 
 WITH per_intent AS (
+    -- CodeRabbit round 9: the eligibility cut — only REFUNDED intents can
+    -- hold a deserving refund (the refund debit lands in the very payments
+    -- transaction that flips the status, so every intent still needing a
+    -- reversal is REFUNDED; the cut spares the derivation work over the
+    -- rest of the table without excluding a single deserving row).
     SELECT pi.id AS intent_id,
            (substr(md5('commission-' || pi.id::text), 1, 12) || '3'
                || substr(md5('commission-' || pi.id::text), 14, 3)
@@ -61,6 +66,7 @@ WITH per_intent AS (
                || substr(md5('commission-reversal-' || pi.id::text), 18, 3)
                || substr(md5('commission-reversal-' || pi.id::text), 21, 12))::uuid AS reversal_source
     FROM payment_intents pi
+    WHERE pi.status = 'REFUNDED'
 ),
 missing AS (
     SELECT cd.provider_id, cd.currency, cd.amount_cents, ps.reversal_source
@@ -90,9 +96,21 @@ inserted_by_balance AS (
     FROM inserted i
     GROUP BY i.provider_id, i.currency
 )
-INSERT INTO provider_balances (provider_id, currency, available_cents, created_at, updated_at)
-SELECT b.provider_id, b.currency, b.amount_cents, now(), now()
+INSERT INTO provider_balances (provider_id, currency, available_cents, created_at, updated_at,
+                               version)
+SELECT b.provider_id, b.currency, b.amount_cents, now(), now(),
+       -- the optimistic-lock column's initial value (the V25/V82 letter:
+       -- a born row starts at version 0; is_deleted rides its own DEFAULT
+       -- false)
+       0
 FROM inserted_by_balance b
 ON CONFLICT (provider_id, currency)
     DO UPDATE SET available_cents = provider_balances.available_cents + EXCLUDED.available_cents,
+                  -- CodeRabbit round 9: the raw UPDATE bumps the optimistic
+                  -- version exactly as every JPA save does — a payment
+                  -- transaction holding the pre-reconciliation entity then
+                  -- FAILS its save (stale version) instead of silently
+                  -- overwriting the reconciled balance with its own stale
+                  -- number (the lost-update the round asked to close).
+                  version = provider_balances.version + 1,
                   updated_at = now();

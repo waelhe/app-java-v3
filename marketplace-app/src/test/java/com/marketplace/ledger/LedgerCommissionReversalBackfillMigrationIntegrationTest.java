@@ -86,6 +86,54 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
     @Autowired
     private com.marketplace.ledger.CommissionReversalReconciliation reconciliation;
 
+    /** The JPA balance access the stale-save interleave proof loads through. */
+    @Autowired
+    private ProviderBalanceRepository balanceRepository;
+
+    @Test
+    void theSweepBumpsTheOptimisticVersion_soAStalePaymentSaveCannotDropTheReversal() {
+        // CodeRabbit round 9: the reconciliation's raw UPSERT must bump the
+        // optimistic-lock version exactly as every JPA save does — otherwise
+        // a payment transaction holding the PRE-reconciliation entity would
+        // save its own stale number over the reconciled balance (a silent
+        // lost update dropping the reversal credit). The interleave: load
+        // the entity (version 0 from the seed), converge through the sweep
+        // (balance + commission, version -> 1), then attempt the stale save.
+        UUID consumerId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        UUID intentId = UUID.randomUUID();
+
+        seedProviderWorld(providerId, consumerId, intentId);
+        insertEntry(providerId, intentId, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(providerId, commissionSource(intentId), "COMMISSION_DEBIT", COMMISSION_CENTS);
+        insertEntry(providerId, refundSource(intentId), "REFUND_DEBIT", PRICE_CENTS);
+        seedBalance(providerId, PRICE_CENTS - COMMISSION_CENTS - PRICE_CENTS); // minus the commission
+
+        // The payment transaction's own read — the entity as it was BEFORE
+        // the reconciliation ran (version 0, the minus-commission amount).
+        var stale = balanceRepository.findById(new ProviderBalanceId(providerId, "SAR")).orElseThrow();
+
+        // The reconciliation interleaves: the balance gains the reversal
+        // credit and the optimistic version moves with it.
+        assertThat(reconciliation.reconcileNow()).isEqualTo(1);
+        assertThat(balanceOf(providerId)).isZero();
+
+        // The stale holder books its own debit and saves — the bumped
+        // version REFUSES the write (the lost-update door closed).
+        stale.debit(100L);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> balanceRepository.save(stale))
+                .as("the stale entity's save fails on the bumped optimistic version — "
+                        + "the reconciled balance cannot be silently overwritten")
+                .isInstanceOf(org.springframework.orm.ObjectOptimisticLockingFailureException.class);
+
+        // The reconciled balance stands; the reversal credit was not dropped.
+        assertThat(balanceOf(providerId))
+                .as("the reconciliation's converging credit survives the refused stale save")
+                .isZero();
+        var fresh = balanceRepository.findById(new ProviderBalanceId(providerId, "SAR")).orElseThrow();
+        assertThat(fresh.getAvailableCents()).isZero();
+    }
+
     @Test
     void theRuntimeSweep_convergesTheDeployOverlapStragglers() {
         // The deploy-overlap scenario V298's snapshot cannot see: the OLD
