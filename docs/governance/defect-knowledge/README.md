@@ -2,7 +2,7 @@
 
 > **Status:** canonical, governance-integrated (initial decision 2026-10-27; closed-loop refresh 2026-11-13 on a review branch, pending CI and merge).
 > **Authority chain:** Spring Boot / Maven / Spring Modulith / DGS / Flyway official docs (pinned versions in the root POM) → `AGENTS.md` §0 load order → this system for *how history constrains every future change*.
-> **Scope:** the backend repository `app-java-v3`; original historical audit through 2026-10-27 plus post-October reconciliation through `main@445f421d` (2026-11-13). The commerce candidate is separately pinned at `b97747f0` until re-measured.
+> **Scope:** the backend repository `app-java-v3`; original historical audit through 2026-10-27 plus post-October reconciliation through `main@f92873c9` (2026-11-13, after #829 merged); the initial reconciliation measurement was `main@445f421d`. The commerce candidate is separately pinned at `b97747f0` until re-measured.
 
 ## What this is
 
@@ -40,7 +40,7 @@ This system **reuses and extends** — it does not compete with — the establis
 
 ## Verification status of the system itself
 
-- Derived from: Original audit: 715 PRs inventoried and 14,575 workflow runs classified (2,569 failures); follow-up reconciliation: 75 PR records created after #746 through #833, #816's 34 findings plus #826's W7/W8, and 653 review threads / 682 inline CodeRabbit comments across #806–#811 measured 2026-11-13. These latter are source signals, not defect counts. See `historical-reconciliation-2026-11-13.md` and `review-findings-index-2026-11-13.json`.
+- Derived from: Original audit: 715 PRs inventoried and 14,575 workflow runs classified (2,569 failures); follow-up reconciliation: 75 PR records created after #746 through #833, #816's 34 findings plus #826's W7/W8, 653 review threads / 682 inline CodeRabbit comments across #806–#811, and 19 distinct repair-review fingerprints across #819/#821/#822/#823/#829 measured 2026-11-13. These are source signals, not defect counts. The ledger now carries E-01…E-49. See `historical-reconciliation-2026-11-13.md` and `review-findings-index-2026-11-13.json`.
 - Validation: representative historical cases replayed against the new rules in [`enforcement-map.md`](enforcement-map.md) §3 — each selected case from a different causal family.
 - Self-consistency: this system's own enumerations (rule counts, case tags, pattern range, phase/section references) are derived and enforced by `DefectKnowledgeDocsGuardTest` — the system applies rule A6/D2 to itself.
 - Limitations and unresolved items are stated explicitly in [`enforcement-map.md`](enforcement-map.md) §5 — nothing is claimed complete that was not measured.
