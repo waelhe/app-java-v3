@@ -1,0 +1,70 @@
+name: Request Copilot Code Review (PR #834)
+
+# This workflow asks GitHub's first-party Copilot reviewer to independently
+# inspect the exact PR head. It never checks out or executes PR code.
+on:
+  push:
+    branches:
+      - governance/closed-loop-defect-knowledge-20261113
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: copilot-code-review-pr-834
+  cancel-in-progress: true
+
+jobs:
+  request:
+    name: Request Copilot review for the current PR head
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request first-party Copilot code review
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = 834;
+            const expectedHead = context.sha;
+
+            const { data: pull } = await github.rest.pulls.get({
+              owner, repo, pull_number,
+            });
+            if (pull.state !== "open") {
+              core.setFailed(`PR #${pull_number} is not open.`);
+              return;
+            }
+            if (pull.head.sha !== expectedHead) {
+              core.setFailed(
+                `Refusing stale review request: event SHA ${expectedHead} != PR head ${pull.head.sha}.`
+              );
+              return;
+            }
+
+            try {
+              const response = await github.request(
+                "POST /repos/{owner}/{repo}/pulls/{pull_number}/copilot-code-review",
+                {
+                  owner,
+                  repo,
+                  pull_number,
+                  review_effort: "balanced",
+                  headers: { "X-GitHub-Api-Version": "2026-03-10" },
+                }
+              );
+              core.info(
+                `Copilot review request accepted: state=${response.data.state || "unknown"}; node_id=${response.data.node_id || "not-returned"}; head=${expectedHead}.`
+              );
+            } catch (error) {
+              if (error.status === 409) {
+                core.warning("A Copilot review is already pending for this PR; no duplicate request was created.");
+                return;
+              }
+              const failureReason = error.response?.data?.failure_reason || "none";
+              core.setFailed(
+                `GitHub did not create a Copilot review (HTTP ${error.status || "unknown"}; failure_reason=${failureReason}): ${error.message}`
+              );
+            }
