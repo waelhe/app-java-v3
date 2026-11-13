@@ -275,7 +275,10 @@ class AccountSelfDeletionServiceTest {
      * fresh read UNDER the lock carries the committed truth: the pre-lock
      * row says ENABLED, the committed row says DISABLED, and the answer is
      * the honest 409 with the erasure never reached — the lock is verifiably
-     * taken BEFORE the enabled verdict's read.
+     * taken BEFORE the enabled verdict's read. B2 round 3 (the lock-order
+     * discipline): the advisory invariant lock precedes the row lock — the
+     * exact order every admin-affecting UserService path takes, pinned here
+     * alongside the row lock.
      */
     @Test
     void deleteOwnAccount_disableCommittingInsideTheWindowIsSeenByTheCommittedRead() {
@@ -299,10 +302,12 @@ class AccountSelfDeletionServiceTest {
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
                 .hasMessageContaining("disabled account cannot execute the self-service deletion");
 
-        // The lock precedes the enabled verdict's read: the second
-        // loadUserByUsername (the committed truth) happens AFTER the row
-        // lock is taken, never before it.
+        // The lock order is pinned exactly (B2 round 3): the advisory
+        // invariant lock FIRST, the account row lock second, the enabled
+        // verdict's committed read AFTER both — never inverted, never
+        // skipped.
         InOrder order = inOrder(jdbcTemplate, userDetailsManager);
+        order.verify(jdbcTemplate).execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
         order.verify(jdbcTemplate).queryForList(
                 eq(AccountSelfDeletionService.LOCK_ACCOUNT_ROW), eq(String.class), eq(EMAIL));
         order.verify(userDetailsManager).loadUserByUsername(EMAIL);

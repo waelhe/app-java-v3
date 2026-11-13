@@ -228,6 +228,26 @@ public class AccountSelfDeletionService {
         // erasure joins the invariant the login/token/update doors already
         // carry, while the administrative erasure seam stays live by
         // design (B8).
+        //
+        // B2 round 3 (CodeRabbit Minor 2026-11-13 — the lock-order
+        // discipline): the advisory invariant lock is taken BEFORE the row
+        // lock, the exact order every admin-affecting {@code UserService}
+        // path uses ({@code updateUserStatus}: advisory at :663-664, row
+        // locks through LOCK_ACTIVE_ADMINS after; {@code pseudonymizeAccount}:
+        // advisory at :817). Without it this path held the account's row
+        // lock first and then requested the advisory lock inside
+        // pseudonymizeAccount — the INVERSE of updateUserStatus's order —
+        // so a self-deleting admin racing an admin disable could have each
+        // transaction wait for a lock the other held: PostgreSQL's deadlock
+        // detector aborts one of them. Advisory-first makes every taker of
+        // both locks acquire them in one order, and the inner acquisition
+        // in pseudonymizeAccount is re-entrant within the same transaction
+        // (pg_advisory_xact_lock semantics) — a no-op here. Acquired
+        // unconditionally (not only for admin holders) so no stale pre-lock
+        // role read can ever skip it and reopen the inverted window; the
+        // password gate above still keeps wrong-password requests off every
+        // lock.
+        jdbcTemplate.execute(UserService.LOCK_ACTIVE_ADMIN_INVARIANT);
         List<String> locked = jdbcTemplate.queryForList(
                 LOCK_ACCOUNT_ROW, String.class, subject);
         if (locked.isEmpty()) {
