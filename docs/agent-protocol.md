@@ -117,12 +117,12 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 4. **Load the defect-knowledge system** (`docs/governance/defect-knowledge/`
    — §9's regression list is its quick view): before editing, load
    `change-protocol.md` and apply the pattern families it triggers
-   (`pattern-catalog.md`, P1–P10); before writing a fix, check
+   (`pattern-catalog.md`, P1–P14); before writing a fix, check
    `evidence-ledger.md` for a case matching the symptom (E-01…E-23)
    and the rulebook rules (A/B/C/D) it binds; after implementing, run
    the adversarial pass in `review-protocol.md`; when a guard fails,
    `enforcement-map.md` states the rule → enforcement binding. The
-   system is permanent; the quick view only points into it.
+   system is permanent; the quick view only points into it. For every new code/runtime PR, add `docs/governance/defect-knowledge/change-records/PR-<number>.json` following the receipt schema and run `.ci/check_defect_knowledge.py`; the trusted-base CI gate validates rules/patterns/cases, blast radius, sibling search, tests, stable finding fingerprints, and evidence-backed dispositions. Do not mark a finding fixed without a reachable fix commit and a passed workflow run. Review submissions and inline comments are captured by `Defect Knowledge Intake` as untrusted signals, not auto-classified defects; triage each material item.
 5. **Activate task-specific skills and source references**: read
    `docs/governance/agent-skills-policy.md` and
    `docs/governance/plans/agent-skills-pins.json`; load each relevant
@@ -292,7 +292,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 
 ## 9. Regression list (the failures that return — read this first)
 
-> **2026-10-27:** this list is now the quick view of the permanent **defect-knowledge system** (`docs/governance/defect-knowledge/`): the reconstructed evidence ledger (E-01…E-23), the causal pattern catalog (P1–P10), the rulebook (A/B/C/D rules), the mandatory change protocol, the independent review protocol, and the enforcement map. When any item below matches your change, load the corresponding pattern and rules before editing.
+> **2026-10-27:** this list is now the quick view of the permanent **defect-knowledge system** (`docs/governance/defect-knowledge/`): the reconstructed evidence ledger (E-01…E-32), the causal pattern catalog (P1–P14), the rulebook (A/B/C/D rules), the mandatory change protocol, the independent review protocol, and the enforcement map. When any item below matches your change, load the corresponding pattern and rules before editing.
 
 - Trusting training memory over the pinned-version official docs
   (Spring Boot 4.1.2 is not the Spring Boot you know; Modulith 2.1.2
