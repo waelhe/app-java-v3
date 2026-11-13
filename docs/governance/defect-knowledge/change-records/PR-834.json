@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "pullRequest": 834,
+  "governingFiles": [
+    "AGENTS.md",
+    "docs/agent-protocol.md",
+    "docs/governance/defect-knowledge/README.md",
+    "docs/governance/defect-knowledge/change-protocol.md",
+    "docs/governance/defect-knowledge/review-protocol.md",
+    "docs/governance/defect-knowledge/rulebook.md",
+    "docs/governance/defect-knowledge/enforcement-map.md"
+  ],
+  "rulesTriggered": [
+    "A1",
+    "A3",
+    "A5",
+    "A6",
+    "B2",
+    "B3",
+    "B6",
+    "D11"
+  ],
+  "patternsReviewed": [
+    "P1",
+    "P6",
+    "P9",
+    "P11",
+    "P12",
+    "P13",
+    "P14"
+  ],
+  "historicalCasesReviewed": [
+    "E-24",
+    "E-25",
+    "E-26",
+    "E-27",
+    "E-28",
+    "E-29",
+    "E-30",
+    "E-31",
+    "E-32"
+  ],
+  "invariants": [
+    "Review submissions and comments are captured exactly once by source ID and are never auto-classified as confirmed defects.",
+    "A code/runtime PR must carry a receipt that references canonical rule, pattern and case IDs.",
+    "A finding may be marked fixed only with a reachable full commit SHA and passed GitHub workflow evidence.",
+    "The receipt validator executes from trusted base code for subsequent pull requests and reads candidate content as data.",
+    "The historical repair index keeps main-branch fixes distinct from fixes still absent from the commerce integration candidate."
+  ],
+  "doors": [
+    "pull_request_review submitted/edited/dismissed events",
+    "pull_request_review_comment created/edited/deleted events",
+    "issue_comment created/edited/deleted events for pull requests",
+    "scheduled sweep of open pull requests",
+    "manual backfill for one PR or all PRs opened since a UTC date",
+    "CI receipt gate for code/runtime changes",
+    "trusted pull_request_target receipt gate on subsequent PRs",
+    "agent bootstrap instructions in AGENTS.md, docs/agent-protocol.md and docs/agent-skill.md"
+  ],
+  "siblingSearch": [
+    {
+      "family": "Review signal ingestion",
+      "pathsSearched": [
+        ".github/workflows/defect-knowledge-intake.yml",
+        ".ci/defect_knowledge_intake.py",
+        ".ci/tests/test_defect_knowledge_intake.py"
+      ],
+      "result": "The new intake is the shared mechanism for review submissions, inline comments and PR discussion comments; scheduled sweep recovers missed event notifications."
+    },
+    {
+      "family": "Repository PR governance",
+      "pathsSearched": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/coderabbit-gate.yml",
+        ".github/workflows/defect-knowledge-gate.yml",
+        ".ci/check_coderabbit_review_coverage.py"
+      ],
+      "result": "Existing CodeRabbit coverage and poll gates remain intact; D11 adds a separate receipt/evidence gate and does not redefine CodeRabbit approval."
+    },
+    {
+      "family": "Existing defect knowledge",
+      "pathsSearched": [
+        "docs/governance/defect-knowledge/evidence-ledger.md",
+        "docs/governance/defect-knowledge/pattern-catalog.md",
+        "docs/governance/defect-knowledge/rulebook.md",
+        "docs/governance/defect-knowledge/enforcement-map.md"
+      ],
+      "result": "New E-24..E-32 cases and P11..P14 patterns extend the canonical system; no duplicate ledger or shadow pattern catalog was introduced."
+    }
+  ],
+  "tests": [
+    {
+      "name": "test_defect_knowledge.py",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required GitHub CI run on PR #834 head; pending at receipt creation."
+    },
+    {
+      "name": "test_defect_knowledge_intake.py",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI run on PR #834 head; pending at receipt creation."
+    },
+    {
+      "name": "DefectKnowledgeDocsGuardTest",
+      "command": "./mvnw -pl marketplace-app -am -Dtest=DefectKnowledgeDocsGuardTest test",
+      "verification": "Required Maven CI Build (JDK 25) on PR #834 head; pending at receipt creation."
+    }
+  ],
+  "findings": [],
+  "noFindingsRationale": "This is the governance-system implementation PR, not a product behavior repair. The findings discovered during the historical audit are already registered in review-findings-index-2026-11-13.json with their source reports and open/fixed/suspected dispositions. No new application defect was discovered while implementing this governance layer. Any defects found by this PR's own CI or review will be added here with a stable fingerprint before they are dispositioned."
+}
