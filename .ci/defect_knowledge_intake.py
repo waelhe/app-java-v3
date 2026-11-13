@@ -203,6 +203,10 @@ def intake_issue_comments(repo: str, issue_number: int, token: str) -> list[dict
     return api_pages(f"/repos/{repo}/issues/{issue_number}/comments", token)
 
 
+def intake_issue_comments(repo: str, issue_number: int, token: str) -> list[dict[str, Any]]:
+    return api_pages(f"/repos/{repo}/issues/{issue_number}/comments", token)
+
+
 def existing_item_ids(comments: list[dict[str, Any]]) -> set[str]:
     known: set[str] = set()
     for comment in comments:
@@ -216,7 +220,7 @@ def render_sync_summary(repo: str, pr: dict[str, Any], items: list[dict[str, Any
     reviews = sum(item["kind"] == "review" for item in items)
     inline = sum(item["kind"] == "inline" for item in items)
     discussions = sum(item["kind"] == "discussion" for item in items)
-    return "\\n".join([
+    return "\n".join([
         SUMMARY_MARKER,
         "## Intake synchronization snapshot",
         f"- Last source PR update: {html.escape(str(pr.get('updated_at', 'unknown')))}",
