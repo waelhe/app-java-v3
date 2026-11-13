@@ -180,6 +180,16 @@
       "name": "test_user_authored_issue_cannot_claim_or_hijack_an_intake_marker",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
       "verification": "Required GitHub CI on the final PR #834 head; pending."
+    },
+    {
+      "name": "test_duplicate_bot_summary_comments_fail_closed",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
+    },
+    {
+      "name": "test_bot_intake_with_multiple_pr_markers_fails_closed",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
     }
   ],
   "findings": [
