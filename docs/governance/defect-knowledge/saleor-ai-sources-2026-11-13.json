@@ -49,7 +49,58 @@
         "Documentation MCP is read-only and does not connect to a Saleor instance.",
         "Saleor Cloud MCP and self-hosted Saleor MCP are separate live-data capabilities; neither is used by app-java-v3.",
         "Schema-only GraphQL MCP must consume this repository's pinned SDL if used; never upstream main."
-      ]
+      ],
+      "mcpCapabilities": {
+        "documentationMcp": {
+          "endpoint": "https://docs.saleor.io/mcp",
+          "access": "read-only",
+          "tools": [
+            "search_docs",
+            "get_page",
+            "list_pages",
+            "get_navigation"
+          ],
+          "purpose": "Search and read official documentation only; does not connect to a store or execute GraphQL."
+        },
+        "saleorCloudMcp": {
+          "availability": "Saleor Cloud",
+          "sequence": [
+            "connection_info",
+            "introspect_schema",
+            "run_query",
+            "run_mutation",
+            "run_high_impact_mutation"
+          ],
+          "semantics": {
+            "connection_info": "Call first to establish the connected store and current access/upgrade state.",
+            "introspect_schema": "Inspect the permitted live-store schema before querying or changing data.",
+            "run_query": "Read live data within granted permissions.",
+            "run_mutation": "Write within granted permissions.",
+            "run_high_impact_mutation": "Use the separately governed high-impact operation path."
+          },
+          "safeguards": [
+            "Permission-aware server-side access control",
+            "High-impact approval boundary",
+            "Server-side credential handling",
+            "Activity logging"
+          ],
+          "adoption": "not-used-by-app-java-v3"
+        },
+        "selfHostedSaleorMcp": {
+          "availability": "Self-hosted Saleor",
+          "access": "read-only",
+          "adoption": "not-used-by-app-java-v3"
+        },
+        "schemaOnlyGraphQlMcp": {
+          "purpose": "Offline schema/contract inspection; not a live-store data connection.",
+          "schemaSource": "This repository's pinned Saleor 3.23.43 SDL at saleor/graphql/schema.graphql.",
+          "upstreamMainAllowed": false
+        },
+        "protocolDiscovery": {
+          "authoritativeToolMetadata": "MCP tools/list",
+          "rule": "Do not assume tools or arguments from a stale copy; inspect the connected server's advertised tool metadata."
+        }
+      }
     },
     {
       "id": "saleor-agent-skills",
