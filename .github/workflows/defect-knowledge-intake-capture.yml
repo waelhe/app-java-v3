@@ -14,7 +14,7 @@ permissions: {}
 
 jobs:
   signal:
-    if: \${{ github.event_name != 'issue_comment' || github.event.issue.pull_request }}
+    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request }}
     name: Unprivileged review-event signal
     runs-on: ubuntu-latest
     permissions: {}
