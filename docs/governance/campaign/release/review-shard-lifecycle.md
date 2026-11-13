@@ -19,7 +19,17 @@ v1 cut a NEW set of six shard PRs for every remediation wave: each candidate fix
 
 ## Base-alignment invariant
 
-The verifier requires every shard PR's recorded `base.sha` to equal the candidate's `base.sha`. Both freeze at their last base(-change) event; they were realigned on 2026-11-01 to `1fcb6b87` (the main tip after #785) by re-targeting #787's base. `main` must not move between the shard cuts and verification (nothing else merges to main during the campaign).
+The verifier requires every shard PR's recorded `base.sha` to equal the candidate's `base.sha`. Both freeze at their last base(-change) event.
+
+**Latest measured re-alignment — 2026-11-13:**
+
+- Candidate PR #787 base: `main` at `f92873c947e94c76ed3e7ea211db40a985ea3d63`; candidate head: `88a84aee4d9055215ca346d22be68a33cd393272`.
+- The six permanent review PRs (#806–#811) were re-targeted to that exact base and re-cut from the candidate's current diff. Every shard PR remains open and review-only; no shard PR is merged.
+- The resulting shard path counts are **97 / 98 / 87 / 89 / 98 / 99** (all within the hard 100-file ceiling). The union is **568 distinct paths**: exact one-to-one coverage of the candidate's 568 changed paths, with zero missing paths, zero extra paths and zero overlap.
+- The ten migration paths in the refreshed partitions now follow the candidate's current names, V299–V308. Three paths retained only by the older cuts were removed from the partitions: `docs/METHODOLOGY.md`, `docs/agent-skill.md`, and `.github/workflows/openrewrite-catalog.yml`.
+- Fresh CodeRabbit reviews are required for the new shard heads. The manifest must be written only after the six actual review IDs and states are available; do not reuse review IDs from the superseded heads.
+
+The earlier 2026-11-01 alignment to `1fcb6b87` (the then-current main tip after #785) is historical. Before final manifest verification, the candidate and all listed shards must share the same frozen base SHA. If `main` advances before verification, repeat the alignment and re-cut only affected shards under the v2 rules.
 
 ## Review quota model (measured)
 
