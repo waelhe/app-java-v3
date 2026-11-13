@@ -6,6 +6,7 @@
     ".ci/defect_knowledge_intake.py",
     ".github/workflows/ci.yml",
     ".github/workflows/coderabbit-gate.yml",
+    ".github/workflows/copilot-review-834.yml",
     ".github/workflows/defect-knowledge-gate.yml",
     ".github/workflows/defect-knowledge-intake.yml",
     "AGENTS.md",
@@ -88,7 +89,8 @@
     "trusted pull_request_target receipt gate on subsequent PRs",
     "agent bootstrap instructions in AGENTS.md, docs/agent-protocol.md and docs/agent-skill.md",
     "issue_comment webhook concurrent with daily schedule/manual sweep",
-    "D11 fixed-disposition workflow run URL parsing and GitHub Actions lookup"
+    "D11 fixed-disposition workflow run URL parsing and GitHub Actions lookup",
+    "GitHub first-party Copilot Code Review REST endpoint for exact PR #834 head"
   ],
   "siblingSearch": [
     {
@@ -156,6 +158,11 @@
       "name": "test_issue_comment_event_resolves_the_pr_number_from_issue_payload",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
       "verification": "Required CI Build (JDK 25) on the final PR head; pending."
+    },
+    {
+      "name": "Copilot review request workflow exact-head guard",
+      "command": "GitHub Actions workflow copilot-review-834.yml on push to the PR branch",
+      "verification": "The workflow run must report HTTP 201/409 or an explicit eligibility/rate-limit failure for the exact push SHA; a request is not treated as a review until Copilot's review/comment is visible on that same SHA."
     }
   ],
   "findings": [
