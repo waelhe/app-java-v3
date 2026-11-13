@@ -1201,6 +1201,7 @@
                       cap bounds the cached-context memory; LRU closes the
                       least recently used context beyond it. -->
                     <argLine>-Duser.language=en -Duser.country=US
+                        -Djdk.serialFilter=!graphql.com.google.common.collect.**;*
                         -Dspring.test.context.cache.maxSize=12 @{argLine}</argLine>
                     <includes>
                         <include>**/*Test.java</include>
@@ -1222,6 +1223,7 @@
                       Integration workflow forks the same heavy contexts
                       (the measured dockerd cascade hit BOTH workflows). -->
                     <argLine>-Duser.language=en -Duser.country=US
+                        -Djdk.serialFilter=!graphql.com.google.common.collect.**;*
                         -Dspring.test.context.cache.maxSize=12 @{argLine}</argLine>
                     <includes>
                         <include>**/*IT.java</include>
@@ -1271,7 +1273,11 @@
     </build>
     <!-- CI sharded-coverage profile (activated ONLY by -P ci-coverage-merge;
          never active in a normal local or CI build): the 2026-10-14 app-suite
-         sharding fans marketplace-app's 227 failsafe classes across 8 CI jobs,
+         sharding fans marketplace-app's failsafe-selected test files (the
+         count DocumentationNumbersGuardTest derives from the test trees —
+         the same number SYSTEM.md pins and the guard keeps honest; this
+         comment deliberately carries NO hardcoded figure, the 2026-11-06
+         #806 round-5 review caught its 192/195 having drifted) across 8 CI jobs,
          so the module's JaCoCo execution data arrives as 9 partial *.exec
          files (8 IT shards + the unit pass). The merge mojo is the plugin's
          own documented way to combine them (jacoco merge-mojo fileSets —

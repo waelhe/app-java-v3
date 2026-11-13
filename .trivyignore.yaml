@@ -23,29 +23,30 @@
 # 2026-08-21). The runtime-stage OS upgrade now delivers 3.5.8-r0 at build
 # time, so the entry is removed.
 #
-# CVE-2026-102554 (guava DoS via unthrottled memory allocation during
-# deserialization, GHSA-xxph-c9ww-hj94, HIGH, fixed in guava 33.7.2) was
-# measured by the gate on 2026-10-27 on the guava copy SHADED inside
-# graphql-java-25.1.jar. Measured 2026-10-28 from the official Maven Central
-# artifacts (META-INF/maven/com.google.guava/guava/pom.properties inside
-# each downloaded jar): 25.1, 26.0 AND 26.1 all embed guava 32.1.2-jre — no
-# published graphql-java release carries the fix, and 25.1 is NOT upstream's
-# newest release (26.0/26.1 exist). 25.1 is the line the PLATFORM pins:
-# spring-boot-dependencies 4.1.2 declares graphql-java.version=25.1 (and
-# spring-graphql.version=2.0.6), read from the BOM itself. Whether 26.x is
-# compatible with that platform line is NOT verified here and is not
-# assumed. The project's OWN resolved guava is already pinned at the fixed
-# 33.7.2-jre (the parent POM override) — the standalone guava jar in the
-# image is clean, which is why this entry is scoped by `paths` to the ONE
-# jar that embeds the vulnerable copy: a finding on any other package stays
-# reportable. The vulnerable path (Java deserialization of
-# CompactHashMap/CompactHashSet/MapMakerInternalMap from crafted
-# ObjectInputStream streams) is unreachable: the shaded copy serves
-# graphql-java's in-process collections only, and no network surface of the
-# app feeds Java deserialization. Carried time-bounded until a graphql-java
-# release shades guava >= 33.7.2 — on expiry the finding returns and forces
-# a fresh decision (bump if such a release exists, or a renewed,
-# review-visible entry).
+# CVE-2026-102554 (Guava deserialization DoS; fixed upstream in Guava 33.7.2).
+# GraphQL Java shades and relocates selected Guava packages to
+# graphql.com.google.common; its official build.gradle relocates collect.*,
+# and its maintainers confirmed MapMakerInternalMap remains in the jar
+# (graphql-java/graphql-java#4498, correction 2026-11-03).
+# The previous assertion that native deserialization was unreachable from
+# the application network is withdrawn: Spring Data Redis defaults RedisCache
+# and RedisTemplate to JDK native serialization. The production JVM and the
+# Surefire/Failsafe test JVMs now install the same JEP 290 filter:
+#   !graphql.com.google.common.collect.**;*
+# This rejects the relocated Guava collect namespace before its readObject
+# path can execute and allows other classes. The regression test checks the
+# actual relocated MapMakerInternalMap class plus an ordinary String.
+# This is a targeted compensating control, NOT a claim that Java native
+# serialization is generally safe. Typed, allow-listed JSON serialization
+# for Redis values remains a separate migration, not silently mixed into
+# this change. The exception remains limited to this exact artifact path
+# because the scanner cannot infer a JVM runtime serialization filter.
+# Boot 4.1.2 manages graphql-java 25.1; we do not bypass its BOM with an
+# unsupported runtime override. Upstream's Guava fix is merged to GraphQL
+# Java master (#4498) but the managed application artifact still contains
+# the relocated collection classes. Remove this entry after the compatible
+# Spring Boot-managed GraphQL Java release no longer contains them.
+
 vulnerabilities:
   - id: CVE-2026-102554
     # The trivy Java (jar) analyzer matches `paths` against the finding's
@@ -60,15 +61,21 @@ vulnerabilities:
       - "**/graphql-java-25.1.jar"
     expired_at: 2026-12-11
     statement: >-
-      The guava 32.1.2-jre copy SHADED inside graphql-java-25.1.jar (the
-      version spring-boot-dependencies 4.1.2 pins via
-      graphql-java.version=25.1; upstream 26.0/26.1 still embed the same
-      guava 32.1.2-jre, measured from the official Maven Central artifacts)
-      cannot be reached by any version bump the project controls, the
-      project's own resolved guava is already the fixed 33.7.2-jre, and the
-      deserialization path the CVE rides (ObjectInputStream on
-      CompactHashMap/CompactHashSet/MapMakerInternalMap) is unreachable
-      through the app's network surfaces. Scoped to this jar's path so no
-      other package's finding is masked. Remove when a graphql-java release
-      shades guava >= 33.7.2.
-
+      The graphql-java-25.1 JAR embeds Guava 32.1.2-jre classes shaded and
+      relocated to graphql.com.google.common.collect. The upstream GraphQL
+      Java maintainer confirmed MapMakerInternalMap remains in the artifact
+      (graphql-java/graphql-java#4498, correction 2026-11-03). Because this
+      application uses Spring Data Redis JDK native serialization by default,
+      the earlier claim that the deserialization path was unreachable from
+      the application is withdrawn. The production JVM and Surefire/Failsafe
+      test JVMs now install the JEP 290 process-wide filter
+      !graphql.com.google.common.collect.**;* which rejects that relocated
+      collection namespace before its readObject method runs while allowing
+      other classes. JavaSerializationFilterTest loads the actual relocated
+      MapMakerInternalMap class and verifies rejection while permitting
+      String. This is a targeted compensating control, not a claim that JDK
+      native serialization is generally safe; typed JSON serialization with
+      explicit type allow-lists remains a separate cache migration. The
+      exception remains scoped to this exact JAR because Trivy cannot model
+      the runtime JVM filter. Remove it when the Spring Boot-managed
+      GraphQL Java artifact no longer contains the affected classes.
