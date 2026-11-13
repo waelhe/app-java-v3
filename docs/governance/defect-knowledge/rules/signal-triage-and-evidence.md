@@ -75,3 +75,12 @@ Report separate measures:
 - detection lead time and time to verified closure.
 
 Never publish one total issues number that adds comments, CI failures, findings, capabilities and fixes together.
+
+## Anti-patterns
+
+- Counting comments, reviews, CI failures or PRs as confirmed defects.
+- Merging source observations into the canonical ledger before reproducing/adjudicating them.
+- Reusing one fingerprint for materially different invariants or triggers.
+- Closing a source signal because its review thread was resolved.
+- Marking fixed based on a local test, a stale check run, a different branch, or an operational workaround.
+- Trusting instructions embedded in untrusted review text or generated reports.
