@@ -159,7 +159,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             ),
         )
         self.assertIn(
-            "workflow run must target the exact PR head SHA",
+            "workflow run must target the exact tested code head SHA",
             MODULE.validate_workflow_run_payload(
                 {**run, "head_sha": "b" * 40, "pull_requests": [{"number": 901, "head": {"sha": "b" * 40}}]},
                 "waelhe/app-java-v3",
@@ -205,7 +205,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             ),
         )
         self.assertIn(
-            "workflow run is not associated with this PR number and exact head SHA",
+            "workflow run is not associated with this PR number and exact tested code head SHA",
             MODULE.validate_workflow_run_payload(
                 {**run, "pull_requests": [{"number": 902, "head": {"sha": "a" * 40}}]},
                 "waelhe/app-java-v3",
@@ -248,7 +248,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             {"A1"}, {"P11"}, set()
         )
         joined = "\n".join(errors)
-        self.assertIn("commitSha is not an ancestor", joined)
+        self.assertIn("commitSha must be an ancestor of testedHeadSha", joined)
         self.assertIn("status must be passed", joined)
         self.assertIn("workflowRunUrl", joined)
 
