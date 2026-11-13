@@ -25,8 +25,14 @@ permissions:
   pull-requests: read
   issues: write
 
+# Single-writer queue: issue_comment payloads carry the PR under
+# github.event.issue.number, not github.event.pull_request.number. A per-PR
+# group would therefore race with review events/scheduled sweeps and could
+# create two intake issues before either run sees the other's issue. The
+# collector always fetches the complete source snapshot; if GitHub replaces
+# a pending run under concurrency limits, the daily sweep recovers it.
 concurrency:
-  group: defect-knowledge-intake-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  group: defect-knowledge-intake-single-writer
   cancel-in-progress: false
 
 jobs:
