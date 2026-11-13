@@ -30,10 +30,40 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
         ))
         self.assertTrue(MODULE.is_code_or_runtime_path(".github/workflows/ci.yml"))
         self.assertTrue(MODULE.is_code_or_runtime_path(".ci/check_defect_knowledge.py"))
+        self.assertTrue(MODULE.is_code_or_runtime_path("mvnw"))
+        self.assertTrue(MODULE.is_code_or_runtime_path("mvnw.cmd"))
         self.assertTrue(MODULE.is_code_or_runtime_path("pom.xml"))
         self.assertFalse(MODULE.is_code_or_runtime_path(
             "docs/governance/defect-knowledge/evidence-ledger.md"
         ))
+
+    def test_git_diff_name_only_preserves_non_ascii_paths(self):
+        from types import SimpleNamespace
+        output = b"marketplace-app/src/main/java/\\xd9\\x85\\xd8\\xab\\xd8\\xa7\\xd9\\x84.java\\0mvnw\\0"
+        with unittest.mock.patch.object(
+            MODULE.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=output, stderr=b""),
+        ) as run:
+            changed = MODULE.git_diff_name_only("a" * 40, "b" * 40)
+        self.assertEqual(changed, [
+            "marketplace-app/src/main/java/مثال.java",
+            "mvnw",
+        ])
+        self.assertIn("--name-only", run.call_args.args[0])
+        self.assertIn("-z", run.call_args.args[0])
+
+    def test_docs_only_receipt_mutation_is_still_validated(self):
+        receipt_path = "docs/governance/defect-knowledge/change-records/PR-901.json"
+        with (
+            unittest.mock.patch.object(MODULE, "git_diff_name_only", return_value=[receipt_path]),
+            unittest.mock.patch.object(MODULE, "is_code_or_runtime_path", return_value=False),
+            unittest.mock.patch.object(MODULE, "load_json_at_head", return_value={}),
+            unittest.mock.patch.object(MODULE, "git_show", return_value=""),
+            unittest.mock.patch.object(MODULE, "validate_receipt", return_value=["invalid receipt"]),
+            unittest.mock.patch.object(MODULE, "validate_global_fingerprints", return_value=[]),
+        ):
+            with self.assertRaisesRegex(MODULE.GateError, "invalid receipt"):
+                MODULE.validate_pr(901, "2026-11-13T00:00:00Z", "a" * 40, "b" * 40)
 
     def test_rule_pattern_and_case_ids_are_derived_from_the_documents(self):
         rules = MODULE.extract_rule_ids(
@@ -210,7 +240,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
                 "classification": "confirmed_defect",
                 "severity": "high",
                 "status": "fixed",
-                "fix": {"commitSha": "b" * 40, "regressionTest": "two-thread race", "verification": {"status": "pending", "workflowRunUrl": ""}},
+                "fix": {"commitSha": "b" * 40, "regressionTest": "two-thread race", "verification": {"status": "pending", "testedHeadSha": "a" * 40, "workflowRunUrl": ""}},
             }],
         }
         errors = MODULE.validate_receipt(
@@ -221,6 +251,107 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
         self.assertIn("commitSha is not an ancestor", joined)
         self.assertIn("status must be passed", joined)
         self.assertIn("workflowRunUrl", joined)
+
+    def test_fixed_claim_accepts_tested_code_head_when_only_receipt_changes_after_it(self):
+        from unittest.mock import patch
+
+        pr_number = 901
+        tested_head = "a" * 40
+        final_head = "c" * 40
+        receipt_path = f"{MODULE.RECEIPT_DIR}/PR-{pr_number}.json"
+        scenario = "one review finding is fixed before receipt evidence is finalized"
+        invariant = "fixed requires a reproducible regression test on code-bearing commit"
+        domain = "governance.defect-knowledge"
+        run = {
+            "id": 12345, "status": "completed", "conclusion": "success",
+            "head_sha": tested_head, "event": "pull_request", "name": "CI",
+            "path": ".github/workflows/ci.yml",
+            "repository": {"full_name": "waelhe/app-java-v3"},
+            "pull_requests": [{"number": pr_number, "head": {"sha": tested_head}}],
+        }
+        record = {
+            "schemaVersion": 1, "pullRequest": pr_number,
+            "governingFiles": ["docs/governance/defect-knowledge/change-protocol.md"],
+            "rulesTriggered": ["A1"], "patternsReviewed": ["P1"],
+            "historicalCasesReviewed": ["E-01"], "invariants": [invariant],
+            "doors": ["trusted-base receipt validation"],
+            "siblingSearch": [{"family": "receipt verification", "pathsSearched": [".ci/"], "result": "validator family checked"}],
+            "tests": [{"name": "D11 regression", "command": "python3 -m unittest", "verification": "CI"}],
+            "findings": [{
+                "key": "D11-TEST", "domain": domain, "scenario": scenario,
+                "invariant": invariant,
+                "fingerprint": MODULE.make_fingerprint(domain, invariant, scenario),
+                "sourceUrls": ["https://github.com/waelhe/app-java-v3/pull/834"],
+                "classification": "test_gap", "severity": "high", "status": "fixed",
+                "fix": {
+                    "commitSha": tested_head, "regressionTest": "D11 regression",
+                    "verification": {
+                        "status": "passed", "testedHeadSha": tested_head,
+                        "workflowRunUrl": "https://github.com/waelhe/app-java-v3/actions/runs/12345",
+                    },
+                },
+            }],
+        }
+        with (
+            patch.object(MODULE, "is_ancestor", return_value=True),
+            patch.object(MODULE, "git_diff_name_only", return_value=[receipt_path]),
+            patch.object(MODULE, "fetch_workflow_run", return_value=run),
+        ):
+            errors = MODULE.validate_receipt(
+                record, pr_number, final_head, "waelhe/app-java-v3", "token",
+                {"A1"}, {"P1"}, {"E-01"},
+            )
+        self.assertEqual(errors, [])
+
+        with (
+            patch.object(MODULE, "is_ancestor", return_value=True),
+            patch.object(MODULE, "git_diff_name_only", return_value=["marketplace-app/src/main/java/changed.java"]),
+            patch.object(MODULE, "fetch_workflow_run", return_value=run),
+        ):
+            errors = MODULE.validate_receipt(
+                record, pr_number, final_head, "waelhe/app-java-v3", "token",
+                {"A1"}, {"P1"}, {"E-01"},
+            )
+        self.assertTrue(any("only the same PR receipt may change" in item for item in errors))
+
+    def test_superseded_finding_requires_a_resolvable_successor(self):
+        scenario = "a recorded cause has been replaced by a successor"
+        invariant = "superseded findings retain a traceable successor"
+        domain = "governance.defect-knowledge"
+        finding = {
+            "key": "OLD", "domain": domain, "scenario": scenario, "invariant": invariant,
+            "fingerprint": MODULE.make_fingerprint(domain, invariant, scenario),
+            "sourceUrls": ["https://github.com/waelhe/app-java-v3/pull/834"],
+            "classification": "decision_gap", "severity": "medium", "status": "superseded",
+        }
+        record = {
+            "schemaVersion": 1, "pullRequest": 902,
+            "governingFiles": ["docs/governance/defect-knowledge/change-records/README.md"],
+            "rulesTriggered": ["A1"], "patternsReviewed": ["P1"],
+            "historicalCasesReviewed": [], "noApplicablePatternRationale": "",
+            "invariants": ["successor reference must resolve"], "doors": ["receipt"],
+            "siblingSearch": [{"family": "receipt status", "pathsSearched": [".ci/"], "result": "checked"}],
+            "tests": [{"name": "status test", "command": "python3 -m unittest", "verification": "CI"}],
+            "findings": [finding],
+        }
+        errors = MODULE.validate_receipt(
+            record, 902, "a" * 40, "waelhe/app-java-v3", "token",
+            {"A1"}, {"P1"}, set(),
+        )
+        self.assertTrue(any("supersededBy" in item for item in errors))
+        finding["supersededBy"] = "NEXT"
+        record["findings"].append({
+            "key": "NEXT", "domain": domain, "scenario": "successor",
+            "invariant": "different causal scope",
+            "fingerprint": MODULE.make_fingerprint(domain, "different causal scope", "successor"),
+            "sourceUrls": ["https://github.com/waelhe/app-java-v3/pull/834"],
+            "classification": "decision_gap", "severity": "medium", "status": "open",
+        })
+        errors = MODULE.validate_receipt(
+            record, 902, "a" * 40, "waelhe/app-java-v3", "token",
+            {"A1"}, {"P1"}, set(),
+        )
+        self.assertFalse(any("supersededBy" in item for item in errors))
 
 
 if __name__ == "__main__":

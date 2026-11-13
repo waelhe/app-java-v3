@@ -52,6 +52,30 @@ def git_show(revision: str, path: str) -> str:
     return git("show", f"{revision}:{path}")
 
 
+def git_diff_name_only(base_sha: str, head_sha: str) -> list[str]:
+    """Return Git paths without line parsing or lossy text decoding."""
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "-z", f"{base_sha}...{head_sha}"],
+        cwd=Path.cwd(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise GateError(f"git diff --name-only failed: {os.fsdecode(result.stderr).strip()}")
+    return [os.fsdecode(path) for path in result.stdout.split(b"\\0") if path]
+
+
+def is_ancestor(ancestor_sha: str, descendant_sha: str) -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor_sha, descendant_sha],
+        cwd=Path.cwd(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    ).returncode == 0
+
+
 def normalize_fingerprint_part(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).casefold()
     return " ".join(normalized.split())
@@ -69,6 +93,8 @@ def make_fingerprint(domain: str, invariant: str, scenario: str) -> str:
 
 
 def is_code_or_runtime_path(path: str) -> bool:
+    if path in {"mvnw", "mvnw.cmd", "gradlew", "gradlew.bat"}:
+        return True
     if path.startswith(CODE_PREFIXES):
         return True
     if path in ROOT_POM_NAMES or path.endswith("/pom.xml"):
@@ -155,7 +181,7 @@ def validate_workflow_run_payload(
     if payload.get("conclusion") != "success":
         errors.append("workflow run conclusion must be success")
     if payload.get("head_sha") != expected_head_sha:
-        errors.append("workflow run must target the exact PR head SHA")
+        errors.append("workflow run must target the exact tested code head SHA")
     if payload.get("event") != "pull_request":
         errors.append("workflow run must be triggered by pull_request")
     workflow_paths = {
@@ -176,7 +202,7 @@ def validate_workflow_run_payload(
         for item in pull_requests if isinstance(item, dict)
     ) if isinstance(pull_requests, list) else False
     if not matching_pr:
-        errors.append("workflow run is not associated with this PR number and exact head SHA")
+        errors.append("workflow run is not associated with this PR number and exact tested code head SHA")
     if payload.get("id") is None:
         errors.append("workflow run response has no id")
     return errors
@@ -277,6 +303,25 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
         require(finding.get("severity") in allowed_severities,
                 f"{prefix}.severity must be one of {sorted(allowed_severities)}")
 
+        if finding.get("status") == "superseded":
+            successor = finding.get("supersededBy")
+            require(isinstance(successor, str) and bool(successor.strip()),
+                    f"{prefix}.supersededBy must point to a successor finding or decision")
+            if isinstance(successor, str) and successor.strip():
+                receipt_keys = {
+                    str(item.get("key", "")).strip()
+                    for item in findings if isinstance(item, dict) and item is not finding
+                } if isinstance(findings, list) else set()
+                key_reference = successor in receipt_keys
+                url_reference = bool(re.fullmatch(
+                    r"https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/[0-9]+(?:#[A-Za-z0-9_.-]+)?",
+                    successor,
+                ))
+                require(key_reference or url_reference,
+                        f"{prefix}.supersededBy must resolve to another receipt finding key or a GitHub issue/PR URL")
+                require(successor != str(finding.get("key", "")),
+                        f"{prefix}.supersededBy must not point to the finding itself")
+
         urls = finding.get("sourceUrls", [])
         require(isinstance(urls, list) and bool(urls) and all(
             isinstance(url, str) and url.startswith("https://github.com/") for url in urls
@@ -304,12 +349,6 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                 commit_sha = str(fix.get("commitSha", ""))
                 require(bool(re.fullmatch(r"[0-9a-f]{40}", commit_sha)),
                         f"{prefix}.fix.commitSha must be a full commit SHA")
-                if re.fullmatch(r"[0-9a-f]{40}", commit_sha):
-                    reachable = subprocess.run(
-                        ["git", "merge-base", "--is-ancestor", commit_sha, head_sha],
-                        cwd=Path.cwd(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
-                    ).returncode == 0
-                    require(reachable, f"{prefix}.fix.commitSha is not an ancestor of the PR head")
                 regression_test = str(fix.get("regressionTest", "")).strip()
                 require(bool(regression_test), f"{prefix}.fix.regressionTest must name the test that proves this finding is fixed")
                 test_names = {
@@ -324,14 +363,31 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                     passed = verification.get("status") == "passed"
                     require(passed,
                             f"{prefix}.fix.verification.status must be passed before marking fixed")
+                    tested_head_sha = str(verification.get("testedHeadSha", ""))
+                    tested_sha_valid = bool(re.fullmatch(r"[0-9a-f]{40}", tested_head_sha))
+                    require(tested_sha_valid,
+                            f"{prefix}.fix.verification.testedHeadSha must be a full code-bearing commit SHA")
+                    if re.fullmatch(r"[0-9a-f]{40}", commit_sha) and tested_sha_valid:
+                        require(is_ancestor(commit_sha, tested_head_sha),
+                                f"{prefix}.fix.commitSha must be an ancestor of testedHeadSha")
+                        tested_is_ancestor = is_ancestor(tested_head_sha, head_sha)
+                        require(tested_is_ancestor,
+                                f"{prefix}.fix.verification.testedHeadSha must be an ancestor of the final PR head")
+                        if tested_is_ancestor and tested_head_sha != head_sha:
+                            later_paths = git_diff_name_only(tested_head_sha, head_sha)
+                            receipt_path = f"{RECEIPT_DIR}/PR-{pr_number}.json"
+                            require(set(later_paths) == {receipt_path},
+                                    f"{prefix}.fix.verification: only the same PR receipt may change after testedHeadSha; found {later_paths}")
                     workflow_url = str(verification.get("workflowRunUrl", ""))
                     require(bool(workflow_url.strip()),
                             f"{prefix}.fix.verification.workflowRunUrl is required")
-                    if passed:
+                    if passed and tested_sha_valid:
                         try:
                             run_id = workflow_run_id_from_url(workflow_url, repository)
                             payload = fetch_workflow_run(run_id, repository, github_token)
-                            for run_error in validate_workflow_run_payload(payload, repository, head_sha, pr_number):
+                            for run_error in validate_workflow_run_payload(
+                                payload, repository, tested_head_sha, pr_number
+                            ):
                                 errors.append(f"{prefix}.fix.verification: {run_error}")
                         except GateError as exc:
                             errors.append(f"{prefix}.fix.verification: {exc}")
@@ -390,18 +446,21 @@ def validate_pr(pr_number: int, created_at: str, base_sha: str, head_sha: str) -
         print(f"DEFECT-KNOWLEDGE: PR #{pr_number} predates rollout ({ROLLOUT_AT}); grandfathered.")
         return 0
 
-    changed = git("diff", "--name-only", f"{base_sha}...{head_sha}").splitlines()
+    changed = git_diff_name_only(base_sha, head_sha)
     relevant = [path for path in changed if is_code_or_runtime_path(path)]
-    if not relevant:
-        print(f"DEFECT-KNOWLEDGE: PR #{pr_number} has no code/runtime paths; receipt not required.")
+    receipt_path = f"{RECEIPT_DIR}/PR-{pr_number}.json"
+    receipt_changed = receipt_path in changed
+
+    if not relevant and not receipt_changed:
+        print(f"DEFECT-KNOWLEDGE: PR #{pr_number} has no code/runtime or receipt changes; receipt not required.")
         return 0
 
-    receipt_path = f"{RECEIPT_DIR}/PR-{pr_number}.json"
-    if receipt_path not in changed:
+    if relevant and not receipt_changed:
         raise GateError(
             f"PR #{pr_number} changes code/runtime paths but does not add/update {receipt_path}. "
             "Follow change-protocol.md and add the structured defect-knowledge receipt."
         )
+    # Docs-only changes to an existing receipt still pass through full validation.
 
     record = load_json_at_head(head_sha, receipt_path)
     rulebook = git_show(head_sha, RULEBOOK)
