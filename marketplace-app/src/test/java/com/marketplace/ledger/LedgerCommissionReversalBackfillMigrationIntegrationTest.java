@@ -82,6 +82,54 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
     @Autowired
     private DataSource dataSource;
 
+    /** The runtime twin's own seam (CodeRabbit round 8's post-stop pass). */
+    @Autowired
+    private com.marketplace.ledger.CommissionReversalReconciliation reconciliation;
+
+    @Test
+    void theRuntimeSweep_convergesTheDeployOverlapStragglers() {
+        // The deploy-overlap scenario V298's snapshot cannot see: the OLD
+        // deployment's refund listener wrote the PRE-A2 shape AFTER the new
+        // deployment's Flyway pass ran — a deserving refund the one-time
+        // migration missed forever (its publication completed under the
+        // pre-fix code, so the registry never replays it). The scheduled
+        // sweep's own seam converges it after the old version is gone.
+        UUID consumerId = UUID.randomUUID();
+        UUID stragglerProvider = UUID.randomUUID();
+        UUID stragglerIntent = UUID.randomUUID();
+
+        seedProviderWorld(stragglerProvider, consumerId, stragglerIntent);
+        insertEntry(stragglerProvider, stragglerIntent, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(stragglerProvider, commissionSource(stragglerIntent), "COMMISSION_DEBIT", COMMISSION_CENTS);
+        insertEntry(stragglerProvider, refundSource(stragglerIntent), "REFUND_DEBIT", PRICE_CENTS);
+        seedBalance(stragglerProvider, PRICE_CENTS - COMMISSION_CENTS - PRICE_CENTS); // minus the commission
+
+        // The post-stop pass: ONE convergence run answers the one straggler.
+        int converged = reconciliation.reconcileNow();
+        assertThat(converged)
+                .as("the sweep created exactly the one missing reversal row")
+                .isEqualTo(1);
+        assertThat(countEntries(reversalSource(stragglerIntent), "COMMISSION_REVERSAL_CREDIT"))
+                .as("the straggler gains its mirror row — the posted commission's own amount")
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT amount_cents FROM ledger_entries WHERE source_id = ?",
+                Long.class, reversalSource(stragglerIntent)))
+                .isEqualTo(COMMISSION_CENTS);
+        assertThat(balanceOf(stragglerProvider))
+                .as("the straggler's balance returns to the honest zero")
+                .isEqualTo(0L);
+
+        // A converged world answers zero and moves nothing — the sweep's
+        // own idle signal (every later scheduled run is a no-op).
+        long entriesBefore = totalEntries();
+        assertThat(reconciliation.reconcileNow())
+                .as("the second sweep finds nothing to converge")
+                .isZero();
+        assertThat(totalEntries()).isEqualTo(entriesBefore);
+        assertThat(balanceOf(stragglerProvider)).isZero();
+    }
+
     @Test
     void v298_backfillsOnlyTheDeservingPreFixRefunds_andIsIdempotent() throws Exception {
         // Three INDEPENDENT providers — one per case: the balance is keyed
