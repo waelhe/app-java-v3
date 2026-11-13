@@ -11,7 +11,7 @@
 2. Persist a stable event/operation identity and a durable receipt/inbox before acknowledging work that cannot safely be retried from the source.
 3. Events can be early, late, duplicated and out of order. A stale event must not move a completed/terminal state backwards.
 4. Do not infer a prerequisite's completion merely from a missing row or from a sibling event. Model “not happened yet”, “happened with zero value”, “failed”, and “unknown” as distinct states where the domain requires them.
-5. Keep listener transaction ownership explicit. An AFTER_COMMIT publication, retryable listener or nested REQUIRED transaction changes the failure model; decide per path and test it.
+5. Keep listener transaction ownership explicit. An AFTER_COMMIT publication, retryable listener or nested REQUIRED transaction changes the failure model; decide per path and test it. Apply rulebook B2: retryable boundaries must not join the carrier `REQUIRED` transaction, and Modulith events must publish AFTER_COMMIT through `@ApplicationModuleListener`.
 6. Do not perform slow provider/network I/O while holding a database transaction or row lock unless a measured consistency requirement justifies it.
 7. A 2xx response means the event was processed or durably accepted—not silently discarded. Return retryable failure when no durable acceptance exists.
 8. Bound synchronous webhook work by the provider's documented contract. If heavy work is queued, acknowledge only after durable enqueue. Do not copy Saleor's timeout or retry numbers to other providers.
