@@ -16,7 +16,7 @@
     "findingCount": "Only individually adjudicated records in the 2026-11-10 review are counted as 34 findings; the 2026-11-12 follow-up adds W7 and W8.",
     "commentCount": "CodeRabbit review comments, review submissions and threads are signals, not defect counts.",
     "duplicatePolicy": "Repeated review comments or repeated scans are not new findings unless the triggering invariant or root cause is materially distinct.",
-    "statusPolicy": "fixed-main means the fix commit is an ancestor of main@445f421d; fix-in-flight means an open repair PR exists; open means no linked repair was verified; suspected remains unconfirmed."
+    "statusPolicy": "fixed-main means the repair commit is reachable from the latest measured main SHA in baseline.main; addressed-on-open-pr means review threads were resolved on an open PR but the fix is not yet on main; candidate-fix-pending-validation means the correction exists only on the current PR candidate and still needs passing CI/review."
   },
   "sources": [
     {
@@ -144,6 +144,17 @@
         }
       },
       "interpretation": "These are distinct CodeRabbit review fingerprints raised while fixing earlier findings. They are repair refinements/secondary defects, not automatically 19 new independent product defects; each has a linked E-case and a branch-aware disposition."
+    },
+    {
+      "id": "ADV-IMPLEMENTATION-2026-11-13",
+      "kind": "Adversarial review of defect-knowledge intake and evidence gate",
+      "url": "https://github.com/waelhe/app-java-v3/pull/834",
+      "measuredHead": "985bac53fe6c88920ffc943a7cf90f36b589702a",
+      "findings": [
+        "G8",
+        "G9"
+      ],
+      "interpretation": "Two confirmed defects were found in the new governance implementation itself: intake issue creation could race between issue_comment and a scheduled sweep, and fixed dispositions trusted an unverified workflow-run URL. Both corrections are in the current PR branch; final closure requires CI proof."
     }
   ],
   "findings": [
@@ -629,6 +640,33 @@
       "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/826",
       "repairPr": null,
       "summary": "CodeRabbit Gate poll accepted an empty-body approval while exact processed-file coverage rejected the same review, creating a deadlock after threads were resolved."
+    },
+    {
+      "id": "G8",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P4",
+        "P12"
+      ],
+      "sourceReport": "ADV-IMPLEMENTATION-2026-11-13",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/834",
+      "repairPr": 834,
+      "summary": "Issue-comment intake and scheduled sweeps could execute concurrently under different concurrency keys and create duplicate intake issues for one PR."
+    },
+    {
+      "id": "G9",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P12"
+      ],
+      "sourceReport": "ADV-IMPLEMENTATION-2026-11-13",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/834",
+      "repairPr": 834,
+      "summary": "D11 trusted a self-reported passed status and any github.com URL; it did not resolve the Actions run, verify completed/success, verify repository, or bind run head SHA to current PR head."
     }
   ],
   "separateHistoricalCases": [
@@ -813,6 +851,18 @@
       "source": "https://github.com/waelhe/app-java-v3/pull/823",
       "status": "addressed-on-open-pr",
       "summary": "fix-plan summary and counts match the detailed owner-gate records"
+    },
+    {
+      "id": "E-50",
+      "source": "https://github.com/waelhe/app-java-v3/pull/834",
+      "status": "candidate-fix-pending-validation",
+      "summary": "Single-writer review intake prevents issue_comment and scheduled-sweep concurrency from creating duplicate intake issues."
+    },
+    {
+      "id": "E-51",
+      "source": "https://github.com/waelhe/app-java-v3/pull/834",
+      "status": "candidate-fix-pending-validation",
+      "summary": "D11 resolves the workflow run via the GitHub Actions API and verifies completed/success plus exact PR-head SHA before fixed can pass."
     }
   ],
   "capabilityAndDecisionGaps": [
@@ -889,7 +939,8 @@
     "The 75 PR entries created after #746 were inventoried from GitHub PR metadata and available descriptions; detailed diffs/review evidence were concentrated on PRs that report or carry defects, remediations, review shards, or governance changes. Dependency/OpenRewrite-only PRs were classified by their purpose and description, not treated as defect findings.",
     "The 682 CodeRabbit comments on #806–#811 are individual review comments with distinct comment fingerprints in that snapshot, not 682 confirmed unique defects. A single finding can generate multiple comments/review iterations; some comments are test-shard artifacts, nits, false positives, or repeated observations.",
     "The review finding registry is a reconciliation index for the named reports. It does not claim a complete historical diff audit of every commit in all 75 PRs.",
-    "The Nov 13 repair-PR review sweep added 19 distinct CodeRabbit fingerprints across #819/#821/#822/#823/#829. All 19 review threads were resolved at measurement; only #829 had merged, so its E-33..E-42 cases are fixed on main while the other cases remain attached to open PRs."
+    "The Nov 13 repair-PR review sweep added 19 distinct CodeRabbit fingerprints across #819/#821/#822/#823/#829. All 19 review threads were resolved at measurement; only #829 had merged, so its E-33..E-42 cases are fixed on main while the other cases remain attached to open PRs.",
+    "The Nov 13 adversarial review of the governance implementation itself found G8 and G9; both fixes are on PR #834 only and remain open until the final-head CI evidence passes and an independent review assesses the revised implementation."
   ],
   "repairReviewReconciliations": [
     {
