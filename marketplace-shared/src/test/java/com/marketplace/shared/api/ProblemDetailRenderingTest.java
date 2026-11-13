@@ -148,6 +148,6 @@ class ProblemDetailRenderingTest {
         assertThat(ProblemDetailRendering.resolve(
                 oneEntrySource(), "error.VAL-001.type-mismatch-detail", "the floor is ignored",
                 "purpose", value, "TimeUnit"))
-                .isEqualTo("قيمة غير صالحة '{0,number}' للمعامل 'purpose' — النوع المتوقع 'TimeUnit'");
+                .isEqualTo("قيمة غير صالحة ''{0,number}' للمعامل 'purpose' — النوع المتوقع 'TimeUnit'");
     }
 }
