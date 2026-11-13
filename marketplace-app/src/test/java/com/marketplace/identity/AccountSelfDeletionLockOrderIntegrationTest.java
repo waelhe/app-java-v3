@@ -220,7 +220,7 @@ class AccountSelfDeletionLockOrderIntegrationTest {
                 // moderation IT builds its worker-thread tokens; the
                 // bystander admin is the acting hand (an administrator
                 // disabling ANOTHER administrator, the finding's shape).
-                runAsAdmin(bystanderAdmin, () -> userService.updateUserStatus(
+                runAs(bystanderAdmin, () -> userService.updateUserStatus(
                         disabledAdminId, "DISABLED", "lock-order IT disable", "it-lock-order"));
                 return "disabled";
             });
@@ -257,13 +257,15 @@ class AccountSelfDeletionLockOrderIntegrationTest {
     }
 
     /**
-     * The worker thread's ADMIN security context — method security is
-     * ThreadLocal, so the disabler thread carries its own token (built the
+     * The worker thread's security context — method security is
+     * ThreadLocal, so each worker carries its own token (built the
      * manual-shape way the reviews moderation IT builds its
      * JwtAuthenticationToken), cleared after the operation exactly as
-     * production request scoping does.
+     * production request scoping does. The self-deletion thread carries
+     * the ACCOUNT'S OWN identity (the production request shape); the
+     * disable thread carries the acting administrator's.
      */
-    private void runAsAdmin(String actingSubject, Runnable operation) {
+    private void runAs(String actingSubject, Runnable operation) {
         Instant now = Instant.now();
         Jwt jwt = Jwt.withTokenValue("lock-order-it-token")
                 .header("alg", "none")
