@@ -36,7 +36,7 @@ A finding is not a raw review comment. It is an independently verified causal me
 - `status`: fixed, open, registered, not_reproducible or superseded.
 - `sourceUrls`: original GitHub evidence URLs.
 - `caseId`: optional existing E-case.
-- `fix`: required when status=fixed; includes a full commit SHA and a passed GitHub workflow run URL.
+- `fix`: required when status=fixed; includes a full commit SHA and a GitHub Actions run URL. D11 resolves the URL through the repository Actions API and requires a completed `success` run from `CI` or `Integration Test`, triggered by `pull_request`, on this exact PR head SHA and repository.
 - `decision`: required when status=registered; includes owner and ADR/decision link.
 - `reproductionEvidence`: required when status=not_reproducible.
 
@@ -45,7 +45,7 @@ Repeated comments/exports on the same causal mechanism share one fingerprint. A 
 ## Status semantics
 
 - `open`: valid signal, investigation/repair incomplete.
-- `fixed`: the repair commit is an ancestor of this PR head and a named regression test plus GitHub workflow run passed.
+- `fixed`: the repair commit is an ancestor of this PR head and a named regression test plus a GitHub Actions `CI` or `Integration Test` run is confirmed through the API as completed/success on this exact PR head.
 - `registered`: an explicit owner decision/ADR/accepted-risk record governs the remaining difference.
 - `not_reproducible`: direct reproduction attempt and evidence show the claim does not hold.
 - `superseded`: replaced by another finding or design, with a pointer to the successor.
