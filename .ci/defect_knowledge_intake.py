@@ -203,10 +203,6 @@ def intake_issue_comments(repo: str, issue_number: int, token: str) -> list[dict
     return api_pages(f"/repos/{repo}/issues/{issue_number}/comments", token)
 
 
-def intake_issue_comments(repo: str, issue_number: int, token: str) -> list[dict[str, Any]]:
-    return api_pages(f"/repos/{repo}/issues/{issue_number}/comments", token)
-
-
 def existing_item_ids(comments: list[dict[str, Any]]) -> set[str]:
     known: set[str] = set()
     for comment in comments:
