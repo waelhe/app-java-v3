@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import unittest.mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check_defect_knowledge.py"
 SPEC = importlib.util.spec_from_file_location("check_defect_knowledge", SCRIPT)
