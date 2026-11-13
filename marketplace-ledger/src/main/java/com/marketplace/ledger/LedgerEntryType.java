@@ -43,7 +43,7 @@ public enum LedgerEntryType {
      * disclosure discipline is the commission debit's own (D2: the
      * ledger's debit entries are the per-transaction disclosure of
      * record — the seller's statement reads them). The database's
-     * closed set widens with this member through the V298/V299 pair
+     * closed set widens with this member through the V299/V300 pair
      * (the same V103/V104 + V290/V291 house shape: DROP/ADD NOT VALID,
      * then the VALIDATE under its own SHARE UPDATE EXCLUSIVE scan).
      */
