@@ -62,6 +62,14 @@ The official authentication model distinguishes two identities:
 
 The permission levels are **Read**, **Edit**, and **Full**. Everyday mutations require Edit; high-impact mutations require Full. A requested OAuth scope can narrow existing access but cannot widen it. Access-key changes and revocation take effect on the next request; a connection can be revoked. MCP clients do not receive Saleor tokens.
 
+The tool argument and response contract is also explicit:
+
+- `introspect_schema` actions are `search`, `describe_type`, `list_operations`, and `describe_operation`; action-dependent fields are required rather than guessed.
+- `run_query` takes a GraphQL document containing only query operations, with optional variables and operation name.
+- `run_mutation` and `run_high_impact_mutation` take a plain-language `summary`, a mutation-only GraphQL document, and optional variables/operation name. The high-impact tool accepts only a document containing at least one high-impact mutation.
+- The resource `saleor://schema/graphql` is the SDL for the connected environment. GraphQL tool responses are returned unchanged as `{ data, errors }`, both in text and `structuredContent`; inspect the mutation's own error field.
+- The hosted app is documented for Saleor Cloud 3.23 or later. Some protected areas (including staff, apps, webhooks, customers, checkouts, metadata, channels and shop settings) cannot be changed through the MCP and must use the Dashboard.
+
 Operational safeguards documented by Saleor:
 
 1. Call `connection_info` before work and after a permission change. Request a permission upgrade only after the user explicitly agrees.
