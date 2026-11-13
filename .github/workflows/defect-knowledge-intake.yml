@@ -61,6 +61,10 @@ jobs:
             python3 .ci/defect_knowledge_intake.py --pr-number "$PR_NUMBER"
           elif [ -n "${INCLUDE_CLOSED_SINCE:-}" ]; then
             python3 .ci/defect_knowledge_intake.py --include-closed-since "$INCLUDE_CLOSED_SINCE"
+          elif [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            # Recover dropped/replaced pending event runs for EVERY PR created
+            # since rollout, including PRs subsequently closed.
+            python3 .ci/defect_knowledge_intake.py --include-closed-since "2026-11-13"
           else
             python3 .ci/defect_knowledge_intake.py --sweep-open
           fi
