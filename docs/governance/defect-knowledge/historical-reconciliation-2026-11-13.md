@@ -88,3 +88,16 @@ That is **19 distinct CodeRabbit review fingerprints across 19 threads**. They a
 - **E-49:** derive the repair-plan summary and counts from the individual gate records.
 
 The original 75-PR count remains the inventory through #833. PR #834 is the new governance implementation PR created after that inventory, and is tracked separately.
+
+## PR #834 synchronization and independent-review result — 2026-11-13
+
+PR #834 was synchronized with main@f92873c947e94c76ed3e7ea211db40a985ea3d63 by a true two-parent merge commit. The PR branch now has that main commit as an ancestor; the A2 changes from #829 are part of the base history, not counted as #834's own diff. No force-push was used, and main was not modified.
+
+A subsequent adversarial pass of the implementation itself found two further confirmed defects:
+- **G8 / E-50:** issue-comment intake and the scheduled sweep had different concurrency groups; their concurrent check-then-create path could create duplicate intake issues. The workflow now uses a single-writer group, and tests cover the issue-comment event's PR-number extraction and this concurrency configuration.
+- **G9 / E-51:** D11 accepted any GitHub URL with a self-declared passed status. It now resolves the canonical Actions run through GitHub and requires CI or Integration Test, pull_request, completed/success, matching repository and exact PR-head SHA. Unit tests cover fake/cross-repository URLs, failed/in-progress runs, wrong head, wrong event and unrelated workflow names.
+
+### Independent review — unavailable, not silently waived
+
+The official GitHub Copilot Code Review REST request was executed from an Actions workflow against the synchronized PR head. GitHub returned HTTP 422 ACTOR_INELIGIBLE: the actor has no Copilot license that includes code review, or code review is disabled by organization policy. The request did not create a review or comments. The request workflow was removed from the candidate after recording this denial so it would not leave a permanently failing check. CodeRabbit also did not review the candidate: automatic reviews are disabled for this repository's OSS account and the manual request was rate-limited. The visible public commit history has only one human contributor, and no CODEOWNERS file was found. Thus an independent human review remains outstanding; neither our own adversarial pass nor the rejected Copilot request is represented as approval.
+
