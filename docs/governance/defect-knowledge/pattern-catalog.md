@@ -143,6 +143,65 @@
 
 ---
 
+
+## P11 · Lock-order inversion and external work inside a transaction
+
+**Invariant protected:** a transaction acquires shared locks in one global order, and database locks/connections are not held across slow network or provider calls.
+
+**Demonstrating cases:** E-24 (order/delivery cancellation and leg-attachment acquire the same rows in opposite orders, creating an ABBA deadlock); E-25 (OSRM route lookup runs while the order row is locked and a database transaction is open).
+
+**Same cause or different?** Related but distinct mechanisms within one transaction-scope family: lock-order inversion creates a deadlock cycle; outbound I/O inside a transaction extends lock and connection lifetime and amplifies contention. They require different corrective controls and therefore retain separate cases.
+
+**Frequency/severity:** two confirmed mechanisms in the delivery/order boundary; severity high for availability and latency under concurrent split/cancel activity.
+
+**Prevention status:** registered, not yet closed in the measured issue #749. The required control is one documented lock order plus a pre-transaction route lookup and real-PostgreSQL concurrency tests.
+
+**Strongest prevention:** B2 + A3: publish a lock-order table for every shared row and prove interleaved operations on PostgreSQL; assert the route port is called before transaction/lock acquisition.
+
+## P12 · Test evidence does not exercise the claimed invariant
+
+**Invariant protected:** a green test must execute the failure trigger and observable state transition described by its name and acceptance claim.
+
+**Demonstrating cases:** E-28 (purge version advancement was present, but the original test did not prove stale-write rejection on PostgreSQL; #764 added the real database proof); E-01/E-02/E-03 (CI's clean or differently configured environment did not exercise the deployed failure dimension); E-10 (test source existed but was not executed by the required pipeline).
+
+**Same cause?** Yes: the test's assertion surface or execution environment is weaker than the claim it is used to justify. It can pass while the invariant is still false.
+
+**Frequency/severity:** recurring across integration, concurrency, configuration and CI tests; severity follows the protected invariant and can be critical for money/security.
+
+**Prevention status:** partially systematic: exact test execution and CI sharding exist, but each new acceptance proof still needs a scenario-level adequacy check.
+
+**Strongest prevention:** before fixing, write the test against the unfixed behavior and prove it fails for the intended reason; use real PostgreSQL for database concurrency/constraint claims and verify the test is included in CI.
+
+## P13 · Review-gate protocol disagreement
+
+**Invariant protected:** every gate in a release path consumes the same definition of a valid review artifact and produces one coherent verdict.
+
+**Demonstrating cases:** E-26 (the CodeRabbit review poll accepted an empty-body approval while the exact processed-file coverage verifier rejected that same review; the PR could become stuck after review threads had been resolved).
+
+**Same cause?** Yes: two independently implemented gate steps disagree about the admissible evidence, so satisfying one gate cannot satisfy the composed release gate.
+
+**Frequency/severity:** one newly confirmed governance defect in the November 12 follow-up; severity high because it blocks or misreports release readiness.
+
+**Prevention status:** a documented workaround exists for the affected full review, but a structural unification is still open. This must not be called fixed until both gate stages share and test the same acceptance predicate.
+
+**Strongest prevention:** shared schema/parser or a single authoritative verdict artifact; contract tests must feed empty-body, stale-head, incomplete-file-list and duplicate-review examples through every consumer.
+
+## P14 · Automation toolchain drift
+
+**Invariant protected:** repository automation runs with the exact toolchain declared and pinned by the repository, not an ambient runner installation.
+
+**Demonstrating cases:** E-27 (OpenRewrite invoked system Maven 3.9.15 while the repository's Maven Enforcer required >=3.10; PR #813 moved the workflow to the Maven Wrapper); E-29 (the catalog job ran against Dependabot changes and forced a manual-only recovery path); E-30 (vendored skills existed without a reviewed pin/provenance registry).
+
+**Same cause or different?** The common failure is hidden automation inputs: executable version, event class or downloaded agent resource is not governed by the repository's declared source of truth.
+
+**Frequency/severity:** three verified automation/governance cases across CI and agent supply chain; severity moderate-high due to non-reproducible or unreviewable automation.
+
+**Prevention status:** partly systematic: #813 fixed the Maven wrapper path on main, #770 excluded Dependabot from the incompatible catalog audit, and #771 added skill pins. The gate itself must verify exact tool versions and input provenance.
+
+**Strongest prevention:** B6 plus D11: pin toolchain inputs, test automation branches including Dependabot and workflow-dispatch paths, and record the source SHA/version for downloaded tools and skills.
+
+---
+
 ## Candidate patterns examined and rejected (recorded to prevent re-litigation)
 
 - **"Module count growth as defect"** — rejected: 24-module Modulith growth is the designed architecture (SYSTEM.md §5), not a failure mechanism; the churn sentinels (E-22) record the cost honestly.
