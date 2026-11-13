@@ -60,7 +60,7 @@ import static org.mockito.Mockito.when;
  * re-validated at open time, never trusted); ordering (the comments
  * page arrives in the owner's complete sort key createdAt ASC, id ASC);
  * authorization (anonymous never reaches the adapter — the endpoint's
- * own 401; the unknown post answers the owner's honest 404 at the field
+ * own pre-login gate envelope, AUTHN-001 with no data; the unknown post answers the owner's honest 404 at the field
  * level while the sibling leg still resolves — the partial-data
  * contract the nullable envelope carries; the membership-less caller
  * answers the owner's own denial on both legs); emptiness (a post with
@@ -75,7 +75,13 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "marketplace.graphql.pagination.default-page-size=3",
-                "marketplace.graphql.pagination.max-page-size=5"})
+                "marketplace.graphql.pagination.max-page-size=5",
+                // B29 (TST-09 — the 2026-11-03 adversarial review,
+                // review-pr-807): the REAL migration schema — the same
+                // Flyway contract the wire ITs established. The
+                // create-drop default masked migration drift.
+                "spring.flyway.enabled=true",
+                "spring.jpa.hibernate.ddl-auto=none"})
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 class PostDetailGraphQlIntegrationTest {
@@ -293,7 +299,15 @@ class PostDetailGraphQlIntegrationTest {
     // the owner's own denial on both legs.
     // ------------------------------------------------------------------
 
-    /** The endpoint's own gate: an anonymous caller is rejected before any adapter runs. */
+    /**
+     * The endpoint's own gate: an anonymous caller is rejected by the
+     * reopened pre-login wall BEFORE any adapter runs — the security
+     * chain permits the anonymous POST, PreLoginGraphQlGate parses the
+     * document, finds the protected {@code post} root, and answers the
+     * classified AUTHN-001 GraphQL error inside the envelope (HTTP 200,
+     * no data). The resolver-blocked proof is the mock verification
+     * below: neither the detail leg nor the comments leg ever runs.
+     */
     @Test
     void anAnonymousCallerIsRejectedBeforeAnyAdapterRuns() {
         WebTestClient anonymous = WebTestClient.bindToServer()
@@ -303,9 +317,12 @@ class PostDetailGraphQlIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue("{\"query\":\"{ post(id: \\\"00000000-0000-0000-0000-000000000000\\\") { id } }\"}")
                 .exchange()
-                .expectStatus().isUnauthorized()
+                .expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)
                 .expectBody()
-                .jsonPath("$.errorCode").isEqualTo("AUTHN-001");
+                .jsonPath("$.errors[0].extensions.errorCode").isEqualTo("AUTHN-001")
+                .jsonPath("$.errors[0].extensions.category").isEqualTo("authz")
+                .jsonPath("$.data").doesNotExist();
 
         verify(postService, never()).getPost(any(), any());
         verify(postService, never()).getComments(any(), any(), any());
