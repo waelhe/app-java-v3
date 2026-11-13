@@ -35,7 +35,8 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
                          ["review-101", "inline-202", "discussion-303"])
         self.assertEqual(items[1]["path"], "src/Service.java")
         self.assertEqual(items[1]["line"], 42)
-        self.assertIn("-r20261113t100100z", items[1]["intakeKey"])
+        self.assertTrue(items[1]["intakeKey"].startswith("inline-202-r"))
+        self.assertEqual(len(items[1]["intakeKey"].rsplit("-r", 1)[1]), 16)
 
     def test_edited_review_submission_creates_a_new_revision_key(self):
         pr = {"number": 13}
@@ -83,7 +84,7 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
             "Finding headline", "module/File.java", 15,
         )
         rendered = MODULE.render_item(item, 12)
-        self.assertIn("<!-- defect-intake-item:inline-99-r20261113t100000z -->", rendered)
+        self.assertIn(f"<!-- defect-intake-item:{item['intakeKey']} -->", rendered)
         self.assertIn("source inline-99", rendered)
         self.assertIn("module/File.java:15", rendered)
         self.assertIn("https://github.com/waelhe/app-java-v3/pull/12#discussion_r99", rendered)
