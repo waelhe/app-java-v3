@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import unittest.mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "defect_knowledge_intake.py"
 SPEC = importlib.util.spec_from_file_location("defect_knowledge_intake", SCRIPT)
@@ -125,6 +126,32 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
         content = workflow.read_text(encoding="utf-8")
         self.assertIn("group: defect-knowledge-intake-single-writer", content)
         self.assertIn("cancel-in-progress: false", content)
+
+
+    def test_build_intake_issue_index_reads_once_and_ignores_pr_issues(self):
+        with unittest.mock.patch.object(MODULE, "api_pages", return_value=[
+            {"number": 100, "body": "<!-- defect-intake-pr:834 -->\\ntriage", "state": "open"},
+            {"number": 101, "body": "<!-- defect-intake-pr:835 -->", "pull_request": {"url": "x"}},
+            {"number": 102, "body": "ordinary issue", "state": "open"},
+        ]) as api_pages:
+            index = MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
+        api_pages.assert_called_once_with("/repos/waelhe/app-java-v3/issues?state=all", "token")
+        self.assertEqual(set(index), {834})
+        self.assertEqual(index[834]["number"], 100)
+
+    def test_duplicate_intake_issues_fail_closed_instead_of_creating_another(self):
+        with unittest.mock.patch.object(MODULE, "api_pages", return_value=[
+            {"number": 100, "body": "<!-- defect-intake-pr:834 -->"},
+            {"number": 200, "body": "<!-- defect-intake-pr:834 -->"},
+        ]):
+            with self.assertRaisesRegex(MODULE.IntakeError, "Multiple defect-intake issues"):
+                MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
+
+    def test_daily_recovery_sweep_includes_closed_prs_since_rollout(self):
+        workflow = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "defect-knowledge-intake.yml"
+        content = workflow.read_text(encoding="utf-8")
+        self.assertIn('GITHUB_EVENT_NAME" = "schedule"', content)
+        self.assertIn('--include-closed-since "2026-11-13"', content)
 
     def test_chunking_is_stable_and_bounded(self):
         values = [{"sourceId": f"review-{i}"} for i in range(61)]
