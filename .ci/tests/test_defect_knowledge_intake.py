@@ -35,6 +35,40 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
                          ["review-101", "inline-202", "discussion-303"])
         self.assertEqual(items[1]["path"], "src/Service.java")
         self.assertEqual(items[1]["line"], 42)
+        self.assertIn("-r20261113t100100z", items[1]["intakeKey"])
+
+    def test_edited_review_submission_creates_a_new_revision_key(self):
+        pr = {"number": 13}
+        before = MODULE.collect_items(
+            "waelhe/app-java-v3", pr,
+            [{"id": 501, "user": {"login": "coderabbitai"},
+              "submitted_at": "2026-11-13T10:00:00Z", "updated_at": "2026-11-13T10:00:00Z",
+              "state": "COMMENTED", "html_url": "https://github.com/waelhe/app-java-v3/pull/13#pullrequestreview-501",
+              "body": "Initial review"}],
+            [], [],
+        )[0]
+        after = MODULE.collect_items(
+            "waelhe/app-java-v3", pr,
+            [{"id": 501, "user": {"login": "coderabbitai"},
+              "submitted_at": "2026-11-13T10:00:00Z", "updated_at": "2026-11-13T10:07:00Z",
+              "state": "CHANGES_REQUESTED", "html_url": "https://github.com/waelhe/app-java-v3/pull/13#pullrequestreview-501",
+              "body": "Edited review"}],
+            [], [],
+        )[0]
+        self.assertEqual(before["sourceId"], after["sourceId"])
+        self.assertNotEqual(before["intakeKey"], after["intakeKey"])
+        self.assertEqual(after["excerpt"], "Edited review")
+
+    def test_sync_snapshot_is_separate_from_human_triage_body(self):
+        summary = MODULE.render_sync_summary(
+            "waelhe/app-java-v3",
+            {"number": 14, "updated_at": "2026-11-13T10:00:00Z",
+             "state": "open", "head": {"sha": "a" * 40}},
+            [],
+        )
+        self.assertIn(MODULE.SUMMARY_MARKER, summary)
+        self.assertIn("Human triage notes and dispositions", summary)
+        self.assertNotIn("# Review intake", summary)
 
     def test_excerpt_escapes_untrusted_markup_and_limits_length(self):
         excerpt = MODULE.short_excerpt('<script>alert("x")</script>' + ("x" * 300))
@@ -49,7 +83,8 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
             "Finding headline", "module/File.java", 15,
         )
         rendered = MODULE.render_item(item, 12)
-        self.assertIn("<!-- defect-intake-item:inline-99 -->", rendered)
+        self.assertIn("<!-- defect-intake-item:inline-99-r20261113t100000z -->", rendered)
+        self.assertIn("source inline-99", rendered)
         self.assertIn("module/File.java:15", rendered)
         self.assertIn("https://github.com/waelhe/app-java-v3/pull/12#discussion_r99", rendered)
 
