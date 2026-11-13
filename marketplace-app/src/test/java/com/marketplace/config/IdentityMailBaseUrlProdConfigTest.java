@@ -181,6 +181,58 @@ class IdentityMailBaseUrlProdConfigTest {
         }
     }
 
+    /**
+     * Review round 4 (2026-11-13, Minor): URI schemes are case-insensitive
+     * (java.net.URI) — "HTTPS://app.example.com" is a legitimate https
+     * client origin and must bind through the wall, not fail it.
+     */
+    @Test
+    void theRecordAcceptsAnUppercaseSchemeOrigin() {
+        var properties = new IdentityMailProperties(
+                "HTTPS://app.example.com",
+                java.time.Duration.ofMinutes(30),
+                java.time.Duration.ofHours(24),
+                java.time.Duration.ofSeconds(60));
+        assertThat(properties.mailBaseUrl()).isEqualTo("HTTPS://app.example.com");
+    }
+
+    /**
+     * Review round 4 (2026-11-13, Minor): an origin carrying a non-root path
+     * silently rewrites the declared deep-link routes
+     * ("https://app.example.com/account" + "/reset-password" mints
+     * "/account/reset-password", not the contract's route) — the wall
+     * rejects every non-root path with the same operational shape.
+     */
+    @Test
+    void theRecordRejectsNonRootPathOrigins() {
+        for (String invalid : new String[] { "https://app.example.com/account", "https://app.example.com/app/" }) {
+            assertThatThrownBy(() -> new IdentityMailProperties(
+                    invalid,
+                    java.time.Duration.ofMinutes(30),
+                    java.time.Duration.ofHours(24),
+                    java.time.Duration.ofSeconds(60)))
+                    .as("origin '%s' must be rejected", invalid)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("no path");
+        }
+    }
+
+    /**
+     * Review round 4 (2026-11-13, Minor): a lone trailing root slash is the
+     * SAME origin — the wall normalizes it away so the deep-link
+     * concatenation can never mint a double slash
+     * ("https://app.example.com/" + "/reset-password?token=...").
+     */
+    @Test
+    void theRecordStripsALoneTrailingRootSlash() {
+        var properties = new IdentityMailProperties(
+                "https://app.example.com/",
+                java.time.Duration.ofMinutes(30),
+                java.time.Duration.ofHours(24),
+                java.time.Duration.ofSeconds(60));
+        assertThat(properties.mailBaseUrl()).isEqualTo("https://app.example.com");
+    }
+
     private String property(String yml, String key) throws java.io.IOException {
         List<PropertySource<?>> sources = loader.load(yml, new ClassPathResource(yml));
         assertThat(sources).as("%s must load", yml).isNotEmpty();

@@ -106,14 +106,29 @@ public record IdentityMailProperties(
         // fragment would mint malformed deep links (the record concatenates
         // "/reset-password?token=..." onto this base — a second '?' or a '#'
         // breaks the link) — reject both, same operational message shape.
+        // Review round 4 (2026-11-13, Minor ×2): URI schemes are
+        // case-insensitive (java.net.URI — "HTTPS://app.example.com" is a
+        // valid https origin), so the scheme comparison is
+        // case-insensitive; and an origin carrying a non-root path would
+        // silently rewrite the declared deep-link routes
+        // ("https://app.example.com/account" + "/reset-password" mints
+        // "/account/reset-password", not the contract's route) — every path
+        // except the root is rejected, and a lone trailing "/" is normalized
+        // away so concatenation can never mint a double slash.
+        String rawPath = origin.getRawPath();
         if (origin.getScheme() == null || origin.getHost() == null
-                || !(("http".equals(origin.getScheme()) || "https".equals(origin.getScheme())))
+                || !(("http".equalsIgnoreCase(origin.getScheme())
+                        || "https".equalsIgnoreCase(origin.getScheme())))
                 || origin.getRawQuery() != null
-                || origin.getRawFragment() != null) {
+                || origin.getRawFragment() != null
+                || (rawPath != null && !rawPath.isBlank() && !"/".equals(rawPath))) {
             throw new IllegalArgumentException(
                     "marketplace.identity.mail-base-url '" + mailBaseUrl + "' must be an absolute "
-                            + "http(s) client origin (scheme + host, no query or fragment) — e.g. "
-                            + "MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://app.example.com'.");
+                            + "http(s) client origin (scheme + host, no path, no query or fragment) "
+                            + "— e.g. MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://app.example.com'.");
+        }
+        if ("/".equals(rawPath)) {
+            mailBaseUrl = mailBaseUrl.substring(0, mailBaseUrl.length() - 1);
         }
     }
 }
