@@ -230,17 +230,17 @@ def build_intake_issue_index(repo: str, token: str) -> dict[int, dict[str, Any]]
         if issue.get("pull_request") or not is_automation_authored(issue):
             continue
         body = issue.get("body") or ""
-        body_match = re.search(r"<!-- defect-intake-pr:([0-9]+) -->", body)
+        body_markers = re.findall(r"<!-- defect-intake-pr:([0-9]+) -->", body)
         title_match = ISSUE_TITLE_MARKER.match(str(issue.get("title") or ""))
         # The reserved title namespace catches a bot-owned intake whose body
         # marker was removed or altered by a later edit; fail closed, do not duplicate it.
-        if not body_match and not title_match:
+        if not body_markers and not title_match:
             continue
-        if not body_match or not title_match:
+        if len(body_markers) != 1 or not title_match:
             raise IntakeError(
-                f"Bot-owned defect-intake issue #{issue.get('number')} has a missing control marker/title; reconcile it before writing."
+                f"Bot-owned defect-intake issue #{issue.get('number')} has missing or ambiguous control markers/title; reconcile it before writing."
             )
-        source_pr = int(body_match.group(1))
+        source_pr = int(body_markers[0])
         title_pr = int(title_match.group(1))
         if source_pr != title_pr:
             raise IntakeError(
@@ -276,12 +276,14 @@ def existing_item_ids(comments: list[dict[str, Any]]) -> set[str]:
 
 
 def find_sync_summary_comment(comments: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return only the automation-owned summary comment, never a human imitation."""
-    return next(
-        (comment for comment in comments
-         if is_automation_authored(comment) and SUMMARY_MARKER in (comment.get("body") or "")),
-        None,
-    )
+    """Return one automation-owned summary comment; fail closed on ambiguity."""
+    matches = [
+        comment for comment in comments
+        if is_automation_authored(comment) and SUMMARY_MARKER in (comment.get("body") or "")
+    ]
+    if len(matches) > 1:
+        raise IntakeError("Multiple bot-owned intake summary comments exist; reconcile duplicates before updating.")
+    return matches[0] if matches else None
 
 
 def render_sync_summary(repo: str, pr: dict[str, Any], items: list[dict[str, Any]]) -> str:
