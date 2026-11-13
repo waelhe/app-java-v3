@@ -62,11 +62,84 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             "noFindingsRationale": "No new defect was found.",
         }
         errors = MODULE.validate_receipt(
-            record, 900, "a" * 40, {"A1", "B2", "D11"}, {"P1", "P14"}, {"E-01"}
+            record, 900, "a" * 40, "waelhe/app-java-v3", "test-token",
+            {"A1", "B2", "D11"}, {"P1", "P14"}, {"E-01"}
         )
         joined = "\n".join(errors)
         self.assertIn("B999", joined)
         self.assertIn("P99", joined)
+
+
+    def test_workflow_run_url_must_be_canonical_and_in_this_repository(self):
+        self.assertEqual(
+            MODULE.workflow_run_id_from_url(
+                "https://github.com/waelhe/app-java-v3/actions/runs/12345",
+                "waelhe/app-java-v3",
+            ),
+            12345,
+        )
+        self.assertEqual(
+            MODULE.workflow_run_id_from_url(
+                "https://github.com/waelhe/app-java-v3/actions/runs/12345/attempts/2",
+                "waelhe/app-java-v3",
+            ),
+            12345,
+        )
+        with self.assertRaises(MODULE.GateError):
+            MODULE.workflow_run_id_from_url(
+                "https://github.com/attacker/other/actions/runs/12345",
+                "waelhe/app-java-v3",
+            )
+        with self.assertRaises(MODULE.GateError):
+            MODULE.workflow_run_id_from_url(
+                "https://github.com/waelhe/app-java-v3/actions/runs/12345?status=success",
+                "waelhe/app-java-v3",
+            )
+
+    def test_fixed_claim_requires_completed_successful_run_on_exact_head(self):
+        run = {
+            "id": 12345,
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "a" * 40,
+            "repository": {"full_name": "waelhe/app-java-v3"},
+        }
+        self.assertEqual(
+            MODULE.validate_workflow_run_payload(run, "waelhe/app-java-v3", "a" * 40),
+            [],
+        )
+        self.assertIn(
+            "workflow run must be completed",
+            MODULE.validate_workflow_run_payload(
+                {**run, "status": "in_progress"},
+                "waelhe/app-java-v3",
+                "a" * 40,
+            ),
+        )
+        self.assertIn(
+            "workflow run conclusion must be success",
+            MODULE.validate_workflow_run_payload(
+                {**run, "conclusion": "failure"},
+                "waelhe/app-java-v3",
+                "a" * 40,
+            ),
+        )
+        self.assertIn(
+            "workflow run must target the exact PR head SHA",
+            MODULE.validate_workflow_run_payload(
+                {**run, "head_sha": "b" * 40},
+                "waelhe/app-java-v3",
+                "a" * 40,
+            ),
+        )
+        self.assertIn(
+            "workflow run belongs to a different repository",
+            MODULE.validate_workflow_run_payload(
+                {**run, "repository": {"full_name": "attacker/other"}},
+                "waelhe/app-java-v3",
+                "a" * 40,
+            ),
+        )
 
     def test_fixed_finding_requires_commit_and_passed_verification(self):
         scenario = "two concurrent refund workers read the same previous amount"
@@ -94,11 +167,12 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
                 "classification": "confirmed_defect",
                 "severity": "high",
                 "status": "fixed",
-                "fix": {"commitSha": "b" * 40, "verification": {"status": "pending", "workflowRunUrl": ""}},
+                "fix": {"commitSha": "b" * 40, "verification": {"status": "pending", "workflowRunUrl": "https://github.com/waelhe/app-java-v3/actions/runs/123"}},
             }],
         }
         errors = MODULE.validate_receipt(
-            record, 901, "a" * 40, {"A1"}, {"P11"}, set()
+            record, 901, "a" * 40, "waelhe/app-java-v3", "test-token",
+            {"A1"}, {"P11"}, set()
         )
         joined = "\n".join(errors)
         self.assertIn("commitSha is not an ancestor", joined)
