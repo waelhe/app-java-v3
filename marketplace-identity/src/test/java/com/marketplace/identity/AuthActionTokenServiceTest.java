@@ -170,6 +170,23 @@ class AuthActionTokenServiceTest {
     }
 
     @Test
+    void consume_theLosingSideOfAConcurrentRedemptionAnswersTheHonest400() {
+        // The optimistic-lock catch (CodeRabbit #4209499485's hardening) is
+        // the concurrency wall: the second of two simultaneous redemptions
+        // loses the version race at the flush and surfaces as the
+        // documented 400 — never a 500, never a double spend.
+        AuthActionToken token = liveTokenIssuedAt(NOW.minus(Duration.ofMinutes(1)));
+        when(repository.findByTokenHashAndPurpose(anyString(), eq(AuthActionTokenPurpose.PASSWORD_RESET)))
+                .thenReturn(Optional.of(token));
+        org.mockito.Mockito.doThrow(new org.springframework.dao.OptimisticLockingFailureException("stale"))
+                .when(repository).saveAndFlush(token);
+
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> service.consume("contended", AuthActionTokenPurpose.PASSWORD_RESET));
+        assertThat(ex.getMessage()).contains("already been used");
+    }
+
+    @Test
     void invalidateOutstanding_consumesEveryLiveRowForTheAccount() {
         AuthActionToken reset = liveTokenIssuedAt(NOW.minus(Duration.ofMinutes(2)));
         AuthActionToken verification = AuthActionToken.issue(
