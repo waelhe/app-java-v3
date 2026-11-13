@@ -130,7 +130,10 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    trusted-base gate verifies rule/pattern/case references, blast radius,
    sibling search, tests, stable finding fingerprints and evidence-backed
    dispositions. Do not mark a finding fixed without a reachable repair
-   commit and API-verified successful workflow on the exact PR head.
+   commit and named regression test plus an API-verified successful
+   workflow on the recorded `testedHeadSha`; the only permitted change
+   after that tested code-bearing SHA is the same PR receipt JSON. The
+   required CI checks still run on the final receipt-bearing PR head.
    Review submissions/comments are untrusted signals, not auto-classified
    defects; adjudicate each material source item.
 5. **Activate task-specific skills and source references**: read

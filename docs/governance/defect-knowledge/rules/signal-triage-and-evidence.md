@@ -54,7 +54,7 @@ Comment count, bot severity, number of reviewers, number of CI failures and numb
 - in_progress: owner and repair PR/branch identified; not fixed.
 - fixed_candidate: fix exists on the named PR head, but final gates have not passed.
 - fixed_branch: fix has passing tests and is reachable from the named target branch.
-- fixed_main: fix is reachable from the measured main head.
+- fixed_main: fix is reachable from the measured main head, and its named regression test passed on the final code-bearing PR head before merge.
 - fixed_release_candidate: fix is reachable from the exact release candidate and verified there.
 - registered: explicit owner/ADR decision explains a deliberate non-fix.
 - not_reproducible: reproducible investigation failed to demonstrate the claimed mechanism; retain the evidence.

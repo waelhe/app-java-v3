@@ -75,12 +75,13 @@ this skill is patched to match.
    contracts, database/concurrency, configuration/release, modes, or
    signal triage). Do not load every pack for an unrelated task.
    Before editing, load `change-protocol.md` and apply the relevant
-   patterns P1–P14; before fixing, inspect evidence E-01…E-51 and the
+   patterns P1–P15; before fixing, inspect evidence E-01…E-52 and the
    A/B/C/D rules in `rulebook.md`; after implementing, run the
    adversarial pass in `review-protocol.md`. For each new code/runtime
    PR, create `change-records/PR-<number>.json` and run D11; a fixed
-   claim requires a reachable repair commit and an API-verified
-   successful workflow run on the exact PR head. Review intake captures
+   claim requires a reachable repair commit, a named regression test, and
+   an API-verified successful workflow run on recorded `testedHeadSha`;
+   the only permitted later change is the same receipt JSON. Review intake captures
    comments as untrusted signals; adjudicate each material source item.
    `SKILL.md` is a routing guide, not a second rulebook.
 6. Read `docs/governance/agent-skills-policy.md` and

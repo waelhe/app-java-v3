@@ -110,6 +110,7 @@ class DefectKnowledgeDocsGuardTest {
         }) {
             docs.add(dkRead(name));
         }
+        docs.add(read("docs/agent-skill.md"));
         return docs;
     }
 
@@ -296,11 +297,14 @@ class DefectKnowledgeDocsGuardTest {
         }
         assertThat(cases).as("cases numbered E-01.. without gaps").isEqualTo(expected);
 
-        String pointer = read("docs/agent-protocol.md");
-        Matcher range = Pattern.compile("E-01\\u2026E-(\\d+)").matcher(pointer);
-        assertThat(range.find()).as("agent-protocol §9 pointer states the case range").isTrue();
-        assertThat(Integer.parseInt(range.group(1))).as("agent-protocol range endpoint matches the ledger")
-                .isEqualTo(cases.size());
+        for (String pointerName : new String[] {"docs/agent-protocol.md", "docs/agent-skill.md"}) {
+            String pointer = read(pointerName);
+            Matcher range = Pattern.compile("E-01\\u2026E-(\\d+)").matcher(pointer);
+            assertThat(range.find()).as("%s states the case range", pointerName).isTrue();
+            assertThat(Integer.parseInt(range.group(1)))
+                    .as("%s endpoint matches the ledger", pointerName)
+                    .isEqualTo(cases.size());
+        }
     }
 
     // ---------- 6. pattern enumeration: unique, contiguous 1..N; ranges match ----------
@@ -314,7 +318,9 @@ class DefectKnowledgeDocsGuardTest {
         // heading would previously vanish into the TreeSet and leave every
         // check green (the negative self-test below proves the rejection).
         int count = assertPatternCatalogConsistent(dkRead("pattern-catalog.md"));
-        for (String docName : new String[] {DK_DIR + "/README.md", "docs/agent-protocol.md"}) {
+        for (String docName : new String[] {
+                DK_DIR + "/README.md", "docs/agent-protocol.md", "docs/agent-skill.md"
+        }) {
             Matcher range = Pattern.compile("P1[\\u2013-]P(\\d+)").matcher(read(docName));
             assertThat(range.find()).as("%s states the pattern range", docName).isTrue();
             assertThat(Integer.parseInt(range.group(1)))
