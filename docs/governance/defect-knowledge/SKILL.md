@@ -37,7 +37,7 @@ For every code/runtime change, production defect, review signal, test-gap invest
 | Environment/configuration, Railway, CI workflows, toolchains, deploy/reconcile | [configuration-and-release-reconciliation.md](rules/configuration-and-release-reconciliation.md) | B6, D1/D2/D9/D10/D11; P1, P8, P9, P13, P14; E-02, E-13, E-26, E-27, E-29, E-47…E-49 |
 | State flags/modes, inventory, availability, diagnostics, compatibility across modes | [mode-aware-behavior-and-diagnostics.md](rules/mode-aware-behavior-and-diagnostics.md) | B4, B6, C1/C3; P3, P12; mode-specific evidence and tests |
 | Saleor-specific commerce semantics (discounts, order allocation, stock availability) | Existing pinned [.agents/skills/saleor-core](../../../.agents/skills/saleor-core/SKILL.md) | Saleor 3.23.43 schema pin, D-SALEOR-FULL-001 canonical plan, divergence ledger, actual platform tests |
-| A review comment, scan result, CI failure, or suspicious observation without reproduction | [signal-triage-and-evidence.md](rules/signal-triage-and-evidence.md) | A1/A2/A3/A5/A6; P6, P12, P13, P14; review-protocol disposition rules |
+| A review comment, scan result, CI failure, or suspicious observation without reproduction | [signal-triage-and-evidence.md](rules/signal-triage-and-evidence.md) | A1/A2/A3/A5/A6, D11/D12; P6, P12, P13, P14, P15; E-50…E-52; review-protocol disposition rules |
 
 If several triggers apply, load each relevant pack. Do not collapse independent invariants into one generic checklist.
 
