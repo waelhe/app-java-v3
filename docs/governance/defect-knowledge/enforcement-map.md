@@ -35,6 +35,7 @@
 | D8 guard-message fidelity | **enacted once by governed repair** | root-signatures guard reads the divergence registry (`0edf0f6`, PR #723; E-21 closed); documented for the remaining guards | false promise repaired; rule stays documented |
 | D10 placeholder-target matrix | deterministic test | `PlaceholderTargetMatrixGuardTest` — no-default env placeholders in the deployed composition must be declared in `.railway/railway.ts` (G2's closure; E-02's class) | **enforced** |
 | D11 per-PR defect-knowledge receipt and knowledge routing | trusted-base required gate + deterministic validator + intake + self-governance tests | `coderabbit-gate.yml` (`pull_request_target`, base code) → `.ci/check_defect_knowledge.py`; `.ci/defect_knowledge_intake.py`; `DefectKnowledgeDocsGuardTest` verifies ledger/rule/pattern counts, skill router links, rule-pack canonical IDs, Saleor source/adoption records and referenced files; dedicated `defect-knowledge-gate.yml` is supplemental | implemented on rollout branch; final CI pending |
+| D12 automation marker ownership | deterministic intake validation + adversarial tests | `.ci/defect_knowledge_intake.py` accepts control markers only from `github-actions[bot]`, binds the intake title/marker/source URL, and rejects ambiguous bot-owned state; `test_defect_knowledge_intake.py` covers spoofing and tampering (E-52/P15) | implemented on rollout branch; final CI pending |
 
 ## §2 · Existing guard inventory reused (not duplicated) by this system
 
@@ -59,7 +60,7 @@ Per the mission: cases selected across causal families; for each, the claim is t
 
 ## §4 · Proportionality against successful changes
 
-Sampled successful classes: routine module feature waves (PROJECT_MAP L48–L52, W3–W5 era; squash-merged with three gates, zero rollback), the keyset pagination P0 (#677→#678 — CodeRabbit root notes adopted, gate generalized), the DGS adoption phases 0–5 (each merged → deployed → smoked → truth-synced). For these, the protocol's cost is the declaration + enumeration table + existing gates — the repo's own recorded workflow already pays these costs; the rulebook adds the *selective* B-rules only on trigger, keeping the burden proportional. The regression list's warning against defensive bloat is honored: 14 patterns and 18 A/B/C rules plus 11 automated D bindings — 29 enumerated items, counts derived from the enumerations themselves and enforced by `DefectKnowledgeDocsGuardTest` — not a catalog of 100.
+Sampled successful classes: routine module feature waves (PROJECT_MAP L48–L52, W3–W5 era; squash-merged with three gates, zero rollback), the keyset pagination P0 (#677→#678 — CodeRabbit root notes adopted, gate generalized), the DGS adoption phases 0–5 (each merged → deployed → smoked → truth-synced). For these, the protocol's cost is the declaration + enumeration table + existing gates — the repo's own recorded workflow already pays these costs; the rulebook adds the *selective* B-rules only on trigger, keeping the burden proportional. The regression list's warning against defensive bloat is honored: 15 patterns and 18 A/B/C rules plus 12 automated D bindings — 29 enumerated items, counts derived from the enumerations themselves and enforced by `DefectKnowledgeDocsGuardTest` — not a catalog of 100.
 
 ## §5 · Audit coverage, limitations, open gaps
 
