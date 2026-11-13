@@ -5,6 +5,8 @@ on:
     types: [submitted, edited, dismissed]
   pull_request_review_comment:
     types: [created, edited, deleted]
+  issue_comment:
+    types: [created, edited, deleted]
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
