@@ -295,16 +295,18 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                 verification = fix.get("verification", {})
                 require(isinstance(verification, dict), f"{prefix}.fix.verification must be an object")
                 if isinstance(verification, dict):
-                    require(verification.get("status") == "passed",
+                    passed = verification.get("status") == "passed"
+                    require(passed,
                             f"{prefix}.fix.verification.status must be passed before marking fixed")
                     workflow_url = str(verification.get("workflowRunUrl", ""))
-                    try:
-                        run_id = workflow_run_id_from_url(workflow_url, repository)
-                        payload = fetch_workflow_run(run_id, repository, github_token)
-                        for run_error in validate_workflow_run_payload(payload, repository, head_sha):
-                            errors.append(f"{prefix}.fix.verification: {run_error}")
-                    except GateError as exc:
-                        errors.append(f"{prefix}.fix.verification: {exc}")
+                    if passed:
+                        try:
+                            run_id = workflow_run_id_from_url(workflow_url, repository)
+                            payload = fetch_workflow_run(run_id, repository, github_token)
+                            for run_error in validate_workflow_run_payload(payload, repository, head_sha):
+                                errors.append(f"{prefix}.fix.verification: {run_error}")
+                        except GateError as exc:
+                            errors.append(f"{prefix}.fix.verification: {exc}")
 
         if finding.get("status") == "registered":
             decision = finding.get("decision", {})
