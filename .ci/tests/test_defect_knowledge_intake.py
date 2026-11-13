@@ -98,6 +98,34 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
         self.assertIn("https://github.com/waelhe/app-java-v3/pull/12", rendered)
         self.assertNotIn("example.invalid", rendered)
 
+
+    def test_issue_comment_event_resolves_the_pr_number_from_issue_payload(self):
+        event = {
+            "action": "created",
+            "issue": {
+                "number": 834,
+                "pull_request": {"url": "https://api.github.com/repos/waelhe/app-java-v3/pulls/834"},
+            },
+            "comment": {"id": 123},
+        }
+        self.assertEqual(MODULE.event_pull_request_number(event, "issue_comment"), 834)
+
+    def test_review_and_pull_request_events_resolve_their_pr_number(self):
+        self.assertEqual(
+            MODULE.event_pull_request_number({"pull_request": {"number": 835}}, "pull_request_review"),
+            835,
+        )
+        self.assertEqual(
+            MODULE.event_pull_request_number({"number": 836}, "pull_request"),
+            836,
+        )
+
+    def test_intake_workflow_uses_a_single_writer_group_for_all_event_kinds(self):
+        workflow = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "defect-knowledge-intake.yml"
+        content = workflow.read_text(encoding="utf-8")
+        self.assertIn("group: defect-knowledge-intake-single-writer", content)
+        self.assertIn("cancel-in-progress: false", content)
+
     def test_chunking_is_stable_and_bounded(self):
         values = [{"sourceId": f"review-{i}"} for i in range(61)]
         batches = MODULE.chunked(values, size=25)
