@@ -16,6 +16,52 @@ public interface CategoryRepository extends JpaRepository<Category, java.util.UU
     /** The write gate's precheck — an ACTIVE registry row for the code or empty. */
     Optional<Category> findByCode(String code);
 
+    /**
+     * The reserved-code check (the 2026-11-05 #808 round, Major ·
+     * Functional Correctness): V70's unique index on {@code code} spans
+     * the RAW table — soft-deleted rows included — while
+     * {@code @SoftDelete} filters them from every derived query, so a
+     * soft-deleted category's code passed {@code findByCode} and the
+     * INSERT then died on the raw index violation instead of the
+     * classified ALREADY_EXISTS. The native count reads the raw table
+     * (no soft-delete filter): both live AND reserved codes answer the
+     * honest mutation error BEFORE the save. The native-query mechanism
+     * is the house's own documented way past the soft-delete filter
+     * (the AdCampaignRepository precedent).
+     */
+    @org.springframework.data.jpa.repository.Query(
+            value = "SELECT COUNT(*) FROM categories WHERE code = :code", nativeQuery = true)
+    long countByCodeIncludingDeleted(@org.springframework.data.repository.query.Param("code") String code);
+
     /** The public read, in the registry's display order. */
     List<Category> findAllByOrderByPositionAsc();
+
+    /**
+     * The 2026-11-06 #808 round review (Minor · Data Integrity &amp;
+     * Integration): the registry's display order with the fixed {@code id}
+     * tie-break — the append position is a max+1 derivation with no
+     * position-unique index, so two concurrent creates can legitimately
+     * land the SAME position; the tie-break keeps every read's order
+     * deterministic (never an unstable interleave of equal positions).
+     */
+    List<Category> findAllByOrderByPositionAscIdAsc();
+
+    /**
+     * The 2026-11-08 #808 round-21 review (Minor · Data Integrity &amp;
+     * Integration): the category lifecycle's own row lock — every
+     * lifecycle writer (update, translate, single delete, bulk delete)
+     * rides the LOCKED load so the edit/delete pair serializes on the
+     * row itself (the CatalogAttributeDefinitionRepository
+     * .findByIdForUpdate precedent verbatim). An unlocked load let a
+     * concurrent delete commit between the read and the save: the edit
+     * then wrote over the soft-deleted row and answered a fabricated
+     * SUCCESS for a category no read could resolve (the soft delete
+     * never bumps the version, and Hibernate's plain UPDATE carries no
+     * is_deleted=false guard), or a stale @Version answered the raw
+     * OptimisticLockException.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select c from Category c where c.id = :id")
+    Optional<Category> findByIdForUpdate(
+            @org.springframework.data.repository.query.Param("id") java.util.UUID id);
 }

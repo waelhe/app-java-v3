@@ -44,6 +44,59 @@ public class ProductTypeAttributeAssignment extends BaseEntity {
                 scope, required, position);
     }
 
+    /**
+     * The assignment's scope-move seam — the ADMIN assignment-update use
+     * case's own seam (the Saleor {@code productAttributeAssignmentUpdate}
+     * root mapped onto the row's scope column: flipping the
+     * variant-selection flag moves the assignment between the VARIANT and
+     * VARIANT_SELECTION scopes). The VARIANT_SELECTION invariants (the
+     * CHOICE value shape, the two-option floor, the required-every-
+     * variant law) are the SERVICE's own re-checks before this seam.
+     *
+     * <p>The 2026-11-06 #808 round-3 review (Minor · Functional
+     * Correctness): {@code required} is the row's OWN independent contract
+     * (the registration path's value-completeness verdict reads it), not a
+     * scope's derivable fact — the move law keeps the two scopes honest
+     * each in its own direction: VARIANT_SELECTION FORCES true (the
+     * platform's own every-variant law), and VARIANT PRESERVES the current
+     * value (the move out of selection never silently loosens a required
+     * attribute into an optional one — the value's contract survives the
+     * scope move; the previous shape rewrote it to false unconditionally).
+     */
+    void moveToScope(ProductTypeAttributeScope target) {
+        if (target == null) throw new IllegalArgumentException("target scope is required");
+        this.scope = target;
+        if (target == ProductTypeAttributeScope.VARIANT_SELECTION) {
+            this.required = true;
+        }
+    }
+
+    /**
+     * The assignment's position-move seam — the ADMIN reorder use case's
+     * own seam (the Saleor {@code productTypeReorderAttributes} root).
+     * The new position is the SERVICE's own compacted derivation (the
+     * relative-move algorithm's outcome); the position-uniqueness column
+     * remains the concurrent-write backstop.
+     */
+    void reposition(int newPosition) {
+        if (newPosition < 0) throw new IllegalArgumentException("position must be non-negative");
+        this.position = newPosition;
+    }
+
+    /**
+     * The assignment's required-flag seam — the ADMIN promotion use case's
+     * own seam (the 2026-11-07 #808 round-10 review: the required-attribute
+     * migration path's executable half). {@code required} is the row's OWN
+     * independent contract (the {@code moveToScope} law above): the
+     * promotion (optional → required) is the SERVICE's own fail-closed
+     * guarded verdict — the published-shelf coverage probes must pass
+     * BEFORE this seam mutates the row; the demotion (required → optional)
+     * is a relaxation that carries no conformance hole and needs no probe.
+     */
+    void reviseRequired(boolean newRequired) {
+        this.required = newRequired;
+    }
+
     @Override public UUID getId() { return id; }
     public UUID getProductTypeId() { return productTypeId; }
     public UUID getAttributeDefinitionId() { return attributeDefinitionId; }

@@ -94,7 +94,13 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "StoreCategory", command.storeCategoryCode()));
         if (command.productTypeId() != null) {
-            productTypeRepository.findById(command.productTypeId())
+            // The 2026-11-06 #808 round review (Minor · Data Integrity &
+            // Integration): the FOR-SHARE read (the ProductWriteService
+            // register path's own precedent) — the unlocked findById let a
+            // concurrent deleteProductType's live-references count miss
+            // this in-flight product and soft-delete the type before this
+            // commit landed a live reference to it.
+            productTypeRepository.findByIdForShare(command.productTypeId())
                     .orElseThrow(() -> new ResourceNotFoundException("ProductType", command.productTypeId()));
         }
         UUID providerId = currentUserProvider.getCurrentUserId(authentication);
@@ -159,7 +165,16 @@ public class ProductService {
         if (value.populatedValueCount() != 1) {
             throw new ConflictException("Exactly one typed value must be supplied for assignment " + assignment.getId());
         }
-        CatalogAttributeDefinition definition = definitions.findById(assignment.getAttributeDefinitionId())
+        // The 2026-11-06 #808 round-3 review (Major · Data Integrity &
+        // Integration): the reference-CREATING read takes the definition
+        // row FOR SHARE (the variant registration's CHOICE-leg pairing
+        // verbatim) — the attribute-delete and option-delete guards'
+        // FOR-UPDATE read of the same row serializes against THIS read,
+        // so their reference probes answer over this save's committed
+        // fact, never a zero that was about to become one (the unlocked
+        // findById let the delete's probe pass while this value was in
+        // flight, orphaning the product's value on a dead schema).
+        CatalogAttributeDefinition definition = definitions.findByIdForShare(assignment.getAttributeDefinitionId())
                 .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeDefinition", assignment.getAttributeDefinitionId()));
         boolean valid = switch (definition.getValueType()) {
             case TEXT -> value.textValue() != null && value.numberValue() == null
@@ -299,7 +314,36 @@ public class ProductService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER')")
     public Product publishOwnedProduct(UUID productId, Authentication authentication) {
-        Product product = getOwnedProduct(productId, authentication);
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the publication's product row loads FOR UPDATE —
+        // the value replace (replaceOwnedAttributeValues) rides the SAME
+        // lock, so the pair serializes on the product row itself. The
+        // type FOR-SHARE both paths carry is MUTUALLY COMPATIBLE (two
+        // share-holders never block each other) and the unlocked
+        // findById never waits: a replace that dropped a required value
+        // between this publication's value read and its commit published
+        // a product the gate never re-validated. The locked load closes
+        // both interleavings (the delete path's ownedRowForUpdate
+        // precedent, the ownership filter unchanged).
+        Product product = getOwnedProductForUpdate(productId, authentication);
+        // The 2026-11-07 #808 round-4 review (Major · Data Integrity &
+        // Integration): the type row's FOR-SHARE read comes BEFORE every
+        // assignment read this publication makes, and it is HELD to the
+        // commit — the new-selection assign paths
+        // (ProductTypeAttributeService.assign / assignAttributes) hold the
+        // SAME row FOR UPDATE while their published-shelf guard probes, so
+        // the publication and the schema change serialize: either the
+        // assign committed first and this publication re-validates against
+        // the NEW schema (its coverage verdict refuses honestly), or this
+        // publication committed first and the assign's probe sees the
+        // ACTIVE product (the classified migrate-first refusal). Without
+        // the pairing, the publication validated the draft's variants
+        // against the OLD schema while the guard saw the product still
+        // DRAFT, and both committed — an ACTIVE product short of the new
+        // selection, the exact hole the guard exists to close.
+        if (product.getProductTypeId() != null) {
+            productTypeRepository.findByIdForShare(product.getProductTypeId());
+        }
         // ProductType definitions can evolve after draft creation; publication
         // must revalidate current required PRODUCT assignments and choice ownership.
         List<CatalogAttributeValueInput> values = attributeValues
@@ -307,39 +351,62 @@ public class ProductService {
                 .map(ProductAttributeValue::toInput).toList();
         prepareProductAttributeValues(product, values, true);
         if (product.getProductTypeId() != null) {
-            boolean selectionsDefinePurchasableVariants = assignments
-                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
+            List<ProductTypeAttributeAssignment> schema = assignments
+                    .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());
+            boolean selectionsDefinePurchasableVariants = schema.stream()
                     .anyMatch(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION);
-            if (selectionsDefinePurchasableVariants) {
+            // The 2026-11-07 #808 round-11 review (Major · Data Integrity
+            // & Integration): the coverage set includes the REQUIRED
+            // VARIANT assignments too — the promotion path (setRequired)
+            // and the assign guards refuse on the PUBLISHED shelf only
+            // (ACTIVE/SUSPENDED — the rows that never re-pass this gate),
+            // so a DRAFT product's live variants are exactly the rows
+            // THIS gate must adjudicate; checking the selection scope
+            // alone let a promoted-to-required VARIANT attribute publish
+            // a draft whose active variant never carried the value. The
+            // check also runs for selection-free types (a type with only
+            // a required VARIANT assignment still owes the coverage).
+            Set<UUID> requiredVariantAssignments = schema.stream()
+                    .filter(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION
+                            || (assignment.getScope() == ProductTypeAttributeScope.VARIANT
+                                    && assignment.isRequired()))
+                    .map(ProductTypeAttributeAssignment::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!requiredVariantAssignments.isEmpty()) {
                 // The publication gate revalidates EVERY active variant against
-                // the CURRENT selection schema (the C1 review's Major finding):
-                // an assignment the admin added after the variant's creation
-                // must surface HERE, never after publication — a non-null
-                // combination key proves nothing about schema currency.
-                Set<UUID> requiredSelections = assignments
-                        .findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId()).stream()
-                        .filter(assignment -> assignment.getScope() == ProductTypeAttributeScope.VARIANT_SELECTION)
-                        .map(ProductTypeAttributeAssignment::getId)
-                        .collect(java.util.stream.Collectors.toSet());
+                // the CURRENT required variant-attribute schema (the C1
+                // review's Major finding): an assignment the admin added or
+                // promoted after the variant's creation must surface HERE,
+                // never after publication — a non-null combination key proves
+                // nothing about schema currency.
                 boolean hasSelectableVariant = false;
                 for (ProductVariant variant : productVariantRepository.findByProductIdOrderBySkuAsc(productId)) {
-                    if (variant.getStatus() != ProductStatus.ACTIVE) {
+                    // The 2026-11-07 #808 round-15 review (Major · Data
+                    // Integrity & Integration): the coverage verdict walks
+                    // every NON-ARCHIVED variant — SUSPENDED stays in (the
+                    // probe's own law: reactivate() returns it to ACTIVE
+                    // without re-running this gate, so a suspended variant
+                    // missing a required value must refuse the publication
+                    // NOW, never after its reactivation); ARCHIVED stays
+                    // out (the terminal state never re-enters the shelf).
+                    if (variant.getStatus() == ProductStatus.ARCHIVED) {
                         continue;
                     }
                     Set<UUID> covered = variantAttributeValues
                             .findAllByProductVariantIdOrderByAssignmentIdAsc(variant.getId()).stream()
                             .map(ProductVariantAttributeValue::getAssignmentId)
                             .collect(java.util.stream.Collectors.toSet());
-                    if (!covered.containsAll(requiredSelections)) {
+                    if (!covered.containsAll(requiredVariantAssignments)) {
                         throw new ConflictException("Variant '" + variant.getSku()
-                                + "' does not satisfy the product type's current variant-selection schema"
+                                + "' does not satisfy the product type's current required variant-attribute schema"
                                 + " — update it before publication");
                     }
-                    if (variant.getOptionCombinationKey() != null) {
+                    if (variant.getStatus() == ProductStatus.ACTIVE
+                            && variant.getOptionCombinationKey() != null) {
                         hasSelectableVariant = true;
                     }
                 }
-                if (!hasSelectableVariant) {
+                if (selectionsDefinePurchasableVariants && !hasSelectableVariant) {
                     throw new ConflictException(
                             "A ProductType with variant-selection attributes requires at least one active typed variant before publication");
                 }
@@ -361,7 +428,34 @@ public class ProductService {
     @PreAuthorize("hasRole('PROVIDER')")
     public List<CatalogAttributeValueInput> replaceOwnedAttributeValues(UUID productId,
             List<CatalogAttributeValueInput> newValues, Authentication authentication) {
-        Product product = getOwnedProduct(productId, authentication);
+        // The 2026-11-07 #808 round-19 review (Minor · Data Integrity &
+        // Integration): the replace's product row loads FOR UPDATE BEFORE
+        // the status read that drives enforceRequired — the publication's
+        // twin lock. A publication committing DRAFT→ACTIVE between an
+        // unlocked status read and this replace's write let a DRAFT-shaped
+        // drop (no enforceRequired) land on an ACTIVE product; the locked
+        // load serializes the pair on the product row (either the publish
+        // committed first and THIS read sees ACTIVE — the drop
+        // re-validates against the required schema — or the replace
+        // commits first and the publication's gate re-validates the
+        // post-replace values).
+        Product product = getOwnedProductForUpdate(productId, authentication);
+        // The 2026-11-07 #808 round-14 review (Major · Data Integrity &
+        // Integration, the concurrency half): the value write rides the
+        // SAME type FOR-SHARE pairing the publication gate carries — the
+        // promotion path (setRequired) holds the type row FOR UPDATE
+        // while its coverage probe runs, but the value write took NO
+        // lock, so the owner's replace (validated against the OLD
+        // optional schema) could commit its value DROP between the
+        // probe's pass and the promotion's commit — a published product
+        // left without the freshly-required value. The FOR-SHARE read
+        // serializes the pair: either the drop commits first and the
+        // probe refuses the promotion, or the promotion commits first
+        // and the drop's re-validation refuses against the NEW required
+        // schema.
+        if (product.getProductTypeId() != null) {
+            productTypeRepository.findByIdForShare(product.getProductTypeId());
+        }
         List<ProductAttributeValue> prepared = prepareProductAttributeValues(product,
                 newValues == null ? List.of() : newValues,
                 product.getStatus() != StoreProductStatus.DRAFT);
@@ -406,6 +500,29 @@ public class ProductService {
             throw new ResourceNotFoundException("Product", productId);
         }
         return product;
+    }
+
+    /**
+     * The 2026-11-07 #808 round-19 review: the locked owned read — the
+     * publish/replace pair's serialization seam (the delete path's
+     * ownedRowForUpdate precedent; the stranger's row and the missing
+     * row answer the same safe absence).
+     *
+     * <p>The 2026-11-08 #808 round-24 review (Minor · Stability &amp;
+     * Availability, Quick win): the provider predicate rides INSIDE the
+     * locking query (the {@code ProductWriteService.ownedRowForUpdate}
+     * round-21 precedent verbatim) — the previous lock-then-filter shape
+     * took the WRITE lock on the addressed row BEFORE the ownership
+     * check, so a provider naming another provider's product WAITED on
+     * that foreign row's lock (a concurrent publish, replace or delete
+     * of the stranger's row) before answering the honest 404. The
+     * scoped query skips a foreign row without ever locking it, while
+     * the caller's OWN rows keep the full FOR-UPDATE serialization.</p>
+     */
+    private Product getOwnedProductForUpdate(UUID productId, Authentication authentication) {
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return productRepository.findByIdAndProviderIdForUpdate(productId, caller)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
     }
 
     /**

@@ -68,14 +68,24 @@ public interface CommercialPricingPort {
      * lock (the {@code findByIdForUpdate} house pattern — limits are never
      * read-modify-written counters).
      *
+     * <p>#810-H3 (the 2026-11-03 adversarial review's secondary risks —
+     * evaluated with W3-B15): the minimum spend re-validates under the
+     * SAME lock — the unlocked validation half's verdict could be
+     * invalidated by a concurrent administrative minSpend tightening
+     * between the breakdown and the settlement, the one theoretical
+     * window inside the placement transaction.</p>
+     *
      * @param orderId        the placed order the voucher redeemed against
      * @param consumerId     the buying consumer
      * @param voucherCode    the voucher code the placement carried
+     * @param discountedSubtotalMinor the order's promotion-discounted
+     *                               subtotal (the minSpend threshold's own
+     *                               basis, re-checked under the lock)
      * @param discountMinor  the discount the breakdown froze for this voucher
      * @param currency       the order's currency
      */
     void settleVoucher(UUID orderId, UUID consumerId, String voucherCode,
-                       long discountMinor, String currency);
+                       long discountedSubtotalMinor, long discountMinor, String currency);
 
     /**
      * The effective unit price carrier — the placement's re-pricing read.
