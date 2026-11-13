@@ -1,0 +1,57 @@
+name: Defect Knowledge Intake
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Optional PR number to backfill (otherwise sweep open PRs)"
+        required: false
+        type: string
+      include_closed_since:
+        description: "Optional UTC date (YYYY-MM-DD) to backfill all PRs created since this date"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: defect-knowledge-intake-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: Collect review signals without executing PR code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted default-branch workflow code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+
+      - name: Synchronize review submissions and comments
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          INCLUDE_CLOSED_SINCE: ${{ inputs.include_closed_since }}
+        run: |
+          set -eu
+          if [ -n "${PR_NUMBER:-}" ]; then
+            python3 .ci/defect_knowledge_intake.py --pr-number "$PR_NUMBER"
+          elif [ -n "${INCLUDE_CLOSED_SINCE:-}" ]; then
+            python3 .ci/defect_knowledge_intake.py --include-closed-since "$INCLUDE_CLOSED_SINCE"
+          else
+            python3 .ci/defect_knowledge_intake.py --sweep-open
+          fi
