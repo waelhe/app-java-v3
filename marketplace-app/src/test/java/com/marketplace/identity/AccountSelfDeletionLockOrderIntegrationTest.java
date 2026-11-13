@@ -198,9 +198,18 @@ class AccountSelfDeletionLockOrderIntegrationTest {
         try {
             var deletion = pool.submit(() -> {
                 awaitStart(start);
-                // No security context needed: the service narrows by the
-                // double verification (subject + password), not by authority.
-                selfDeletion.deleteOwnAccount(selfDeletedAdmin, PASSWORD);
+                // The production request shape: the self-deletion thread
+                // carries the ACCOUNT'S OWN token (the controller narrows
+                // the subject from the JwtAuthenticationToken, and the
+                // delegation target's own @PreAuthorize —
+                // "hasRole('ADMIN') or @authHelper.isCurrentUser(#userId,
+                // authentication)" — evaluates against this same context;
+                // the CI-measured round: without it the worker thread's
+                // empty SecurityContext fails the method-security gate with
+                // AuthenticationCredentialsNotFoundException inside
+                // pseudonymizeAccount).
+                runAs(selfDeletedAdmin, () ->
+                        selfDeletion.deleteOwnAccount(selfDeletedAdmin, PASSWORD));
                 return "deleted";
             });
             var disable = pool.submit(() -> {
