@@ -118,7 +118,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    — §9's regression list is its quick view): before editing, load
    `change-protocol.md` and apply the pattern families it triggers
    (`pattern-catalog.md`, P1–P14); before writing a fix, check
-   `evidence-ledger.md` for a case matching the symptom (E-01…E-49)
+   `evidence-ledger.md` for a case matching the symptom (E-01…E-51)
    and the rulebook rules (A/B/C/D) it binds; after implementing, run
    the adversarial pass in `review-protocol.md`; when a guard fails,
    `enforcement-map.md` states the rule → enforcement binding. The
