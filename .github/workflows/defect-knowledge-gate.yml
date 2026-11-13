@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 concurrency:
   group: defect-knowledge-receipt-${{ github.event.pull_request.number }}
@@ -36,6 +37,8 @@ jobs:
           PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -eu
           test "$(git rev-parse "refs/remotes/origin/pr-${PR_NUMBER}")" = "$PR_HEAD_SHA"
