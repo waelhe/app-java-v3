@@ -540,7 +540,14 @@ class DefectKnowledgeDocsGuardTest {
                 .contains("authToken")
                 .contains("100000")
                 .contains("activityLog")
-                .contains("phone numbers");
+                .contains("phone numbers")
+                .contains("describe_type")
+                .contains("describe_operation")
+                .contains("list_operations")
+                .contains("saleor://schema/graphql")
+                .contains("structuredContent")
+                .contains("high-impact mutation")
+                .contains("shop settings");
         assertThat(skillPins)
                 .as("the existing vendored-skill registry, not the resource index, proves the local pin")
                 .contains("saleor-core")
