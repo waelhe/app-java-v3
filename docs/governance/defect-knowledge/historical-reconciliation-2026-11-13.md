@@ -2,7 +2,7 @@
 
 ## Scope and measurement basis
 
-This refresh starts from the knowledge-system baseline merged by PR #746 on 2026-10-28 and measures the repository through main@445f421d67ad58bd533d42be9d5bbf6d268d9161.
+This refresh starts from the knowledge-system baseline merged by PR #746 on 2026-10-28 and initially measured the repository through main@445f421d67ad58bd533d42be9d5bbf6d268d9161; the live main tip later advanced to f92873c947e94c76ed3e7ea211db40a985ea3d63 when #829 merged on 2026-11-13.
 
 - GitHub returned **75 PR records created after #746 and through #833** in the repository's paginated PR listing. The set contains product/code changes, review-only shards, documentation/governance PRs, Dependabot updates and OpenRewrite-generated changes. It is a PR inventory, not 75 defects.
 - The six current permanent commerce review shards (#806–#811) contained **653 review threads**: 228 resolved and 425 unresolved at this measurement. The six PRs contained **682 CodeRabbit inline review comments with distinct GitHub review-comment fingerprints**. These are review signals, not confirmed defects or a count of unique root causes.
@@ -27,7 +27,7 @@ The machine-readable index is review-findings-index-2026-11-13.json. It records 
 | #813 | Fixed OpenRewrite's use of unpinned system Maven by using the repository Maven Wrapper. The merge commit is an ancestor of main@445f421d. | E-27 / P1 / P14. |
 | #816 | Adversarial review registered 34 findings: 32 confirmed and two suspected, across money, identity, purge, API contracts, test quality and CI/configuration. | Canonical finding source for A1–W6. |
 | #817–#818 | #817 fixed optimistic-version advancement across five purge adapters; #818 added the last-active-admin guard. Both merge commits are ancestors of main@445f421d. | G1/G2/G4/G5/G6 and B1 are fixed on main, even though the commerce candidate must be checked/synchronized separately. |
-| #819–#824 and #827–#833 | Separate repair PRs were opened for findings from #816/#826. Their current statuses are indexed individually; open PRs are not counted as fixed. | The PR's base matters: most repairs target main; the commerce candidate must receive and revalidate the relevant repairs under its own release lifecycle. |
+| #819–#824 and #827–#833 | Separate repair PRs were opened for findings from #816/#826. At the first inventory, they were open. A live refresh after #829's merge found #829 merged to main; #819–#824 (except #825, a closed unmerged W7 carrier), and #827/#828/#830–#833 remained open. | The PR's base matters: a fix on main is not automatically present on the commerce candidate. Status is branch-specific and must be remeasured. |
 | #826 | Follow-up review found W7 (fixed by #813) and W8 (CodeRabbit poll/coverage-verifier disagreement). A full-review operational workaround was used, but a structural W8 repair is still outstanding. | E-26/E-27 / P13/P14; installing a gate does not prove the gate is coherent or healthy. |
 
 ## Findings vs. capability gaps
@@ -41,7 +41,7 @@ Issues #774–#782 are not all defects. They include **capability gaps** (for ex
 - main at the time of this reconciliation is 445f421d.
 - GitHub commit comparisons confirm #813 (445f421d), #817 (5de7564f) and #818 (55f1a196) are ancestors of current main.
 - Commerce PR #787 remains open at b97747f0, last updated 2026-11-10. Do not infer that a fix on main is automatically present on that candidate. The campaign's review-shard lifecycle requires fixes and the corresponding review evidence on the candidate itself.
-- PRs #829, #831, #832, #833 and the other linked repairs are still open in the measured snapshot. Their descriptions document implementation and test plans, but they are not marked fixed until the required checks pass and the fix reaches the relevant branch.
+- The first snapshot was followed by #829 merging at f92873c9 on 2026-11-13. #829 fixes A2 on main; its 12 distinct CodeRabbit review fingerprints were all addressed before merge. #831/#832/#833 remain open in the refreshed state. #819/#821/#822/#823 have resolved review threads but their PRs remain open, so their fixes are still in-flight, not fixed on main.
 - PR #749 remains an open issue describing an ABBA lock-order deadlock window and outbound OSRM HTTP while a database transaction/order lock is held. It is retained as two distinct causal cases (E-24 and E-25), not silently counted as fixed.
 
 ## Reconciliation limits
@@ -59,3 +59,32 @@ This is a historical backfill, not the closed loop by itself. The companion impl
 5. This reconciliation index and new causal cases/patterns, so the next PR does not have to rediscover the same mechanism from raw review comments.
 
 The intake collector deliberately does **not** decide that a CodeRabbit sentence is a confirmed bug. Classification remains a reviewed act: confirmed defect, test gap, capability gap, decision gap, accepted risk, or non-reproducible/false positive. The system closes only when the finding has a traceable disposition and the relevant regression control is enforced.
+
+
+## Live refresh after the first snapshot — 2026-11-13
+
+The initial PR inventory was written while main was at 445f421d. A subsequent live read showed **PR #829 merged at f92873c947e94c76ed3e7ea211db40a985ea3d63**, advancing main and closing A2 on that branch. The structured index and evidence ledger were updated to reflect this. This is the reason the main baseline fields now carry both the initial snapshot and the latest verified tip.
+
+The repair PRs themselves generated additional review findings. I fetched the actual review threads rather than inferring from PR descriptions:
+
+| Repair PR | CodeRabbit threads | Distinct fingerprints | Measured disposition |
+|---|---:|---:|---|
+| #819 D1 GraphQL exception mapping | 1 | 1 | Thread resolved; PR remains open |
+| #821 D4 type-mismatch contract | 3 | 3 | Threads resolved; PR remains open |
+| #822 W2 mail origin configuration | 2 | 2 | Threads resolved; PR remains open |
+| #823 E1/E4 test evidence | 1 | 1 | Thread resolved; PR remains open |
+| #829 A2 commission mirror reversal | 12 | 12 | All threads resolved; PR merged to main |
+
+That is **19 distinct CodeRabbit review fingerprints across 19 threads**. They are not blindly added to the 34+2 root-finding count: they are implementation/refinement findings on the repair PRs, and the ledger registers them as E-33…E-49. #829's 12 are fixed on main; E-43…E-49 are linked to open PR heads and are not marked fixed-main.
+
+### New evidence cases from the repair reviews
+
+- **E-33–E-35:** reverse the posted commission amount, handle asynchronous refund-before-settlement ordering, and distinguish a legitimate zero commission from an unposted settlement.
+- **E-36–E-38:** reconcile historical fully refunded intents (including deploy overlap), aggregate one UPSERT row per provider/currency, and advance the optimistic version for native SQL updates.
+- **E-39–E-42:** include reversal credits in net-ledger signs and API metadata, remove test-fixture call-order coupling, and bound scheduled reconciliation work.
+- **E-43:** null GraphQL exception detail must not break GraphQL error rendering.
+- **E-44–E-46:** localize field errors, preserve type-mismatch diagnostics, and prevent MessageFormat from interpreting untrusted fallback data.
+- **E-47–E-48:** validate the actual Spring Boot-bound mail origin at startup and reject query/fragment URI components.
+- **E-49:** derive the repair-plan summary and counts from the individual gate records.
+
+The original 75-PR count remains the inventory through #833. PR #834 is the new governance implementation PR created after that inventory, and is tracked separately.
