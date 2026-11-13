@@ -491,3 +491,21 @@
 - **Violated invariant:** derived document summaries and counts must match their detailed authoritative rows.
 - **Correction/status:** PR #823 updated the summary and counts; its review thread is resolved, but the PR remains open.
 - **Prevention:** A6/P6; extend guards to every load-bearing count/summary or date it with a command that derives the value.
+
+## E-50 · Review-intake issue creation raced between event delivery and scheduled sweep [VERIFIED]
+
+- **Observed defect (PR #834 adversarial implementation review, 2026-11-13):** the intake workflow grouped concurrency by `github.event.pull_request.number`, `inputs.pr_number`, or `github.run_id`. A `issue_comment` event carries the PR number under `github.event.issue.number`, so each comment run received a unique group. It could race the scheduled all-open-PR sweep: both executions could observe no intake issue and create two issues for one source PR.
+- **Violated invariant:** there is exactly one active writer for the intake issue registry; every event and recovery sweep for a source PR must converge to the same issue identity.
+- **Root cause:** concurrency identity was derived from only one webhook event shape and used the run ID as a fallback, so logically identical source PR operations did not serialize.
+- **Correction:** PR #834 uses a repository-wide single-writer concurrency group with `cancel-in-progress: false`; the collector fetches a complete current snapshot, and the scheduled sweep recovers any pending event replaced by GitHub's concurrency queue. A unit test pins the single-writer workflow setting and issue-comment PR-number extraction.
+- **Status:** FIX IMPLEMENTED ON PR #834; CI verification pending. Do not mark fixed-main until the regression test passes on the final head and the change is merged.
+- **Prevention:** B2 + P4/P12; webhook and scheduled recovery paths share a single-writer key, and tests must model both event payloads.
+
+## E-51 · D11 accepted a declared workflow URL without proving the workflow run existed or passed [VERIFIED]
+
+- **Observed defect (PR #834 adversarial implementation review, 2026-11-13):** the first D11 validator accepted `status: passed` plus any URL beginning `https://github.com/`. It did not fetch the Actions run, check its actual conclusion, verify its repository, or bind its `head_sha` to the current PR head. A fabricated URL or a failed/stale run could therefore be recorded as fixed.
+- **Violated invariant:** a fixed disposition is accepted only when GitHub itself confirms that the linked workflow run completed successfully on the exact PR head and in this repository.
+- **Root cause:** the receipt's self-reported status and URL were treated as evidence rather than as identifiers to resolve against the authoritative GitHub Actions API.
+- **Correction:** PR #834 now parses only the canonical repository Actions-run URL, fetches that run through the authenticated GitHub API, and verifies `status=completed`, `conclusion=success`, and the exact current PR `head_sha`; the gate has read-only Actions permission. Unit tests cover malformed/cross-repository links, in-progress/failed runs, wrong heads and the success payload.
+- **Status:** FIX IMPLEMENTED ON PR #834; CI verification pending. Do not mark fixed-main until the validator tests pass and this commit is merged.
+- **Prevention:** D11 + P12; never trust a status label or URL in a receipt without resolving the authoritative check/run object and binding it to the exact head.
