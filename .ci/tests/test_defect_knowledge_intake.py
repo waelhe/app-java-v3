@@ -130,8 +130,8 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
 
     def test_build_intake_issue_index_reads_once_and_ignores_pr_issues(self):
         with unittest.mock.patch.object(MODULE, "api_pages", return_value=[
-            {"number": 99, "title": "Defect Intake: PR #834 — spoof", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": "waelhe"}},
-            {"number": 100, "title": "Defect Intake: PR #834 — real", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}, "state": "open"},
+            {"number": 99, "title": "Defect Intake: PR #834 — spoof", "body": "<!-- defect-intake-pr:834 -->\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": "waelhe"}},
+            {"number": 100, "title": "Defect Intake: PR #834 — real", "body": "<!-- defect-intake-pr:834 -->\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}, "state": "open"},
             {"number": 101, "body": "<!-- defect-intake-pr:835 -->", "pull_request": {"url": "x"}},
             {"number": 102, "body": "ordinary issue", "user": {"login": "waelhe"}, "state": "open"},
         ]) as api_pages:
@@ -142,8 +142,8 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
 
     def test_duplicate_intake_issues_fail_closed_instead_of_creating_another(self):
         with unittest.mock.patch.object(MODULE, "api_pages", return_value=[
-            {"number": 100, "title": "Defect Intake: PR #834 — a", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}},
-            {"number": 200, "title": "Defect Intake: PR #834 — b", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}},
+            {"number": 100, "title": "Defect Intake: PR #834 — a", "body": "<!-- defect-intake-pr:834 -->\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}},
+            {"number": 200, "title": "Defect Intake: PR #834 — b", "body": "<!-- defect-intake-pr:834 -->\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}},
         ]):
             with self.assertRaisesRegex(MODULE.IntakeError, "Multiple defect-intake issues"):
                 MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
@@ -166,11 +166,30 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
         self.assertIsNone(MODULE.find_sync_summary_comment([user_comment]))
         self.assertIs(MODULE.find_sync_summary_comment([user_comment, bot_comment]), bot_comment)
 
+    def test_duplicate_bot_summary_comments_fail_closed(self):
+        comments = [
+            {"user": {"login": MODULE.AUTOMATION_ACTOR}, "body": MODULE.SUMMARY_MARKER, "id": 1},
+            {"user": {"login": MODULE.AUTOMATION_ACTOR}, "body": MODULE.SUMMARY_MARKER, "id": 2},
+        ]
+        with self.assertRaisesRegex(MODULE.IntakeError, "Multiple bot-owned"):
+            MODULE.find_sync_summary_comment(comments)
+
+    def test_bot_intake_with_multiple_pr_markers_fails_closed(self):
+        issue = {
+            "number": 779,
+            "title": "Defect Intake: PR #834 — duplicated",
+            "body": "<!-- defect-intake-pr:834 -->\\n<!-- defect-intake-pr:835 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834",
+            "user": {"login": MODULE.AUTOMATION_ACTOR},
+        }
+        with unittest.mock.patch.object(MODULE, "api_pages", return_value=[issue]):
+            with self.assertRaisesRegex(MODULE.IntakeError, "ambiguous control markers"):
+                MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
+
     def test_user_authored_issue_cannot_claim_or_hijack_an_intake_marker(self):
         spoof = {
             "number": 777,
             "title": "Defect Intake: PR #834 — fake",
-            "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834",
+            "body": "<!-- defect-intake-pr:834 -->\nSource PR: https://github.com/waelhe/app-java-v3/pull/834",
             "user": {"login": "waelhe"},
         }
         with unittest.mock.patch.object(MODULE, "api_pages", return_value=[spoof]):
