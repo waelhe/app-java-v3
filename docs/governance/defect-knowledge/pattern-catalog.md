@@ -6,7 +6,7 @@
 
 **Invariant protected:** the verification environment must exercise the exact dimension the change touches *as the deployment target experiences it*.
 
-**Demonstrating cases:** E-01 (fresh-DB CI blind to applied-migration checksum drift; production 502), E-02 (env var present in CI, absent on Railway → boot collapse), E-03 (SMTP unreachable only from the Railway node → aggregate DOWN), E-16 (provider quota walls invisible to build).
+**Demonstrating cases:** E-01 (fresh-DB CI blind to applied-migration checksum drift; production 502), E-02 (env var present in CI, absent on Railway → boot collapse), E-03 (SMTP unreachable only from the Railway node → aggregate DOWN), E-16 (provider quota walls invisible to build), E-47 (unresolved Spring placeholder retained as a literal), and E-48 (invalid mail origin URI accepted).
 
 **Same cause or similar symptoms?** One cause in four costumes: the check that gates the merge runs in an environment structurally different from production in precisely the failed dimension (database state, environment variables, network reachability, provider capacity). The reverts and outages are symptoms; the environment delta is the cause.
 
@@ -34,7 +34,7 @@
 
 **Invariant protected:** contract fidelity is measured at the shape/semantics level (argument containers, nullability, response wrapper), not at name level.
 
-**Demonstrating cases:** E-11 (Saleor roots with correct names but arguments outside the input object / wrong nullability), E-05 (OpenAPI-diff "compatible" while the wrapper change broke the frontend inbox), E-19 (cursor shape evolution needing a dedicated gate).
+**Demonstrating cases:** E-11 (Saleor roots with correct names but arguments outside the input object / wrong nullability), E-05 (OpenAPI-diff "compatible" while the wrapper change broke the frontend inbox), E-19 (cursor shape evolution needing a dedicated gate), E-39/E-40 (ledger reversal sign in net aggregation and response metadata), and E-43–E-46 (GraphQL/REST error mapping, locale and fallback rendering).
 
 **Same cause?** Yes: verification scope narrower than consumer-dependence scope. Names/diff-level pass; shapes fail downstream.
 
@@ -48,7 +48,7 @@
 
 **Invariant protected:** external effects and idempotency records survive partial failure; identity of an operation is stable regardless of state at retry time.
 
-**Demonstrating cases:** E-04 (retryable boundary joined `REQUIRED` carrier → rollback-only poisoning, dedup-without-settlement), E-08 (refund key derived from dispute state → double-payment window after rollback+webhook), E-07 (AFTER_COMMIT deferral applied globally then reverted — the inverse lesson: the pattern is conditional, not universal), E-06-adjacent (listener transaction semantics).
+**Demonstrating cases:** E-04 (retryable boundary joined `REQUIRED` carrier → rollback-only poisoning, dedup-without-settlement), E-08 (refund key derived from dispute state → double-payment window after rollback+webhook), E-07 (AFTER_COMMIT deferral applied globally then reverted — the inverse lesson: the pattern is conditional, not universal), E-06-adjacent (listener transaction semantics), and E-33–E-38 (posted-commission reversal, asynchronous event order, zero commission, historical backfill, unique-key aggregation and optimistic-version preservation).
 
 **Same cause?** One family, three mechanisms: (a) retryable work inside carrier transactions, (b) idempotency identity derived from mutable state, (c) publication timing chosen without read-path analysis. All are *transactional-boundary design* failures.
 
@@ -76,7 +76,7 @@
 
 **Invariant protected:** every load-bearing number in machine- or owner-facing documents is derived (guarded) or explicitly dated with a re-derivation command.
 
-**Demonstrating cases:** E-12 (guard-caught 183→184; PR-body 107/294/57 vs measured 163/238/57; campaign 98≠90, 57≠56), E-20 (false claim + dead config — narrative-code divergence), E-21 (guard message drifting from guard behavior), regression-list item "stale duplicate numbers surviving beside the guarded phrase".
+**Demonstrating cases:** E-12 (guard-caught 183→184; PR-body 107/294/57 vs measured 163/238/57; campaign 98≠90, 57≠56), E-20 (false claim + dead config — narrative-code divergence), E-21 (guard message drifting from guard behavior), E-49 (repair-plan summary/count drift), regression-list item "stale duplicate numbers surviving beside the guarded phrase".
 
 **Same cause?** Yes: truth maintained by hands instead of derivation. Different documents, one mechanism.
 
@@ -90,7 +90,7 @@
 
 **Invariant protected:** pushed state is atomic (compiles + passes its own tests); reported status binds to the exact pushed SHA.
 
-**Demonstrating cases:** E-10 (tests without implementation after session interruption — module-wide `testCompile` failure; plus a test that never ran), the standing owner protocol "execute on GitHub immediately" (existing precisely because sessions drop), E-20 (status claimed beyond evidence).
+**Demonstrating cases:** E-10 (tests without implementation after session interruption — module-wide `testCompile` failure; plus a test that never ran), E-41 (shared asynchronous event-test mock depended on call order), E-42 (scheduled reconciliation scanned the full payment-intent table), the standing owner protocol "execute on GitHub immediately" (existing precisely because sessions drop), E-20 (status claimed beyond evidence).
 
 **Same cause?** Yes: agent sessions are interruptible by nature; un-atomic pushes or unbound claims turn interruption into defect.
 
@@ -162,7 +162,7 @@
 
 **Invariant protected:** a green test must execute the failure trigger and observable state transition described by its name and acceptance claim.
 
-**Demonstrating cases:** E-28 (purge version advancement was present, but the original test did not prove stale-write rejection on PostgreSQL; #764 added the real database proof); E-01/E-02/E-03 (CI's clean or differently configured environment did not exercise the deployed failure dimension); E-10 (test source existed but was not executed by the required pipeline).
+**Demonstrating cases:** E-28 (purge version advancement was present, but the original test did not prove stale-write rejection on PostgreSQL; #764 added the real database proof); E-01/E-02/E-03 (CI's clean or differently configured environment did not exercise the deployed failure dimension); E-10 (test source existed but was not executed by the required pipeline), E-41/E-42 (test fixture determinism and recurring-query bounds).
 
 **Same cause?** Yes: the test's assertion surface or execution environment is weaker than the claim it is used to justify. It can pass while the invariant is still false.
 
