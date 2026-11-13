@@ -75,10 +75,9 @@ jobs:
         run: python -m pip install --disable-pip-version-check graphql-core==3.2.6
 
       - name: Download and verify immutable official Saleor SDL
-        env:
-          SALEOR_REF: "3.23.43"
         run: |
           set -euo pipefail
+          SALEOR_REF="$(python -c "import json; print(json.load(open('docs/governance/plans/saleor-source-pins.json'))['referenceSchema']['ref'])")"
           curl --fail --silent --show-error --location \
             "https://raw.githubusercontent.com/saleor/saleor/${SALEOR_REF}/saleor/graphql/schema.graphql" \
             --output "${RUNNER_TEMP}/saleor-reference.graphql"
