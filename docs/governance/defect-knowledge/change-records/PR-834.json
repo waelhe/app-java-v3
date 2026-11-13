@@ -27,7 +27,8 @@
     "B2",
     "B3",
     "B6",
-    "D11"
+    "D11",
+    "D12"
   ],
   "patternsReviewed": [
     "P1",
@@ -37,7 +38,8 @@
     "P12",
     "P13",
     "P14",
-    "P4"
+    "P4",
+    "P15"
   ],
   "historicalCasesReviewed": [
     "E-24",
@@ -67,7 +69,8 @@
     "E-48",
     "E-49",
     "E-50",
-    "E-51"
+    "E-51",
+    "E-52"
   ],
   "invariants": [
     "Review submissions and comments are captured exactly once by source ID and are never auto-classified as confirmed defects.",
@@ -76,7 +79,8 @@
     "The receipt validator executes from trusted base code for subsequent pull requests and reads candidate content as data.",
     "The historical repair index keeps main-branch fixes distinct from fixes still absent from the commerce integration candidate.",
     "Issue-comment intake and scheduled/manual recovery sweeps use one serialized writer so one PR has one intake issue.",
-    "A fixed disposition is accepted only when the repository Actions API confirms a completed successful run on the exact PR head."
+    "A fixed disposition is accepted only when the repository Actions API confirms a completed successful run on the exact PR head.",
+    "Only GitHub Actions-authored intake issues/comments may control collector markers; human-authored marker lookalikes cannot suppress ingestion or be updated as managed summaries."
   ],
   "doors": [
     "pull_request_review submitted/edited/dismissed events",
@@ -88,7 +92,8 @@
     "trusted pull_request_target receipt gate on subsequent PRs",
     "agent bootstrap instructions in AGENTS.md, docs/agent-protocol.md and docs/agent-skill.md",
     "issue_comment webhook concurrent with daily schedule/manual sweep",
-    "D11 fixed-disposition workflow run URL parsing and GitHub Actions lookup"
+    "D11 fixed-disposition workflow run URL parsing and GitHub Actions lookup",
+    "human-authored issue/comment containing defect-intake-pr, defect-intake-item, or defect-intake-sync-summary lookalike markers"
   ],
   "siblingSearch": [
     {
@@ -119,6 +124,15 @@
         "docs/governance/defect-knowledge/enforcement-map.md"
       ],
       "result": "New E-24..E-32 cases and P11..P14 patterns extend the canonical system; no duplicate ledger or shadow pattern catalog was introduced."
+    },
+    {
+      "family": "Automation marker ownership and issue/comment synchronization",
+      "pathsSearched": [
+        ".ci/defect_knowledge_intake.py",
+        ".ci/tests/test_defect_knowledge_intake.py",
+        ".github/workflows/defect-knowledge-intake.yml"
+      ],
+      "result": "All marker control paths now verify bot authorship; bot-owned intake issues are bound to title PR number and exact source link; human-authored markers are ignored."
     }
   ],
   "tests": [
@@ -156,6 +170,16 @@
       "name": "test_issue_comment_event_resolves_the_pr_number_from_issue_payload",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
       "verification": "Required CI Build (JDK 25) on the final PR head; pending."
+    },
+    {
+      "name": "test_human_comment_markers_cannot_suppress_source_items_or_take_over_summary",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
+    },
+    {
+      "name": "test_user_authored_issue_cannot_claim_or_hijack_an_intake_marker",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
     }
   ],
   "findings": [
@@ -188,6 +212,21 @@
       "severity": "high",
       "status": "open",
       "note": "Fix is in this PR: resolve the canonical run URL through GitHub Actions API, validate success/completion/repository/head SHA; final CI validation is pending."
+    },
+    {
+      "key": "G10",
+      "domain": "defect-knowledge.intake-markers",
+      "scenario": "A human-authored issue comment contains a copied intake item or summary marker, suppressing a source item or being overwritten as the managed summary.",
+      "invariant": "Only automation-authored intake issues and comments may control deduplication or be updated by the collector.",
+      "fingerprint": "sha256:738695bfd8cb965decac012fad2e9686dade7dc8ad2d20cd52d08ab77d16f380",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/834"
+      ],
+      "caseId": "E-52",
+      "classification": "confirmed_defect",
+      "severity": "high",
+      "status": "open",
+      "note": "PR #834 restricts control markers to github-actions[bot], validates the bot-owned intake issue's title/marker/source URL, and adds adversarial tests; final CI validation is pending."
     }
   ],
   "independentReviewAttempt": {
