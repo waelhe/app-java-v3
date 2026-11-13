@@ -51,10 +51,17 @@ class ProblemDetailRenderingTest {
             @Override
             protected MessageFormat resolveCode(String code, Locale locale) {
                 if ("error.VAL-001.type-mismatch-detail".equals(code)) {
-                    // the ar bundle's own shape: ''{0}'' renders a literal
-                    // apostrophe, {0}/{1}/{2} stay the active arguments
+                    // the ar bundle's own shape — byte-identical to
+                    // messages_ar.properties: '' renders a literal apostrophe
+                    // and {1} is the VALUE slot (the call site passes
+                    // (parameter, value, type) — GlobalExceptionHandler's
+                    // handleTypeMismatch), so the sentence reads
+                    // "invalid VALUE for PARAMETER" exactly as production.
+                    // (2026-11-13 round-2 finding: the template had {0}/{1}
+                    // swapped — the positional contract is the reviewer's
+                    // cited Java 25 MessageFormat rule.)
                     return new MessageFormat(
-                            "قيمة غير صالحة ''{0}'' للمعامل ''{1}'' — النوع المتوقع ''{2}''", locale);
+                            "قيمة غير صالحة ''{1}'' للمعامل ''{0}'' — النوع المتوقع ''{2}''", locale);
                 }
                 return null;
             }
