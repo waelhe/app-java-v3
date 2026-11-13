@@ -120,22 +120,34 @@ public record IdentityMailProperties(
         // parses with getPort()=70000 — the parser validates digits, never
         // the 0-65535 range), so the wall itself rejects out-of-range ports;
         // an undefined port (-1) and valid ports stay accepted.
+        // Review round 6 (2026-11-13): a public client origin never carries
+        // userinfo (measured: URI.create("https://user@app.example.com") parses
+        // with getUserInfo()="user" — credentials have no place in a mail
+        // deep link's base), so the wall rejects userinfo-carrying origins;
+        // and the stored origin carries the canonical lowercase scheme form
+        // (RFC 3986 §3.1: "Although schemes are case-insensitive, the
+        // canonical form is lowercase") so every minted link is canonical.
         String rawPath = origin.getRawPath();
         if (origin.getScheme() == null || origin.getHost() == null
                 || !(("http".equalsIgnoreCase(origin.getScheme())
                         || "https".equalsIgnoreCase(origin.getScheme())))
                 || origin.getPort() > 65535
+                || origin.getUserInfo() != null
                 || origin.getRawQuery() != null
                 || origin.getRawFragment() != null
                 || (rawPath != null && !rawPath.isBlank() && !"/".equals(rawPath))) {
             throw new IllegalArgumentException(
                     "marketplace.identity.mail-base-url '" + mailBaseUrl + "' must be an absolute "
-                            + "http(s) client origin (scheme + host, no path, no query or fragment, "
-                            + "port within 0-65535) — e.g. "
+                            + "http(s) client origin (scheme + host, no userinfo, no path, no query "
+                            + "or fragment, port within 0-65535) — e.g. "
                             + "MARKETPLACE_IDENTITY_MAIL_BASE_URL='https://app.example.com'.");
         }
         if ("/".equals(rawPath)) {
             mailBaseUrl = mailBaseUrl.substring(0, mailBaseUrl.length() - 1);
+        }
+        if (!origin.getScheme().equals(origin.getScheme().toLowerCase(java.util.Locale.ROOT))) {
+            mailBaseUrl = origin.getScheme().toLowerCase(java.util.Locale.ROOT)
+                    + mailBaseUrl.substring(origin.getScheme().length());
         }
     }
 }

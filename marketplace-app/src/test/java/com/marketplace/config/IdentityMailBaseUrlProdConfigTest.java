@@ -184,16 +184,39 @@ class IdentityMailBaseUrlProdConfigTest {
     /**
      * Review round 4 (2026-11-13, Minor): URI schemes are case-insensitive
      * (java.net.URI) — "HTTPS://app.example.com" is a legitimate https
-     * client origin and must bind through the wall, not fail it.
+     * client origin and must bind through the wall, not fail it. Review
+     * round 6 (2026-11-13): the stored origin carries the canonical
+     * lowercase scheme form (RFC 3986 §3.1: "Although schemes are
+     * case-insensitive, the canonical form is lowercase").
      */
     @Test
-    void theRecordAcceptsAnUppercaseSchemeOrigin() {
+    void theRecordAcceptsAnUppercaseSchemeOriginAndCanonicalizesIt() {
         var properties = new IdentityMailProperties(
                 "HTTPS://app.example.com",
                 java.time.Duration.ofMinutes(30),
                 java.time.Duration.ofHours(24),
                 java.time.Duration.ofSeconds(60));
-        assertThat(properties.mailBaseUrl()).isEqualTo("HTTPS://app.example.com");
+        assertThat(properties.mailBaseUrl()).isEqualTo("https://app.example.com");
+    }
+
+    /**
+     * Review round 6 (2026-11-13): a public client origin never carries
+     * userinfo (measured: URI.create("https://user@app.example.com") parses
+     * with getUserInfo()="user" — credentials have no place in a mail deep
+     * link's base) — the wall rejects userinfo-carrying origins.
+     */
+    @Test
+    void theRecordRejectsUserinfoCarryingOrigins() {
+        for (String invalid : new String[] { "https://user@app.example.com", "https://user:secret@app.example.com" }) {
+            assertThatThrownBy(() -> new IdentityMailProperties(
+                    invalid,
+                    java.time.Duration.ofMinutes(30),
+                    java.time.Duration.ofHours(24),
+                    java.time.Duration.ofSeconds(60)))
+                    .as("origin '%s' must be rejected", invalid)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("no userinfo");
+        }
     }
 
     /**
