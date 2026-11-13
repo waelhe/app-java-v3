@@ -202,6 +202,22 @@
 
 ---
 
+## P15 · Automation marker spoofing — content confused with control state
+
+**Invariant protected:** an automation workflow acts only on control records owned by its own trusted identity; user-authored text that resembles a marker cannot change ingestion, deduplication, or managed-comment selection.
+
+**Demonstrating case:** E-52 (a human-authored issue comment could copy an intake-item marker and suppress a source revision, or copy the synchronization marker and be selected for overwrite; a user-created issue could also claim the per-PR intake marker).
+
+**Same cause?** Yes: the collector treated marker syntax as authority without verifying the author/owner of the containing GitHub object.
+
+**Frequency/severity:** one confirmed governance defect in the new intake mechanism; severity high because review evidence could be silently dropped or human triage text overwritten.
+
+**Prevention status:** correction implemented in PR #834: only `github-actions[bot]` comments count as managed marker carriers; intake issues must be bot-authored and their marker, reserved title PR number and exact source PR link must agree. Missing/conflicting bot-owned metadata fails closed.
+
+**Strongest prevention:** D12 ownership validation plus adversarial tests for user-authored lookalike markers, spoofed intake issues, bot marker tampering and duplicate managed records. Treat marker strings as untrusted data until object identity and ownership are proven.
+
+---
+
 ## Candidate patterns examined and rejected (recorded to prevent re-litigation)
 
 - **"Module count growth as defect"** — rejected: 24-module Modulith growth is the designed architecture (SYSTEM.md §5), not a failure mechanism; the churn sentinels (E-22) record the cost honestly.
