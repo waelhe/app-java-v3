@@ -152,7 +152,7 @@
       "verification": "Required Maven CI Build (JDK 25) on PR #834 head; pending at receipt creation."
     },
     {
-      "name": "test_fixed_claim_requires_completed_successful_run_on_tested_head",
+      "name": "test_fixed_claim_requires_completed_successful_run_on_exact_head",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
       "verification": "Required CI Build (JDK 25) on the final PR head; pending."
     },
@@ -162,7 +162,7 @@
       "verification": "Required CI Build (JDK 25) on the final PR head; pending."
     },
     {
-      "name": "test_intake_workflow_uses_a_single_writer_group_for_all_event_kinds",
+      "name": "test_intake_workflow_uses_a_single_writer_group_and_privileged_workflow_run",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
       "verification": "Required CI Build (JDK 25) on the final PR head; pending."
     },
