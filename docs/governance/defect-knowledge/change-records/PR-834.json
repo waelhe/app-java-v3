@@ -6,7 +6,6 @@
     ".ci/defect_knowledge_intake.py",
     ".github/workflows/ci.yml",
     ".github/workflows/coderabbit-gate.yml",
-    ".github/workflows/copilot-review-834.yml",
     ".github/workflows/defect-knowledge-gate.yml",
     ".github/workflows/defect-knowledge-intake.yml",
     "AGENTS.md",
@@ -89,8 +88,7 @@
     "trusted pull_request_target receipt gate on subsequent PRs",
     "agent bootstrap instructions in AGENTS.md, docs/agent-protocol.md and docs/agent-skill.md",
     "issue_comment webhook concurrent with daily schedule/manual sweep",
-    "D11 fixed-disposition workflow run URL parsing and GitHub Actions lookup",
-    "GitHub first-party Copilot Code Review REST endpoint for exact PR #834 head"
+    "D11 fixed-disposition workflow run URL parsing and GitHub Actions lookup"
   ],
   "siblingSearch": [
     {
@@ -158,11 +156,6 @@
       "name": "test_issue_comment_event_resolves_the_pr_number_from_issue_payload",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
       "verification": "Required CI Build (JDK 25) on the final PR head; pending."
-    },
-    {
-      "name": "Copilot review request workflow exact-head guard",
-      "command": "GitHub Actions workflow copilot-review-834.yml on push to the PR branch",
-      "verification": "The workflow run must report HTTP 201/409 or an explicit eligibility/rate-limit failure for the exact push SHA; a request is not treated as a review until Copilot's review/comment is visible on that same SHA."
     }
   ],
   "findings": [
@@ -196,5 +189,15 @@
       "status": "open",
       "note": "Fix is in this PR: resolve the canonical run URL through GitHub Actions API, validate success/completion/repository/head SHA; final CI validation is pending."
     }
-  ]
+  ],
+  "independentReviewAttempt": {
+    "provider": "GitHub Copilot Code Review",
+    "endpoint": "POST /repos/{owner}/{repo}/pulls/{pull_number}/copilot-code-review",
+    "sourceWorkflowRun": "https://github.com/waelhe/app-java-v3/actions/runs/43405862376",
+    "result": "not-created",
+    "httpStatus": 422,
+    "failureReason": "ACTOR_INELIGIBLE",
+    "message": "GitHub reported that the actor has no Copilot license including code review, or code review is disabled by organization policy. No Copilot review or review comments were created.",
+    "interpretation": "This is an eligibility failure, not an approval or completed review. An independent human reviewer or an eligible Copilot actor/policy is still required."
+  }
 }
