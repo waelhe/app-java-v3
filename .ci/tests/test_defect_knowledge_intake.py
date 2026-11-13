@@ -130,9 +130,10 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
 
     def test_build_intake_issue_index_reads_once_and_ignores_pr_issues(self):
         with unittest.mock.patch.object(MODULE, "api_pages", return_value=[
-            {"number": 100, "body": "<!-- defect-intake-pr:834 -->\\ntriage", "state": "open"},
+            {"number": 99, "title": "Defect Intake: PR #834 — spoof", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": "waelhe"}},
+            {"number": 100, "title": "Defect Intake: PR #834 — real", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}, "state": "open"},
             {"number": 101, "body": "<!-- defect-intake-pr:835 -->", "pull_request": {"url": "x"}},
-            {"number": 102, "body": "ordinary issue", "state": "open"},
+            {"number": 102, "body": "ordinary issue", "user": {"login": "waelhe"}, "state": "open"},
         ]) as api_pages:
             index = MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
         api_pages.assert_called_once_with("/repos/waelhe/app-java-v3/issues?state=all", "token")
@@ -141,10 +142,49 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
 
     def test_duplicate_intake_issues_fail_closed_instead_of_creating_another(self):
         with unittest.mock.patch.object(MODULE, "api_pages", return_value=[
-            {"number": 100, "body": "<!-- defect-intake-pr:834 -->"},
-            {"number": 200, "body": "<!-- defect-intake-pr:834 -->"},
+            {"number": 100, "title": "Defect Intake: PR #834 — a", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}},
+            {"number": 200, "title": "Defect Intake: PR #834 — b", "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834", "user": {"login": MODULE.AUTOMATION_ACTOR}},
         ]):
             with self.assertRaisesRegex(MODULE.IntakeError, "Multiple defect-intake issues"):
+                MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
+
+    def test_human_comment_markers_cannot_suppress_source_items_or_take_over_summary(self):
+        item_key = "inline-202-r0123456789abcdef"
+        item_marker = f"<!-- defect-intake-item:{item_key} -->"
+        user_comment = {
+            "user": {"login": "waelhe"},
+            "body": item_marker + "\\n" + MODULE.SUMMARY_MARKER + "\\nHuman triage notes",
+            "id": 900,
+        }
+        bot_comment = {
+            "user": {"login": MODULE.AUTOMATION_ACTOR},
+            "body": item_marker + "\\n" + MODULE.SUMMARY_MARKER + "\\nManaged snapshot",
+            "id": 901,
+        }
+        self.assertEqual(MODULE.existing_item_ids([user_comment]), set())
+        self.assertEqual(MODULE.existing_item_ids([user_comment, bot_comment]), {item_key})
+        self.assertIsNone(MODULE.find_sync_summary_comment([user_comment]))
+        self.assertIs(MODULE.find_sync_summary_comment([user_comment, bot_comment]), bot_comment)
+
+    def test_user_authored_issue_cannot_claim_or_hijack_an_intake_marker(self):
+        spoof = {
+            "number": 777,
+            "title": "Defect Intake: PR #834 — fake",
+            "body": "<!-- defect-intake-pr:834 -->\\nSource PR: https://github.com/waelhe/app-java-v3/pull/834",
+            "user": {"login": "waelhe"},
+        }
+        with unittest.mock.patch.object(MODULE, "api_pages", return_value=[spoof]):
+            self.assertEqual(MODULE.build_intake_issue_index("waelhe/app-java-v3", "token"), {})
+
+    def test_bot_owned_intake_with_missing_or_conflicting_markers_fails_closed(self):
+        tampered = {
+            "number": 778,
+            "title": "Defect Intake: PR #834 — tampered",
+            "body": "Human notes only",
+            "user": {"login": MODULE.AUTOMATION_ACTOR},
+        }
+        with unittest.mock.patch.object(MODULE, "api_pages", return_value=[tampered]):
+            with self.assertRaisesRegex(MODULE.IntakeError, "missing control marker/title"):
                 MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
 
     def test_daily_recovery_sweep_includes_closed_prs_since_rollout(self):
