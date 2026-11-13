@@ -206,21 +206,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 1. Read the governing file + SYSTEM.md §14.2 matrix and the relevant
    task-specific pinned skills → 2. verify the applicable official docs
    and matching official source repository → 3. measure current code,
-   live contracts, and baseline. The baseline is a MEASURED record with
-   a named source, never an assumed value: either the latest completed
-   GitHub Actions run on the observed base SHA (its run link cited in
-   the PR) or the locally recorded Stage-3 output when local execution
-   is available — docs/METHODOLOGY.md's BEFORE/AFTER/DELTA table cites
-   whichever source produced each number. When NO completed run exists
-   on the observed base SHA and local execution is unavailable, the
-   BEFORE is obtained by running the SAME test set remotely: dispatch
-   the repository's own workflow on that base SHA (a pushed baseline
-   branch from the base SHA with the identical suite — GitHub Actions
-   as the executor, never a hand-rolled substitute), and when the
-   LATEST completed run sits on a DIFFERENT SHA that does not include
-   the affected code, a comparable completed run on the SAME base SHA
-   is the acceptable BEFORE — never a number transplanted from a
-   different code state (the 2026-11-08 #806 round-9 review) → 4. create a remote branch from the
+   live contracts, and baseline → 4. create a remote branch from the
    observed GitHub base SHA → 5. implement on that branch with the
    AGENTS.md §0.2 declaration and the official supported APIs/extension
    points → 6. add regression pins and run relevant tests. Run local
@@ -395,6 +381,88 @@ skills mechanism) and that system permanently carries the protocol.
 on any disagreement the skill is patched to match the twin (the frontend
 precedent, validated: structurally-valid frontmatter, description within
 the 1024-char limit, English AI-facing format).
+
+## 12. Permanent execution rules — all technologies and every task
+
+### 12.1 Evidence before implementation
+
+The source-of-truth rule applies to every technology, service, SDK,
+database, protocol, build tool, deployment platform, and integration —
+not only Spring or Maven. For each decision, use the official
+documentation for the exact deployed/pinned version, the matching
+official source repository, and applicable published standards.
+Trusted community practice is secondary evidence only. Record the
+source URL, version/commit, and exact relevant section, API, or source
+path.
+
+Do not invent unsupported code, configuration, operational steps,
+manual workarounds, or integrations. Prefer the technology's documented
+automatic configuration, lifecycle, conventions, generators, and
+supported plugins where they cover the use case. Custom implementation
+is permitted when it uses a documented official extension or
+configuration point and is required by the product contract. Do not
+remove a manual customization solely because it is manual; verify its
+support status and purpose first. If no supported solution can be
+established, report the gap instead of improvising.
+
+### 12.2 Skills are task-scoped and pinned
+
+Before work, inspect `docs/governance/agent-skills-policy.md` and
+`docs/governance/plans/agent-skills-pins.json`, then read the relevant
+vendored skill and its referenced rules. Skills are reference inputs,
+not authority over product decisions, canonical plans, pinned schemas,
+official documentation, or measured code/tests. Never install or
+refresh a skill outside the repository's reviewed pin-and-registry
+procedure.
+
+For Saleor work, use
+[Saleor's AI developer guidance](https://docs.saleor.io/developer/ai):
+start with `llms.txt`, use the Documentation MCP for read-only
+documentation search when available, and use GraphQL MCP only where
+schema access is needed. The GraphQL schema must match the repository's
+pinned Saleor release. Apply the already-adopted `saleor-core` skill
+where its discount, order-allocation, or stock rules apply. The other
+Saleor skills are not automatically applicable: adopt them only when
+the task requires them and after the repository's pinning policy is
+satisfied. The canonical Saleor plan, source pins, divergence ledger,
+and application code remain controlling.
+
+### 12.3 GitHub-first execution and non-blocking parallelism
+
+GitHub is the durable execution surface. Create a branch from the
+observed base SHA, apply changes to that branch, and use PRs and
+GitHub Actions as the review and verification record. A local clone or
+local test run may supplement this flow, but it is not the primary
+source of truth and must not be represented as a remote check.
+
+Do not remain idle while CI, CodeRabbit, or another independent review
+is running. Continue a genuinely independent task or a non-conflicting
+branch, inspect results periodically, and return to any failed check
+when its result is available. Parallel work must not create overlapping
+writes, stale reviews, or false claims. A pending check is never a
+passing check.
+
+### 12.4 Review and merge integrity
+
+For applicable human-authored PRs, request CodeRabbit review using
+`@coderabbitai review` and verify a completed review against the
+current PR head. Respect the repository's CodeRabbit gate and its
+fail-closed review-coverage process for PRs exceeding the review file
+limit. Do not create substitute review shards, bypass the gate, or
+assume a review happened from a status label alone.
+
+Implementation and review can proceed on the branch without waiting
+for the owner, but merge to `main` remains subject to the owner's
+explicit authorization and every required repository gate. Never
+weaken branch protection, skip CI, or merge a pending/red result.
+
+### 12.5 Honest completion report
+
+Report the actual branch, PR, commit, source versions, changed paths,
+tests, remote workflow results, completed reviews, unresolved threads,
+and outstanding blockers. Distinguish completed, pending, failed, and
+not run. Never claim deployment, review, or test success without
+observable evidence.
 
 ## 12. Permanent execution rules — all technologies and every task
 

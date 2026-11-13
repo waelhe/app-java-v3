@@ -16,6 +16,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +32,15 @@ import static org.mockito.Mockito.when;
  * adapter's transaction so the platform relay evicts the four cached
  * public summaries AFTER_COMMIT. An idempotent re-run (zero rows)
  * publishes nothing.
+ *
+ * <p>Adversarial-review 2026-11-10 finding G6 (rulebook B5, the family
+ * law): every LIVE statement (provider_listings' title and description
+ * legs, product_questions' and product_answers' body legs) must ADVANCE
+ * the row's optimistic-lock {@code version} atomically with the erasure
+ * — a lifecycle transition (pause/archive) or Q&A writer holding a
+ * pre-purge snapshot flushes zero rows and fails with the framework's
+ * optimistic-lock exception instead of restoring the erased text through
+ * the passed check.</p>
  */
 class ListingContentPurgeAdapterTest {
 
@@ -76,14 +86,15 @@ class ListingContentPurgeAdapterTest {
 
         // title is varchar(200) NOT NULL — the marker is the honest
         // representation the constraint admits (the port contract).
+        // G6: the LIVE legs advance the version in the SAME statement.
         verify(jdbcTemplate).update(
-                "UPDATE provider_listings SET title = ? WHERE provider_id = ? "
+                "UPDATE provider_listings SET title = ?, version = version + 1 WHERE provider_id = ? "
                         + "AND title IS NOT NULL AND title <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
         // description is nullable text — NULL is the Phase 1 storage
         // convention.
         verify(jdbcTemplate).update(
-                "UPDATE provider_listings SET description = NULL WHERE provider_id = ? "
+                "UPDATE provider_listings SET description = NULL, version = version + 1 WHERE provider_id = ? "
                         + "AND description IS NOT NULL",
                 SUBJECT);
     }
@@ -160,11 +171,11 @@ class ListingContentPurgeAdapterTest {
         assertEquals(14, adapter.purgeAuthoredTexts(SUBJECT));
 
         verify(jdbcTemplate).update(
-                "UPDATE product_questions SET body = ? WHERE asker_id = ? "
+                "UPDATE product_questions SET body = ?, version = version + 1 WHERE asker_id = ? "
                         + "AND body IS NOT NULL AND body <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
         verify(jdbcTemplate).update(
-                "UPDATE product_answers SET body = ? WHERE provider_id = ? "
+                "UPDATE product_answers SET body = ?, version = version + 1 WHERE provider_id = ? "
                         + "AND body IS NOT NULL AND body <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
         verify(jdbcTemplate).update(
@@ -175,5 +186,43 @@ class ListingContentPurgeAdapterTest {
                 "UPDATE product_answers_aud SET body = ? WHERE provider_id = ? "
                         + "AND body IS NOT NULL AND body <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
+    }
+
+    // ---------- G6 (adversarial review 2026-11-10): the optimistic-lock
+    // ---------- advance rides every LIVE leg, never a mirror ----------
+
+    @Test
+    void purgeAuthoredTexts_advancesTheLiveRowVersionOnEveryLiveLegNeverOnAMirror() {
+        stubCounts(0, 0, 0, 0);
+
+        adapter.purgeAuthoredTexts(SUBJECT);
+
+        // The four LIVE legs (provider_listings title + description,
+        // product_questions body, product_answers body) advance the
+        // optimistic-lock version atomically with the erasure — the
+        // three-legged statements carry (marker, subject, marker) and the
+        // nullable description leg carries its own single (subject).
+        verify(jdbcTemplate, times(3)).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        !sql.contains("_aud") && sql.contains("version = version + 1")
+                                && !sql.contains("description")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_listings SET description = NULL, version = version + 1")),
+                eq(SUBJECT));
+        // The four _aud mirrors carry NO version reference — Envers rows
+        // are immutable history keyed by revision.
+        verify(jdbcTemplate, times(3)).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("_aud") && !sql.contains("version")
+                                && !sql.contains("description")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE provider_listings_aud SET description = NULL")),
+                eq(SUBJECT));
     }
 }

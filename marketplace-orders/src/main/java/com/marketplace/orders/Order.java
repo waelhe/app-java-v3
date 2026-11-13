@@ -60,7 +60,7 @@ public class Order extends BaseEntity {
      * The 2026-11-05 #811 round-3 review (Major · Security & Privacy):
      * WHO authored the cancel reason — the buyer's own words are the
      * erasure surface; a seller's or an administrator's reason is THEIR
-     * authored text on the shared commercial record (V300's closed
+     * authored text on the shared commercial record (V303's closed
      * vocabulary). NULL is the pre-attribution legacy population.
      */
     @Column(name = "cancel_author", length = 20)
@@ -241,12 +241,12 @@ public class Order extends BaseEntity {
         this.cancelledAt = at;
     }
 
-    /** The un-attributed legacy entry point (NULL author = the pre-V300 population). */
+    /** The un-attributed legacy entry point (NULL author = the pre-V303 population). */
     public void cancel(String reason, Instant at) {
         cancel(reason, at, null);
     }
 
-    /** The cancel reason's author (V300's closed vocabulary; NULL = legacy). */
+    /** The cancel reason's author (V303's closed vocabulary; NULL = legacy). */
     public String getCancelAuthor() {
         return cancelAuthor;
     }

@@ -10,9 +10,9 @@
 -- partial b-tree serves all four scrolls exactly: the is_deleted =
 -- FALSE predicate rides the soft-delete filter every scroll already
 -- constrains, and the DESC pair walks the same tree backwards (the
--- executor's own bidirectional b-tree scan — the V303 precedent's
+-- executor's own bidirectional b-tree scan — the V306 precedent's
 -- single-index-per-direction-pair law). Non-concurrent (Flyway's
--- transactional DDL — the V298/V303 precedent; the CONCURRENTLY
+-- transactional DDL — the V301/V306 precedent; the CONCURRENTLY
 -- exceptions stay reserved for locks-conflicting online changes).
 CREATE INDEX IF NOT EXISTS idx_product_variants_updated_at_id_keyset
     ON product_variants (updated_at, id)

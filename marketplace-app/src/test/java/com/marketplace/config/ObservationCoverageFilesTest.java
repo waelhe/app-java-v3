@@ -346,6 +346,7 @@ class ObservationCoverageFilesTest {
                     "knowledge.entry.update",
                     "knowledge.entry.withdraw")),
             Map.entry("marketplace-ledger", List.of(
+                    "ledger.credit.commission_reversal",
                     "ledger.credit.payment",
                     "ledger.debit.ads",
                     "ledger.debit.commission",

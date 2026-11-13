@@ -37,7 +37,7 @@ import org.springframework.security.oauth2.server.authorization.OAuth2Authorizat
  *       ({@link #revokeFamilyIfConsumed}) before answering: a value
  *       recognized BEYOND the grace window revokes the family on this
  *       leg (the 2026-11-05 #806 round-3 review's contract correction:
- *       the earlier "nothing was written" wording predated the V296
+ *       the earlier "nothing was written" wording predated the V299
  *       reuse-detection ledger; within the grace window nothing is
  *       written, beyond it the revocation IS the documented outcome).</li>
  * </ul>
@@ -62,7 +62,7 @@ public interface RefreshTokenRotationStore {
      * refresh-token-rotation demand, RFC 9700 §2.4.2): a refresh token
      * value the caller PRESENTED that the authorization row no longer
      * carries may be a value an earlier rotation already CONSUMED —
-     * the theft shape. The store consults its family ledger (V296):
+     * the theft shape. The store consults its family ledger (V299):
      * <ul>
      *   <li><b>Recognized, consumed beyond the grace window</b> — the
      *       LATE replay (the theft shape: the attacker rotated first,

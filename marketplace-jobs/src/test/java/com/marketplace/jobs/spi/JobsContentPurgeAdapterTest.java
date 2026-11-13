@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,6 +26,14 @@ import static org.mockito.Mockito.when;
  * seeker, and no statement filters on {@code is_deleted} (native SQL
  * bypasses the soft-delete filter: withdrawn applications purge with the
  * live ones — the finding's "including soft-deleted rows" requirement).
+ *
+ * <p>Adversarial-review 2026-11-10 finding G5 (rulebook B5, the family
+ * law): the jobs' OWN title/description legs now carry the same
+ * optimistic-lock {@code version} advance the cover-message leg in this
+ * same file already had — a job-closure/expiry transition holding a
+ * pre-purge JobListing snapshot flushes zero rows and fails with the
+ * framework's optimistic-lock exception instead of restoring the erased
+ * title/description through the passed check.</p>
  */
 class JobsContentPurgeAdapterTest {
 
@@ -83,12 +92,13 @@ class JobsContentPurgeAdapterTest {
 
         // all three columns are NOT NULL (V153) — the marker is the
         // honest representation the constraint admits (the port contract).
+        // G5: the LIVE legs advance the version in the SAME statement.
         verify(jdbcTemplate).update(
-                "UPDATE jobs SET title = ? WHERE employer_id = ? "
+                "UPDATE jobs SET title = ?, version = version + 1 WHERE employer_id = ? "
                         + "AND title IS NOT NULL AND title <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
         verify(jdbcTemplate).update(
-                "UPDATE jobs SET description = ? WHERE employer_id = ? "
+                "UPDATE jobs SET description = ?, version = version + 1 WHERE employer_id = ? "
                         + "AND description IS NOT NULL AND description <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, SUBJECT, AuthoredContentPurgePort.PURGED_MARKER);
     }
@@ -152,5 +162,40 @@ class JobsContentPurgeAdapterTest {
 
         assertEquals(0, adapter.purgeAuthoredTexts(SUBJECT));
         assertEquals(0, adapter.purgeAuthoredTexts(SUBJECT));
+    }
+
+    // ---------- G5 (adversarial review 2026-11-10): the jobs' own legs
+    // ---------- now carry the advance the cover-message leg always had ----------
+
+    @Test
+    void purgeAuthoredTexts_advancesTheLiveRowVersionOnEveryLiveLegNeverOnAMirror() {
+        stubCounts(0, 0, 0, 0, 0, 0);
+
+        adapter.purgeAuthoredTexts(SUBJECT);
+
+        // All three LIVE legs (title, description, cover_message) advance the
+        // optimistic-lock version atomically with the erasure.
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE jobs SET title = ?, version = version + 1")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE jobs SET description = ?, version = version + 1")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.startsWith("UPDATE job_applications SET cover_message = ?, version = version + 1")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
+        // The three _aud mirrors carry NO version reference — Envers rows
+        // are immutable history keyed by revision.
+        verify(jdbcTemplate, times(3)).update(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("_aud SET") && !sql.contains("version")),
+                eq(AuthoredContentPurgePort.PURGED_MARKER), eq(SUBJECT),
+                eq(AuthoredContentPurgePort.PURGED_MARKER));
     }
 }

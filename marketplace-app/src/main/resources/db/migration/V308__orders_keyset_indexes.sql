@@ -10,17 +10,17 @@
 --   * the (fulfillment_method, status) pair (V226) answers a different
 --     shape entirely.
 -- Every page therefore fell back to a full sort of the live population —
--- the exact defect class V303/V304 in this same campaign closed for the
+-- the exact defect class V306/V307 in this same campaign closed for the
 -- product and variant scrolls ("every page fell back to a full sort of the
 -- live population"), now closed for the order scrolls the same way.
 --
 -- Three covering b-trees serve the six scrolls exactly — the
--- single-index-per-direction-pair law (the V303/V304 precedent): the DESC
+-- single-index-per-direction-pair law (the V306/V307 precedent): the DESC
 -- pair walks the same tree backwards (the executor's own bidirectional
 -- b-tree scan). placed_at is NOT NULL (V113); updated_at is NOT NULL
 -- (V113); status is NOT NULL (V113) — the id tiebreak rides the keyset's
--- own shape. Non-concurrent (Flyway's transactional DDL — the V298/V303/
--- V304 precedent; the CONCURRENTLY exceptions stay reserved for
+-- own shape. Non-concurrent (Flyway's transactional DDL — the V301/V306/
+-- V307 precedent; the CONCURRENTLY exceptions stay reserved for
 -- locks-conflicting online changes like V211/V247, per their own recorded
 -- rationale).
 CREATE INDEX IF NOT EXISTS idx_orders_placed_at_id_keyset

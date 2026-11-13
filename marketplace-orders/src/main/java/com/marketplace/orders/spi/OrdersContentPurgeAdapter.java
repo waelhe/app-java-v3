@@ -94,7 +94,7 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
         // text; the buyer-authored reason is the purged surface.
         //
         // (2-b) The AUTHORSHIP wall (the 2026-11-09 candidate F1 finding,
-        // P2 — Security & Privacy / Data Integrity): V300/V301's
+        // P2 — Security & Privacy / Data Integrity): V303/V304's
         // cancel_author exists precisely so the purge can tell WHO
         // wrote the cancel reason, and this adapter is the column's
         // intended reader. A reason authored by the SELLER
@@ -105,7 +105,7 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
         // returns' resolution_note already carries). The purge keeps
         // SELLER/ADMIN reasons — live rows AND audit mirrors alike — and
         // erases only the CONSUMER-authored reasons plus the legacy NULL
-        // population (V300's own comment: the pre-attribution rows keep
+        // population (V303's own comment: the pre-attribution rows keep
         // the standing purge behavior — the buyer-facing self-cancel was
         // the platform's dominant path).
         int ordersAddress = jdbcTemplate.update(

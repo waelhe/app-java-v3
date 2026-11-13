@@ -1008,7 +1008,7 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
     @Observed(name = "order.cancel")
     public Order cancel(UUID orderId, String reason) {
         // The buyer-facing default: the platform's standing cancel surface
-        // (V300's attribution) — the seller and administrative legs name
+        // (V303's attribution) — the seller and administrative legs name
         // their own authorship through the three-argument core.
         return cancel(orderId, reason, "CONSUMER");
     }
@@ -1181,7 +1181,7 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
             // The 2026-11-08 #811 round-5 review (Minor · Functional
             // Correctness): the administrative legs name their OWN
             // authorship — the two-argument core used to stamp CONSUMER on
-            // every administrative cancel (V300's attribution column would
+            // every administrative cancel (V303's attribution column would
             // carry the wrong author for any policy that reads it).
             cancel(orderId, "Cancelled through the order-management bulk API", "ADMIN");
             cancelledCount++;
@@ -1413,14 +1413,14 @@ public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, Checko
         // Integration): the authorship answers the EXECUTOR — the leg is
         // gated consumer-OR-admin, and an admin cancelling another user's
         // order through it recorded CONSUMER (the audit trail's own
-        // misattribution — V300's cancel_author exists to name WHO
+        // misattribution — V303's cancel_author exists to name WHO
         // cancelled). The gate guarantees the only other passer is the
         // admin.
         String cancelAuthor = order.getConsumerId()
                 .equals(currentUserProvider.getCurrentUserId(authentication))
                 ? "CONSUMER" : "ADMIN";
         // The 2026-11-05 #811 round-3 review: the BUYER's own words (the
-        // erasure surface V300 attributes).
+        // erasure surface V303 attributes).
         Order cancelled = cancel(order.getId(), reason, cancelAuthor);
         return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
     }

@@ -761,7 +761,7 @@ class CollectionWriteServiceTest {
         assertThat(result.success()).isTrue();
         // third moved two positions backward: [third, first, second] —
         // the compacted 1..n re-derivation (the position column's own
-        // law). B6 (CAT-01): the rewrite is TWO-PHASE under the V298
+        // law). B6 (CAT-01): the rewrite is TWO-PHASE under the V301
         // live-position unique index — phase 1 parks the WHOLE membership
         // beyond its current maximum (3 → 4,5,6) and flushes, then phase
         // 2 writes the final dense order into the emptied 1..max range —
@@ -781,7 +781,7 @@ class CollectionWriteServiceTest {
         // The 2026-11-06 #806 review (Minor · Data Integrity): V253 permits
         // a zero-based live order, so the parking range derived from the
         // current maximum alone (0,1 -> 2,3) OVERLAPS the final dense range
-        // (1..size) — under the V298 live-position unique index a flush
+        // (1..size) — under the V301 live-position unique index a flush
         // that assigns a final position before its parked tenant vacates it
         // dies on 23505. The park must start strictly above BOTH the
         // current maximum and the final range's own top (size).

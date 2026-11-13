@@ -199,6 +199,21 @@ class UserRoleMigrationIntegrationTest {
         seedAuthUser(subject, "ROLE_CONSUMER", "ROLE_ADMIN");
         seedAssignment(userId, "ADMIN", false);
 
+        // B1 (adversarial review 2026-11-10): the revoke door now carries
+        // the last-active-ADMIN guard, and this drifted subject IS an
+        // effective administrator (the drifted native ROLE_ADMIN row counts
+        // through the V188 view) — the pristine test database seeds no other
+        // admin, so the guard would rightly refuse the revoke as the removal
+        // of the LAST effective administrator. The drift-repair chain this
+        // test exists to prove (the drifted authority dies with the
+        // assignment, the re-grant restores it) needs a SECOND standing
+        // administrator first — exactly the production shape the guard
+        // assumes: one admin maintains another's roles.
+        String standingAdmin = "phase1-it-driftrevoke-admin@example.com";
+        UUID standingAdminId = seedAccount("driftrevoke-admin", standingAdmin, "ADMIN", false);
+        seedAuthUser(standingAdmin, "ROLE_ADMIN");
+        seedAssignment(standingAdminId, "ADMIN", false);
+
         assertThat(authoritiesOf(subject))
                 .as("the drifted pair reads its login-side truth before any revoke")
                 .containsExactlyInAnyOrder("ROLE_CONSUMER", "ROLE_ADMIN");

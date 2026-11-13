@@ -11,7 +11,7 @@ import java.time.Duration;
 /**
  * The reuse-detection ledger's bounded lifetime — the shard review's
  * nitpick (Trivial · Performance & Scalability, 2026-11-01 wave 2): every
- * completed rotation adds a {@code consumed_refresh_tokens} row (V296),
+ * completed rotation adds a {@code consumed_refresh_tokens} row (V299),
  * and the ON DELETE CASCADE only fires when the family's authorization
  * row dies — an ACTIVE family rotates forever (each rotation extends the
  * family by the refresh TTL), so a session rotating every 15 minutes adds
@@ -32,10 +32,10 @@ import java.time.Duration;
  * 2026-11-03). A consumed value's row therefore matters until its
  * family's absolute bound has passed; after that the rotation law itself
  * refuses the family, so a replay dies at {@code findByToken} as an
- * unknown token long before the ledger row matters. V297's index on
+ * unknown token long before the ledger row matters. V300's index on
  * {@code consumed_at} serves the predicate (its historical migration
  * comment describes the superseded TTL rule — applied Flyway migrations
- * are immutable, so the correction lives here, not in V297).</p>
+ * are immutable, so the correction lives here, not in V300).</p>
  *
  * <p>Spring Boot's own scheduling model (docs.spring.io/spring-boot —
  * Task Execution and Scheduling): {@code @EnableScheduling} on the

@@ -1,6 +1,6 @@
 -- The shard review's nitpick (Trivial · Performance & Scalability,
 -- 2026-11-01 wave 2): the reuse-detection ledger's bounded lifetime.
--- Every completed rotation records the consumed value's SHA-256 (V296);
+-- Every completed rotation records the consumed value's SHA-256 (V299);
 -- the ON DELETE CASCADE only fires when the family's authorization row
 -- dies, and an ACTIVE family rotates forever (each rotation extends the
 -- family by REFRESH_TOKEN_TTL — 14 days), so a session rotating every

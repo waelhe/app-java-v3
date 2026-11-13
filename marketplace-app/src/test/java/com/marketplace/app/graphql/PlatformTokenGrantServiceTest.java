@@ -798,7 +798,7 @@ class PlatformTokenGrantServiceTest {
          * Faithful to the production {@link JdbcRefreshTokenRotationStore}:
          * the ledger recognizes the value's hash; beyond the grace window
          * the family is revoked (the row is removed; the ledger entries
-         * cascade with it, as V296's FK does in the database); within the
+         * cascade with it, as V299's FK does in the database); within the
          * window — the concurrent double-spend or immediate-replay shape —
          * nothing is written; an unknown value answers false.
          */

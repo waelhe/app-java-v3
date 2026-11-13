@@ -66,7 +66,7 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
             "UPDATE oauth2_authorization SET refresh_token_value = ? WHERE id = ? AND refresh_token_value = ?";
 
     /**
-     * The reuse-detection ledger (V296): every completed rotation records
+     * The reuse-detection ledger (V299): every completed rotation records
      * the CONSUMED value's SHA-256 under its authorization family — the
      * oauth2_authorization row IS the family. The insert runs AFTER the
      * full-row save and anchors {@code consumed_at} at the database's
@@ -140,7 +140,7 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
         // successor pair's columns) on the same row lock, in the same
         // transaction — all-or-nothing with the consumption itself — and
         // only THEN record the consumed value's hash in the family ledger
-        // (V296) with its consumed_at anchored at the database's wall
+        // (V299) with its consumed_at anchored at the database's wall
         // clock AFTER the save: the grace window must start at the
         // rotation's completion, never at the transaction's start.
         authorizationService().save(rotated);
@@ -193,7 +193,7 @@ public class JdbcRefreshTokenRotationStore implements RefreshTokenRotationStore 
     }
 
     /**
-     * The ledger's bounded-lifetime purge (V297's index serves the
+     * The ledger's bounded-lifetime purge (V300's index serves the
      * predicate). The cutoff comparison rides the database's own clock
      * (the 2026-11-05 #806 round-3 review, Major): {@code consumed_at}
      * and the bound are BOTH database-time, so no host-clock skew can

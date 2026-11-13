@@ -78,7 +78,7 @@ Flyway SQL migrations live in `marketplace-app/src/main/resources/db/migration/V
 | A4 (P4 orders/checkout) | V269–V280 |
 | A5 (P5 surfaces) | V281–V290 |
 | A6 (P6 subscriptions) | V291–V295 |
-| Reserve (A0-managed) | V296+ |
+| Reserve (A0-managed) | V309+ |
 
 Entities stay `@Audited`; integration tests use the real Flyway schema with `@ActiveProfiles("test")` and `@Testcontainers(disabledWithoutDocker = true)` — never `ddl-auto` when migration behavior matters.
 

@@ -9,7 +9,7 @@
 -- records the true statement instant instead.
 --
 -- The migration guard's byte-freeze law (MigrationChecksumGuardTest,
--- incident 2026-09-14): V296 stays at its applied content — the schema
+-- incident 2026-09-14): V299 stays at its applied content — the schema
 -- change rides its own migration.
 ALTER TABLE consumed_refresh_tokens
     ALTER COLUMN consumed_at SET DEFAULT clock_timestamp();

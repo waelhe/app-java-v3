@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * A-17/C.7 discipline + the V237 assignment registry's position
  * index):</b> the advisory transaction lock
  * ({@code lockCollectionPositionAllocation}) serializes every position
- * writer per collection BEFORE the membership is read, the V298 partial
+ * writer per collection BEFORE the membership is read, the V301 partial
  * unique index ({@code uq_collection_products_position_live}) is the
  * backstop, and the reorder's two-phase rewrite (park beyond max, flush,
  * write dense) keeps every intermediate state unique under the index.
@@ -176,7 +176,7 @@ class CollectionMembershipPositionRaceIntegrationTest {
     /**
      * The interleaving arm: an append racing a reorder of the SAME
      * collection. The advisory lock serializes both writers; the
-     * reorder's two-phase rewrite stays unique under the V298 index at
+     * reorder's two-phase rewrite stays unique under the V301 index at
      * every intermediate state; the final membership is dense and
      * conflict-free.
      */
@@ -204,7 +204,7 @@ class CollectionMembershipPositionRaceIntegrationTest {
     }
 
     /**
-     * The backstop itself: the V298 partial unique index
+     * The backstop itself: the V301 partial unique index
      * ({@code uq_collection_products_position_live}) rejects a duplicate
      * LIVE position outright at the database — the honest constraint
      * failure a slipping path would surface, never a silent duplicate.

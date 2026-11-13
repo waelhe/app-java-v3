@@ -9,7 +9,7 @@
 -- scrolls exactly — (title, id) for the ADMIN population, (product_
 -- status, title, id) for the status-filtered public slice. title is
 -- NOT NULL (V116); the id tiebreak rides the keyset's own shape.
--- Non-concurrent (Flyway's transactional DDL — the V298 precedent; the
+-- Non-concurrent (Flyway's transactional DDL — the V301 precedent; the
 -- CONCURRENTLY exceptions are reserved for locks-conflicting online
 -- changes like V211/V247, per their own recorded rationale).
 CREATE INDEX IF NOT EXISTS idx_products_title_id_keyset
