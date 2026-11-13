@@ -152,9 +152,10 @@
       "measuredHead": "985bac53fe6c88920ffc943a7cf90f36b589702a",
       "findings": [
         "G8",
-        "G9"
+        "G9",
+        "G10"
       ],
-      "interpretation": "Two confirmed defects were found in the new governance implementation itself: intake issue creation could race between issue_comment and a scheduled sweep, and fixed dispositions trusted an unverified workflow-run URL. Both corrections are in the current PR branch; final closure requires CI proof."
+      "interpretation": "Two confirmed defects were found in the new governance implementation itself: intake issue creation could race between issue_comment and a scheduled sweep, and fixed dispositions trusted an unverified workflow-run URL. Both corrections are in the current PR branch; final closure requires CI proof. G10 is a third confirmed defect: marker ownership was not verified, so human-authored lookalikes could hijack deduplication or managed-comment updates; its branch fix is pending CI."
     }
   ],
   "findings": [
@@ -667,6 +668,22 @@
       "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/834",
       "repairPr": 834,
       "summary": "D11 trusted a self-reported passed status and any github.com URL; it did not resolve the Actions run, verify completed/success, verify repository, or bind run head SHA to current PR head."
+    },
+    {
+      "id": "G10",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P15",
+        "P12"
+      ],
+      "sourceReport": "ADV-IMPLEMENTATION-2026-11-13",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/834",
+      "repairPr": 834,
+      "fingerprint": "sha256:738695bfd8cb965decac012fad2e9686dade7dc8ad2d20cd52d08ab77d16f380",
+      "caseId": "E-52",
+      "summary": "Human-authored issue/comment markers could spoof intake ownership, suppress source ingestion, or make the collector overwrite a human comment."
     }
   ],
   "separateHistoricalCases": [
@@ -863,6 +880,12 @@
       "source": "https://github.com/waelhe/app-java-v3/pull/834",
       "status": "candidate-fix-pending-validation",
       "summary": "D11 resolves the workflow run via the GitHub Actions API and verifies completed/success plus exact PR-head SHA before fixed can pass."
+    },
+    {
+      "id": "E-52",
+      "source": "https://github.com/waelhe/app-java-v3/pull/834",
+      "status": "candidate-fix-pending-validation",
+      "summary": "Collector control markers are accepted only from bot-authored objects; intake issue identity is bound to its reserved title and exact source PR link."
     }
   ],
   "capabilityAndDecisionGaps": [
