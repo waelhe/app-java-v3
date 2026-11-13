@@ -297,6 +297,8 @@ def main() -> int:
             pr_number = int(pull_request["number"])
         elif event.get("number") and args.event_name.startswith("pull_request"):
             pr_number = int(event["number"])
+        elif (event.get("issue") or {}).get("pull_request"):
+            pr_number = int(event["issue"]["number"])
 
     try:
         if pr_number is not None:
