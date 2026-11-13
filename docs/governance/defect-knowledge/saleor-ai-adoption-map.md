@@ -53,6 +53,28 @@ The MCP server applies permission-aware access, keeps privileged store credentia
 
 Neither live option is needed for app-java-v3: this platform does not deploy a Saleor backend or second Saleor database. Do not attach a live store to the defect-knowledge workflow, and do not confuse permission to read documentation with permission to query or mutate a store.
 
+### Identity, scopes and operation safety — live MCP reference only
+
+The official authentication model distinguishes two identities:
+
+- **User OAuth:** an assistant used by a staff member acts as that signed-in staff member.
+- **Access key:** an agent or automation running without a person acts as the app, bounded by the key's own area-level access.
+
+The permission levels are **Read**, **Edit**, and **Full**. Everyday mutations require Edit; high-impact mutations require Full. A requested OAuth scope can narrow existing access but cannot widen it. Access-key changes and revocation take effect on the next request; a connection can be revoked. MCP clients do not receive Saleor tokens.
+
+Operational safeguards documented by Saleor:
+
+1. Call `connection_info` before work and after a permission change. Request a permission upgrade only after the user explicitly agrees.
+2. Use `introspect_schema` to establish the actual available operations and arguments; do not guess from a remembered schema.
+3. Use `run_query` only for queries. Use the mutation tools only for mutations; Saleor checks permissions and reviewed operations before sending them.
+4. Check the mutation's own `errors` in the returned `{ data, errors }` response. A returned payload alone is not proof that the requested business action succeeded.
+5. Keep the mutation summary factual and minimal. Saleor says summaries are retained in its activity log for 90 days; use object IDs and values, not names, emails, addresses, phone numbers, gift-card/voucher codes, passwords or tokens.
+6. Treat the advertised `tools/list` response as the live contract. Tool visibility depends on the connection's permissions.
+
+Saleor also validates documents before execution: queries and mutations cannot be mixed; subscriptions are unsupported; credential fields such as `accessToken` and `authToken` cannot be selected; and the documented document/operation size limits apply. These are **Saleor protocol constraints**, not platform-wide limits.
+
+Transfer only the engineering principles to app-java-v3: distinguish human actors from machine principals, enforce least privilege at each server-side door, require explicit consent for elevation, preserve revocation and auditability, avoid sensitive data in operational summaries, inspect the live contract before invocation, and verify the operation-specific result. Do not import Saleor's permission names, token lifetimes, OAuth endpoints, limits, or approval mechanics as local platform contracts.
+
 ### Schema-only GraphQL MCP — contract inspection only
 
 Saleor also documents a GraphQL MCP server pointed at a downloaded schema. If used, it is a schema-inspection tool only: consume the exact pinned SDL from this repository (Saleor 3.23.43), never introspect upstream `main`, and never use it as a connection to a second backend.
