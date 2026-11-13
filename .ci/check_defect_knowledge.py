@@ -116,7 +116,7 @@ def workflow_run_id_from_url(url: str, repository: str) -> int:
     if parsed.query or parsed.fragment:
         raise GateError("workflowRunUrl must not contain a query string or fragment")
     suffix = parsed.path[len(expected_prefix):].strip("/")
-    match = re.fullmatch(r"([0-9]+)(?:/attempts/[0-9]+)?", suffix)
+    match = re.fullmatch(r"([0-9]+)", suffix)
     if not match:
         raise GateError("workflowRunUrl must identify a GitHub Actions workflow run")
     return int(match.group(1))
