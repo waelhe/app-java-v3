@@ -409,6 +409,17 @@ class LedgerModuleIntegrationTest {
         when(paymentIntentLookupPort.findById(paymentIntentId))
                 .thenReturn(Optional.of(completed), Optional.of(refunded));
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        // The A1-widened seam (ADR-0013 D4 — settlementFactsOf) the ORDER
+        // settlement's COMPLETED leg reads beside the seller: this A2
+        // journey's order is NOT platform-delivery, so the fee-less facts
+        // (shipping 0, method false) keep the settlement math identical to
+        // the pre-A1 shape the rest of this test pins (full-amount credit,
+        // 10% commission, the mirrored refund reversal to the pre-settlement
+        // zero). Without this stub the Mockito default answers null and the
+        // async listener dies before any credit lands — measured on the
+        // rebased branch (shard 6, 2026-11-13).
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
         when(providerLookupPort.findByUserId(sellerId)).thenReturn(Optional.of(
                 new ProviderSummary(sellerId, "A2 Order Seller", "VERIFIED", ownerUserId)));
