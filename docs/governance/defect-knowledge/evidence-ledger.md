@@ -509,3 +509,12 @@
 - **Correction:** PR #834 now parses only the canonical repository Actions-run URL, fetches that run through the authenticated GitHub API, and verifies `status=completed`, `conclusion=success`, and the exact current PR `head_sha`; the gate has read-only Actions permission. Unit tests cover malformed/cross-repository links, in-progress/failed runs, wrong heads and the success payload.
 - **Status:** FIX IMPLEMENTED ON PR #834; CI verification pending. Do not mark fixed-main until the validator tests pass and this commit is merged.
 - **Prevention:** D11 + P12; never trust a status label or URL in a receipt without resolving the authoritative check/run object and binding it to the exact head.
+
+## E-52 · Human-authored GitHub markers could control or hijack the review-intake collector [VERIFIED]
+
+- **Observed defect (PR #834 adversarial implementation review, 2026-11-13):** `existing_item_ids` accepted `defect-intake-item` markers from every issue comment, and summary selection accepted `defect-intake-sync-summary` from every author. A normal user could therefore post a marker lookalike that suppresses ingestion of a source revision or causes the collector to edit that human comment as its managed summary. The intake issue index also trusted a body marker without proving that the issue was created by the collector.
+- **Violated invariant:** only an automation-owned GitHub object may control automation state or be modified by the collector; human-authored content is evidence, never collector control state.
+- **Root cause:** marker syntax was treated as authority, with no ownership/actor check on the containing issue or comment.
+- **Correction:** PR #834 now accepts control markers only from `github-actions[bot]`; the issue index validates bot authorship, reserved title PR number, body marker and exact source-PR URL; missing or conflicting metadata on a bot-owned intake record fails closed. Tests cover spoofed user comments, fake intake issues and tampered bot records.
+- **Status:** FIX IMPLEMENTED ON PR #834; final CI verification pending. Do not mark fixed-main until tests pass on the final head and the change is merged.
+- **Prevention:** D12 + P15; identify the trusted owner of an automation marker before using it for deduplication, mutation or state transitions.
