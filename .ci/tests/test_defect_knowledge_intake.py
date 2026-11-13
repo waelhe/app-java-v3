@@ -130,6 +130,16 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
             for method, path, payload in calls
         ))
 
+    def test_intake_workflows_use_unescaped_github_expressions(self):
+        workflows = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+        for name in (
+            "defect-knowledge-intake.yml",
+            "defect-knowledge-intake-capture.yml",
+        ):
+            content = (workflows / name).read_text(encoding="utf-8")
+            self.assertNotIn(r"\\${{", content, name)
+            self.assertIn("${{", content, name)
+
     def test_excerpt_escapes_untrusted_markup_and_limits_length(self):
         excerpt = MODULE.short_excerpt('<script>alert("x")</script>' + ("x" * 300))
         self.assertTrue(excerpt.startswith("&lt;script&gt;"))
