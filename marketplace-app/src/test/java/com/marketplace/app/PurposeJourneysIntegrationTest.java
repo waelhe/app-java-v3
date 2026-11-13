@@ -621,6 +621,18 @@ class PurposeJourneysIntegrationTest {
                 "{\"externalId\":\"j30-stay-cancel-capture-" + intent2Id + "\"}");
         assertThat(capture2.statusCode()).as("the second capture: %s", body(capture2)).isEqualTo(200);
         awaitIntentStatus(intent2Id, "SUCCEEDED");
+        // A2 (the refund-mirror contract, CodeRabbit round 2): the REFUNDED
+        // listener books the mirror only once the settlement's COMMISSION row
+        // is POSTED — the booking-order credit + commission land through the
+        // async AFTER_COMMIT listener, so the intent's SUCCEEDED status alone
+        // does not prove the ledger rows exist. Awaiting the pair here keeps
+        // the cancellation from racing the commission posting (the
+        // fail-closed listener would otherwise leave the refund queued for
+        // the registry sweep — the BookingJourneyIntegrationTest house rule,
+        // applied to this journey's own money leg).
+        awaitLedgerRow(UUID.nameUUIDFromBytes(
+                ("commission-" + intent2Id).getBytes(StandardCharsets.UTF_8)), "COMMISSION_DEBIT", 1);
+        awaitLedgerRow(intent2Id, "PAYMENT_CREDIT", 1);
 
         // The cancellation: the participant's own write.
         HttpResponse<String> cancel = postJson(
@@ -638,6 +650,12 @@ class PurposeJourneysIntegrationTest {
                 .as("the payment row follows the refund").isEqualTo("REFUNDED");
         UUID refundSource = UUID.nameUUIDFromBytes(
                 ("refund-" + intent2Id.toString()).getBytes(StandardCharsets.UTF_8));
+        // The ledger row is AWAITED before it is counted (the BookingJourney-
+        // IntegrationTest house shape): the REFUNDED status can surface before
+        // the AFTER_COMMIT listener commits the REFUND_DEBIT row, so its
+        // presence is awaited — the exact count assertion that follows
+        // catches any double mirror.
+        awaitLedgerRow(refundSource, "REFUND_DEBIT", 1);
         Integer refundDebits = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM ledger_entries WHERE entry_type = 'REFUND_DEBIT' AND source_id = ?",
                 Integer.class, refundSource);
@@ -1063,6 +1081,29 @@ class PurposeJourneysIntegrationTest {
         }
         throw new AssertionError("payment intent " + intentId + " did not reach " + expected
                 + " within 10s");
+    }
+
+    /**
+     * The bounded poll for the ledger's async rows (the {@code
+     * BookingJourneyIntegrationTest} house shape verbatim): the payment
+     * status can surface before the AFTER_COMMIT listener commits the
+     * ledger row, so the row's presence is awaited — the exact count
+     * assertion that follows catches any double mirror.
+     */
+    private void awaitLedgerRow(UUID sourceId, String entryType, int expected)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            Integer rows = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM ledger_entries WHERE source_id = ? AND entry_type = ?",
+                    Integer.class, sourceId, entryType);
+            if (rows != null && rows >= expected) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("ledger rows of type " + entryType + " for " + sourceId
+                + " never reached " + expected + " within 10s");
     }
 
     private String baseUrl() {
