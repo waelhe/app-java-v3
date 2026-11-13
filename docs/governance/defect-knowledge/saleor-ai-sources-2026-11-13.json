@@ -99,7 +99,71 @@
             "Server-side credential handling",
             "Activity logging"
           ],
-          "adoption": "not-used-by-app-java-v3"
+          "adoption": "not-used-by-app-java-v3",
+          "minimumSaleorVersion": "3.23",
+          "toolContracts": {
+            "introspect_schema": {
+              "actions": [
+                "search",
+                "describe_type",
+                "list_operations",
+                "describe_operation"
+              ],
+              "purpose": "Explore schema operations, arguments and fields in small slices; action-specific arguments are required."
+            },
+            "run_query": {
+              "document": "Only GraphQL query operations",
+              "optional": [
+                "variables",
+                "operation_name"
+              ],
+              "readOnly": true
+            },
+            "run_mutation": {
+              "document": "Only GraphQL mutation operations",
+              "required": [
+                "summary",
+                "query"
+              ],
+              "optional": [
+                "variables",
+                "operation_name"
+              ],
+              "permission": "Edit"
+            },
+            "run_high_impact_mutation": {
+              "document": "Only GraphQL mutation operations and at least one high-impact mutation",
+              "required": [
+                "summary",
+                "query"
+              ],
+              "optional": [
+                "variables",
+                "operation_name"
+              ],
+              "permission": "Full"
+            },
+            "schemaResource": "saleor://schema/graphql",
+            "response": {
+              "shape": "{ data, errors }",
+              "representations": [
+                "text",
+                "structuredContent"
+              ],
+              "successRule": "Inspect the mutation's own errors field; the presence of data alone is not proof of successful business effect."
+            }
+          },
+          "restrictedAreas": [
+            "staff",
+            "apps",
+            "webhooks",
+            "customers",
+            "checkouts",
+            "metadata",
+            "channels",
+            "shop settings"
+          ],
+          "restrictedAreaGuidance": "These areas cannot be changed via Saleor MCP and require the Saleor Dashboard; this is a Saleor Cloud capability limit, not an app-java-v3 constraint."
         },
         "selfHostedSaleorMcp": {
           "availability": "Self-hosted Saleor",
