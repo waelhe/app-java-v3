@@ -287,3 +287,78 @@
 - **Correction:** the thirteen files reformatted to standard layout (tokens preserved — no semantic change; wildcards kept for the automation to expand as designed) plus `SourceFormatGuardTest` (D9) rejecting packed package/import lines repo-wide.
 - **Verification evidence:** the guard runs in CI from this commit; the next Auto Apply run over a touched delivery/ledger/provider module produces an import-only patch the publication guard accepts.
 - **Recurrence risk:** medium — every carry pasting generated sources re-opens the surface; the guard converts the recurrence into a test failure on the carrying PR itself.
+
+## E-24 · Opposite lock order creates an order/delivery ABBA deadlock [VERIFIED]
+
+- **Observed defect (issue #749, 2026-10-28):** delivery paths acquire the order row and delivery-request rows in opposite orders. addLegForOrder takes the order row first; cancellation takes a delivery-request row first and then the order row. Two concurrent transactions can form an ABBA cycle; PostgreSQL aborts one transaction, surfacing a retryable user-visible failure.
+- **Violated invariant:** all paths touching the same shared rows must acquire locks in one global order.
+- **Root cause:** lock order was reasoned about per method rather than across the complete call graph.
+- **Required correction:** resolve the leg/order identity without a lock, acquire the order lock, re-read/revalidate the leg under the global order, then write. Add a real-PostgreSQL interleaving test.
+- **Status:** OPEN — issue #749 remains open in the measured snapshot; no repair PR was verified.
+- **Prevention:** A3/B2 + P11; sibling-path lock-order table and two-transaction integration proof.
+
+## E-25 · Outbound routing HTTP call holds a database transaction and order lock [VERIFIED]
+
+- **Observed defect (issue #749, 2026-10-28):** routes.route calls the OSRM provider after the order row's FOR UPDATE lock is taken, inside a class-level transactional method. The order lock and DB connection remain occupied for the network round-trip. A related fulfillment listener also performs route lookup while a transaction is open.
+- **Violated invariant:** slow external I/O must not extend a shared-row lock or database transaction unless an explicitly measured consistency requirement demands it.
+- **Root cause:** provider route computation and persistence were combined in one transactional operation.
+- **Required correction:** calculate the route before entering the persistence transaction; keep transaction scope to local reads/writes and validate the snapshot used.
+- **Status:** OPEN — issue #749 remains open in the measured snapshot.
+- **Prevention:** A3/B2 + P11; test that route lookup happens before transaction/lock acquisition.
+
+## E-26 · CodeRabbit review poll and review-coverage verifier disagree [VERIFIED]
+
+- **Observed defect (PR #826 follow-up, 2026-11-12):** the CodeRabbit review poll accepted an approval with an empty review body, while the exact processed-file coverage verifier rejected the same review because it contained no processed-file evidence. The composed gate could remain blocked after review threads had been resolved.
+- **Violated invariant:** a composed release gate must use one coherent acceptance predicate for the same review artifact.
+- **Root cause:** the poll and coverage verifier independently interpreted the review submission with different acceptance rules.
+- **Correction/status:** an operational workaround is recorded in #826; **structural repair remains OPEN**. Do not treat the workaround as closure.
+- **Prevention:** P13; share one parser/verdict contract and run the same negative corpus through both gate consumers.
+
+## E-27 · OpenRewrite uses an ambient Maven version instead of the pinned wrapper [VERIFIED]
+
+- **Observed defect (PR #813, merged 2026-11-12):** OpenRewrite catalog automation invoked system Maven 3.9.15 while the repository's Maven Enforcer required Maven 3.10 or later; this produced automation failure unrelated to source correctness.
+- **Violated invariant:** repository automation must execute through the repository's declared and pinned toolchain.
+- **Correction:** PR #813 changed the OpenRewrite workflow to use Maven Wrapper. Merge commit 445f421d67ad58bd533d42be9d5bbf6d268d9161 is the current main tip.
+- **Status:** FIXED ON MAIN; the commerce candidate must still be checked for the same workflow path before release.
+- **Prevention:** P14; use the wrapper and fail if automation silently falls back to ambient Maven.
+
+## E-28 · Purge version-advance proof required real PostgreSQL [VERIFIED]
+
+- **Observed defect (PRs #761/#762/#764, 2026-10-29):** a purge adapter's optimistic-version advancement had a test pin, but the concurrency claim required proving that a stale writer is rejected by the real database and that a repeated purge is idempotent. The first test pin did not provide that complete proof.
+- **Violated invariant:** a concurrency test must run the database behavior it claims to protect, against the real dialect/transaction semantics.
+- **Correction:** #764 added Testcontainers PostgreSQL evidence for version advancement, stale-write rejection and idempotent replay. The PR merged to main.
+- **Status:** FIXED ON MAIN as a test-evidence strengthening; the adapter family's further coverage is recorded separately in #817/#824.
+- **Prevention:** P12; test the stale concurrent write and replay path against PostgreSQL rather than relying only on SQL-shape assertions.
+
+## E-29 · OpenRewrite catalog job turns Dependabot PRs into manual-only failures [VERIFIED]
+
+- **Observed defect (PR #770, merged 2026-10-30):** the catalog audit ran on Dependabot dependency PRs matching its path filters, but the bot lacked the required secret-backed execution path. Those PRs became permanently red until manual administrator intervention.
+- **Violated invariant:** an automated workflow must explicitly handle every actor/event class that its trigger admits.
+- **Correction:** #770 added a Dependabot skip for the catalog audit; the PR merged to main.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P14; exercise Dependabot, human PR, push and manual-dispatch event classes in workflow tests.
+
+## E-30 · Vendored agent skills lacked reviewed provenance pins [VERIFIED]
+
+- **Observed defect (PR #771, merged 2026-10-30):** nine vendored skills were present without a reviewed pin/provenance registry, allowing agent behavior to change without the repository's ordinary reviewed dependency record.
+- **Violated invariant:** agent instructions and downloaded automation resources are versioned dependencies and must have reviewed provenance.
+- **Correction:** #771 introduced the pinned skills surface and adopted saleor-core under governance.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P14; skill updates move only through the reviewed pin-and-registry process.
+
+## E-31 · BCrypt reset limit measured in characters while implementation limit is bytes [VERIFIED]
+
+- **Observed defect (PR #758, merged 2026-10-29):** password-reset validation measured UTF-16 string length, while the BCrypt implementation rejects inputs beyond its 72-byte UTF-8 boundary. Multi-byte input could therefore pass validation and fail later in the encoder.
+- **Violated invariant:** validation must use the representation boundary enforced by the downstream cryptographic implementation.
+- **Correction:** #758 added a UTF-8 byte bound before consuming the one-time reset token; tests cover multi-byte input and token preservation on rejection.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P12/B7; test encoded byte lengths, not only Java character counts.
+
+## E-32 · JPEG marker scanner treated legal fill bytes as a new marker [VERIFIED]
+
+- **Observed defect (PR #758, merged 2026-10-29):** the JPEG scanner interpreted repeated 0xFF fill bytes permitted by ITU-T T.81 as a marker boundary, causing a false length jump and loss of the actual SOS marker.
+- **Violated invariant:** parsers must implement the input standard's legal framing forms, including padding/fill bytes, rather than treating a canonical sample as the only valid encoding.
+- **Correction:** #758 updated marker scanning and added regression coverage for legal fill bytes.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P3/P12; include standards-permitted edge encodings in parser tests.
+
