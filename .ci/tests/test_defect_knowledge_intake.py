@@ -203,7 +203,7 @@ class DefectKnowledgeIntakeTests(unittest.TestCase):
             "user": {"login": MODULE.AUTOMATION_ACTOR},
         }
         with unittest.mock.patch.object(MODULE, "api_pages", return_value=[tampered]):
-            with self.assertRaisesRegex(MODULE.IntakeError, "missing control marker/title"):
+            with self.assertRaisesRegex(MODULE.IntakeError, "missing or ambiguous control markers/title"):
                 MODULE.build_intake_issue_index("waelhe/app-java-v3", "token")
 
     def test_daily_recovery_sweep_includes_closed_prs_since_rollout(self):
