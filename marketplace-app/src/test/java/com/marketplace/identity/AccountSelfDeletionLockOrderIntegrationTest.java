@@ -88,6 +88,12 @@ import static org.assertj.core.api.Assertions.assertThat;
         // async listener dispatch fit the pool with room to spare).
         "spring.datasource.hikari.maximum-pool-size=5",
         "spring.datasource.hikari.minimum-idle=1",
+        // The b-2(b) secret channel the deletion's pseudonymization leg
+        // requires — a test value, never a production secret (secrets-policy
+        // §1; the AccountSelfDeletionIntegrationTest shape, the CI-measured
+        // round: without it the deletion thread answers the honest 503
+        // "pseudonymization is not configured" instead of racing the locks).
+        "marketplace.security.pseudonymization.subject-hmac-key=it-lock-order-key",
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
