@@ -121,7 +121,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
    configuration/release, mode-aware behavior, or signal triage). Do not
    load every pack for an unrelated change. The router is progressive
    disclosure, not a second authority: `rulebook.md`, `pattern-catalog.md`
-   (P1–P14), `evidence-ledger.md` (E-01…E-51), platform plans, code and
+   (P1–P15), `evidence-ledger.md` (E-01…E-52), platform plans, code and
    tests remain canonical. Before editing, load `change-protocol.md`;
    before a fix, match the symptom to an evidence case and its A/B/C/D
    rules; after implementation, run `review-protocol.md`. When a guard
@@ -302,7 +302,7 @@ snapshot; the environment is the truth" — CONTRIBUTING.md §5).
 
 ## 9. Regression list (the failures that return — read this first)
 
-> **2026-11-13:** this list is the quick view of the permanent **defect-knowledge system** (`docs/governance/defect-knowledge/`): evidence E-01…E-51, patterns P1–P14, canonical A/B/C/D rules, the `SKILL.md` task router, focused rules loaded by trigger, the change/review protocols and enforcement map. When an item below matches your change, load the router and only the corresponding risk packs before editing.
+> **2026-11-13:** this list is the quick view of the permanent **defect-knowledge system** (`docs/governance/defect-knowledge/`): evidence E-01…E-52, patterns P1–P15, canonical A/B/C/D rules, the `SKILL.md` task router, focused rules loaded by trigger, the change/review protocols and enforcement map. When an item below matches your change, load the router and only the corresponding risk packs before editing.
 
 - Trusting training memory over the pinned-version official docs
   (Spring Boot 4.1.2 is not the Spring Boot you know; Modulith 2.1.2
