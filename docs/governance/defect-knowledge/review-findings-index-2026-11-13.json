@@ -252,7 +252,8 @@
       "sourceReport": "ADV-2026-11-10",
       "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
       "repairPr": 817,
-      "summary": "Notifications purge did not advance lock versions and had no adapter test; #824 adds real-PostgreSQL proof and remains open."
+      "summary": "Notifications purge did not advance lock versions and had no adapter test; #824 adds real-PostgreSQL proof and remains open.",
+      "evidenceNote": "The code/version-advance adapter fix and an initial adapter test are on main through #817; stronger real-PostgreSQL/Testcontainers proof remains open in #824, so the concurrency-evidence follow-up is not closed."
     },
     {
       "id": "G5",
@@ -456,7 +457,7 @@
       "id": "W1",
       "classification": "confirmed-defect",
       "severity": "high",
-      "status": "registered",
+      "status": "open",
       "patterns": [
         "P1",
         "P9"
@@ -510,7 +511,7 @@
       "id": "W5",
       "classification": "confirmed-defect",
       "severity": "medium",
-      "status": "registered",
+      "status": "open",
       "patterns": [
         "P1",
         "P6"
