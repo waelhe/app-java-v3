@@ -8,6 +8,7 @@ comment as a confirmed defect and never writes to the source PR.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -94,8 +95,20 @@ def make_item(kind: str, source_id: Any, author: str, created_at: str,
               path: str | None = None, line: int | None = None,
               updated_at: str | None = None) -> dict[str, Any]:
     source_key = f"{kind}-{source_id}"
-    revision_source = updated_at or created_at or "unknown"
-    revision = re.sub(r"[^a-z0-9]", "", revision_source.casefold()) or "unknown"
+    # Include the rendered source fields and body in the revision identity.
+    # Some review APIs omit an edited-at timestamp; hashing the source snapshot
+    # still makes an edited body/state/path visible to the idempotent sweep.
+    revision_snapshot = json.dumps({
+        "author": author or "unknown",
+        "createdAt": created_at or "",
+        "updatedAt": updated_at or created_at or "",
+        "state": state or "",
+        "sourceUrl": source_url,
+        "path": path or "",
+        "line": line,
+        "body": body or "",
+    }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    revision = hashlib.sha256(revision_snapshot.encode("utf-8")).hexdigest()[:16]
     return {
         "sourceId": source_key,
         "intakeKey": f"{source_key}-r{revision}",
