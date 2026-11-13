@@ -102,6 +102,8 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             "status": "completed",
             "conclusion": "success",
             "head_sha": "a" * 40,
+            "event": "pull_request",
+            "name": "CI",
             "repository": {"full_name": "waelhe/app-java-v3"},
         }
         self.assertEqual(
@@ -136,6 +138,22 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
             "workflow run belongs to a different repository",
             MODULE.validate_workflow_run_payload(
                 {**run, "repository": {"full_name": "attacker/other"}},
+                "waelhe/app-java-v3",
+                "a" * 40,
+            ),
+        )
+        self.assertIn(
+            "workflow run must be triggered by pull_request",
+            MODULE.validate_workflow_run_payload(
+                {**run, "event": "push"},
+                "waelhe/app-java-v3",
+                "a" * 40,
+            ),
+        )
+        self.assertIn(
+            "workflow run must be a repository CI or Integration Test workflow",
+            MODULE.validate_workflow_run_payload(
+                {**run, "name": "Request Copilot Code Review"},
                 "waelhe/app-java-v3",
                 "a" * 40,
             ),
