@@ -31,6 +31,7 @@ concurrency:
 
 jobs:
   ingest:
+    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request }}
     name: Collect review signals without executing PR code
     runs-on: ubuntu-latest
     steps:
