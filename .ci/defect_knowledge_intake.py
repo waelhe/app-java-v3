@@ -249,15 +249,17 @@ def sync_pr(repo: str, pr_number: int, token: str) -> None:
             "body": body,
         })
         print(f"PR #{pr_number}: created intake issue #{intake['number']}.")
+        known: set[str] = set()
     else:
+        known = existing_item_ids(repo, int(intake["number"]), token)
         body = intake_body(repo, pr, items)
         patch: dict[str, Any] = {"body": body}
-        if intake.get("state") == "closed":
+        new_ids = {item["sourceId"] for item in items} - known
+        if intake.get("state") == "closed" and new_ids:
             patch["state"] = "open"
         api_request("PATCH", f"/repos/{repo}/issues/{intake['number']}", token, patch)
         print(f"PR #{pr_number}: refreshed intake issue #{intake['number']}.")
 
-    known = existing_item_ids(repo, int(intake["number"]), token)
     new_items = [item for item in items if item["sourceId"] not in known]
     for batch in chunked(new_items):
         comment_body = "\n\n".join(render_item(item, pr_number) for item in batch)
