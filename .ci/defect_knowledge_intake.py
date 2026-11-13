@@ -20,8 +20,9 @@ from typing import Any
 
 API = "https://api.github.com"
 API_VERSION = "2022-11-28"
-ITEM_MARKER = re.compile(r"<!-- defect-intake-item:([a-z]+-[0-9]+) -->")
+ITEM_MARKER = re.compile(r"<!-- defect-intake-item:([a-z]+-[0-9]+-r[a-z0-9]+) -->")
 PR_MARKER_TEMPLATE = "<!-- defect-intake-pr:{number} -->"
+SUMMARY_MARKER = "<!-- defect-intake-sync-summary -->"
 BATCH_SIZE = 25
 
 
@@ -90,12 +91,18 @@ def short_excerpt(body: str | None, limit: int = 220) -> str:
 
 def make_item(kind: str, source_id: Any, author: str, created_at: str,
               state: str, source_url: str, body: str | None,
-              path: str | None = None, line: int | None = None) -> dict[str, Any]:
+              path: str | None = None, line: int | None = None,
+              updated_at: str | None = None) -> dict[str, Any]:
+    source_key = f"{kind}-{source_id}"
+    revision_source = updated_at or created_at or "unknown"
+    revision = re.sub(r"[^a-z0-9]", "", revision_source.casefold()) or "unknown"
     return {
-        "sourceId": f"{kind}-{source_id}",
+        "sourceId": source_key,
+        "intakeKey": f"{source_key}-r{revision}",
         "kind": kind,
         "author": author or "unknown",
         "createdAt": created_at or "",
+        "updatedAt": updated_at or created_at or "",
         "state": state or "",
         "sourceUrl": source_url,
         "path": path or "",
@@ -122,6 +129,7 @@ def collect_items(repo: str, pr: dict[str, Any], reviews: list[dict[str, Any]],
             review.get("state", ""),
             safe_github_url(review.get("html_url"), pr_url),
             review.get("body"),
+            updated_at=review.get("updated_at") or review.get("submitted_at", ""),
         )
         items[item["sourceId"]] = item
 
@@ -138,6 +146,7 @@ def collect_items(repo: str, pr: dict[str, Any], reviews: list[dict[str, Any]],
             comment.get("body"),
             comment.get("path"),
             comment.get("line") or comment.get("original_line"),
+            updated_at=comment.get("updated_at") or comment.get("created_at", ""),
         )
         items[item["sourceId"]] = item
 
@@ -152,6 +161,7 @@ def collect_items(repo: str, pr: dict[str, Any], reviews: list[dict[str, Any]],
             "pull-request-conversation",
             safe_github_url(comment.get("html_url"), pr_url),
             comment.get("body"),
+            updated_at=comment.get("updated_at") or comment.get("created_at", ""),
         )
         items[item["sourceId"]] = item
 
@@ -159,11 +169,11 @@ def collect_items(repo: str, pr: dict[str, Any], reviews: list[dict[str, Any]],
 
 
 def render_item(item: dict[str, Any], pr_number: int) -> str:
-    marker = f"<!-- defect-intake-item:{item['sourceId']} -->"
+    marker = f"<!-- defect-intake-item:{item['intakeKey']} -->"
     state = html.escape(str(item.get("state", "")), quote=True)
     author = html.escape(str(item.get("author", "unknown")), quote=True)
     source = safe_github_url(item.get("sourceUrl"), f"https://github.com/waelhe/app-java-v3/pull/{pr_number}")
-    lines = [marker, f"- **{html.escape(item['kind'])}** — {author} — {state} — {item.get('createdAt', '')}"]
+    lines = [marker, f"- **{html.escape(item['kind'])}** — {author} — {state} — {item.get('createdAt', '')} — source {html.escape(item['sourceId'])} — revision {html.escape(item.get('updatedAt', ''))}"]
     if item.get("path"):
         location = html.escape(str(item["path"]), quote=True)
         if item.get("line") is not None:
@@ -189,13 +199,37 @@ def find_intake_issue(repo: str, pr_number: int, token: str) -> dict[str, Any] |
     return None
 
 
-def existing_item_ids(repo: str, issue_number: int, token: str) -> set[str]:
-    comments = api_pages(f"/repos/{repo}/issues/{issue_number}/comments", token)
+def intake_issue_comments(repo: str, issue_number: int, token: str) -> list[dict[str, Any]]:
+    return api_pages(f"/repos/{repo}/issues/{issue_number}/comments", token)
+
+
+def existing_item_ids(comments: list[dict[str, Any]]) -> set[str]:
     known: set[str] = set()
     for comment in comments:
         body = comment.get("body") or ""
         known.update(ITEM_MARKER.findall(body))
     return known
+
+
+def render_sync_summary(repo: str, pr: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    number = int(pr["number"])
+    reviews = sum(item["kind"] == "review" for item in items)
+    inline = sum(item["kind"] == "inline" for item in items)
+    discussions = sum(item["kind"] == "discussion" for item in items)
+    return "\\n".join([
+        SUMMARY_MARKER,
+        "## Intake synchronization snapshot",
+        f"- Last source PR update: {html.escape(str(pr.get('updated_at', 'unknown')))}",
+        f"- PR state: {html.escape(str(pr.get('state', 'unknown')))}",
+        f"- PR head: {html.escape(str((pr.get('head') or {}).get('sha', 'unknown')))}",
+        f"- Review submissions: {reviews}",
+        f"- Inline review comments: {inline}",
+        f"- PR conversation comments: {discussions}",
+        f"- Current source items: {len(items)}",
+        f"- Source PR: https://github.com/{repo}/pull/{number}",
+        "",
+        "Only this synchronization snapshot is maintained automatically. Human triage notes and dispositions belong in the issue body or separate comments and are never overwritten by the collector.",
+    ])
 
 
 def intake_body(repo: str, pr: dict[str, Any], items: list[dict[str, Any]]) -> str:
@@ -249,18 +283,29 @@ def sync_pr(repo: str, pr_number: int, token: str) -> None:
             "body": body,
         })
         print(f"PR #{pr_number}: created intake issue #{intake['number']}.")
+        comments: list[dict[str, Any]] = []
         known: set[str] = set()
     else:
-        known = existing_item_ids(repo, int(intake["number"]), token)
-        body = intake_body(repo, pr, items)
-        patch: dict[str, Any] = {"body": body}
-        new_ids = {item["sourceId"] for item in items} - known
+        comments = intake_issue_comments(repo, int(intake["number"]), token)
+        known = existing_item_ids(comments)
+        new_ids = {item["intakeKey"] for item in items} - known
         if intake.get("state") == "closed" and new_ids:
-            patch["state"] = "open"
-        api_request("PATCH", f"/repos/{repo}/issues/{intake['number']}", token, patch)
-        print(f"PR #{pr_number}: refreshed intake issue #{intake['number']}.")
+            api_request("PATCH", f"/repos/{repo}/issues/{intake['number']}", token, {"state": "open"})
+        print(f"PR #{pr_number}: refreshed intake issue #{intake['number']} without replacing triage notes.")
 
-    new_items = [item for item in items if item["sourceId"] not in known]
+    # Keep the automatically refreshed snapshot in its own managed comment.
+    # Never replace the issue body: people may have added triage decisions there.
+    summary = render_sync_summary(repo, pr, items)
+    summary_comment = next(
+        (comment for comment in comments if SUMMARY_MARKER in (comment.get("body") or "")),
+        None,
+    )
+    if summary_comment is None:
+        api_request("POST", f"/repos/{repo}/issues/{intake['number']}/comments", token, {"body": summary})
+    elif summary_comment.get("body") != summary:
+        api_request("PATCH", f"/repos/{repo}/issues/comments/{summary_comment['id']}", token, {"body": summary})
+
+    new_items = [item for item in items if item["intakeKey"] not in known]
     for batch in chunked(new_items):
         comment_body = "\n\n".join(render_item(item, pr_number) for item in batch)
         api_request("POST", f"/repos/{repo}/issues/{intake['number']}/comments", token, {
