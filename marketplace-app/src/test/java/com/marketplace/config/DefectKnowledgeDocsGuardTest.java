@@ -91,7 +91,7 @@ class DefectKnowledgeDocsGuardTest {
         return read(DK_DIR + "/" + name);
     }
 
-    /** Canonical system documents and focused reference packs, read for self-consistency checks. */
+    /** Canonical system documents, focused reference packs and source-provenance records, read for self-consistency checks. */
     private static List<String> allDkDocs() throws IOException {
         List<String> docs = new ArrayList<>();
         for (String name : new String[] {
@@ -105,7 +105,8 @@ class DefectKnowledgeDocsGuardTest {
                 "rules/database-and-concurrency-proof.md",
                 "rules/configuration-and-release-reconciliation.md",
                 "rules/mode-aware-behavior-and-diagnostics.md",
-                "rules/signal-triage-and-evidence.md"
+                "rules/signal-triage-and-evidence.md",
+                "saleor-ai-sources-2026-11-13.json"
         }) {
             docs.add(dkRead(name));
         }
@@ -439,8 +440,19 @@ class DefectKnowledgeDocsGuardTest {
             assertThat(declared).as("every [ABCD]<n> token in the system resolves to a rulebook ID")
                     .containsAll(referenced);
         }
-        for (String name : new String[] {"README.md", "evidence-ledger.md", "pattern-catalog.md",
-                "rulebook.md", "change-protocol.md", "review-protocol.md", "enforcement-map.md"}) {
+        for (String name : new String[] {
+                "README.md", "SKILL.md", "evidence-ledger.md", "pattern-catalog.md",
+                "rulebook.md", "change-protocol.md", "review-protocol.md", "enforcement-map.md",
+                "saleor-ai-adoption-map.md", "saleor-ai-sources-2026-11-13.json",
+                "rules/financial-effects-and-reconciliation.md",
+                "rules/async-events-and-reconciliation.md",
+                "rules/authorization-and-data-scope.md",
+                "rules/contracts-and-source-investigation.md",
+                "rules/database-and-concurrency-proof.md",
+                "rules/configuration-and-release-reconciliation.md",
+                "rules/mode-aware-behavior-and-diagnostics.md",
+                "rules/signal-triage-and-evidence.md"
+        }) {
             assertThat(repoRoot().resolve(DK_DIR + "/" + name))
                     .as("artifact %s exists", name).exists();
         }
@@ -513,6 +525,10 @@ class DefectKnowledgeDocsGuardTest {
                 .contains("Do not execute")
                 .contains("not installed")
                 .contains("saleor-ai-adoption-map.md");
+        assertThat(repoRoot().resolve(DK_DIR).resolve("saleor-ai-sources-2026-11-13.json"))
+                .as("the Saleor AI source registry must exist").exists();
+        assertThat(repoRoot().resolve(DK_DIR).resolve("saleor-ai-adoption-map.md"))
+                .as("the Saleor AI adoption boundary must exist").exists();
     }
 
     // ---------- 11. the §-reference matcher itself is proven non-vacuous ----------
