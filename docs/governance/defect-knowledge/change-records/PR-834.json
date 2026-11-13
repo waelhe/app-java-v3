@@ -215,11 +215,6 @@
       "name": "test_sync_pr_reopens_issue_and_never_replaces_human_triage_body",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
       "verification": "Required GitHub CI on final PR head; pending until the remote run completes."
-    },
-    {
-      "name": "test_intake_workflow_uses_a_single_writer_group_and_privileged_workflow_run",
-      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
-      "verification": "Required GitHub CI on final PR head; pending until the remote run completes."
     }
   ],
   "findings": [
