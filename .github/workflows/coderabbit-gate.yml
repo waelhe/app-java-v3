@@ -119,10 +119,10 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -eu
-          python3 .ci/check_defect_knowledge.py validate \\
-            --pr-number "$PR_NUMBER" \\
-            --created-at "$PR_CREATED_AT" \\
-            --base-sha "$PR_BASE_SHA" \\
+          python3 .ci/check_defect_knowledge.py validate \
+            --pr-number "$PR_NUMBER" \
+            --created-at "$PR_CREATED_AT" \
+            --base-sha "$PR_BASE_SHA" \
             --head-sha "$PR_HEAD_SHA"
 
       - name: Gate - CodeRabbit review (human PRs) or all-checks-green (bot PRs)
