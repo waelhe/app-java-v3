@@ -4,12 +4,13 @@
   "asOf": "2026-11-13",
   "repository": "waelhe/app-java-v3",
   "baseline": {
-    "main": "445f421d67ad58bd533d42be9d5bbf6d268d9161",
+    "main": "f92873c947e94c76ed3e7ea211db40a985ea3d63",
     "commerceCandidate": {
       "branch": "integration/saleor-full-commerce-20261021",
       "head": "b97747f0d7de2ff67af855f9cd0f69a1f0aa29c5",
       "pr": 787
-    }
+    },
+    "initialMainMeasurement": "445f421d67ad58bd533d42be9d5bbf6d268d9161"
   },
   "countingPolicy": {
     "findingCount": "Only individually adjudicated records in the 2026-11-10 review are counted as 34 findings; the 2026-11-12 follow-up adds W7 and W8.",
@@ -76,6 +77,73 @@
         "W8"
       ],
       "interpretation": "W7 fixed by #813; W8 has an operational workaround but no structural repair verified."
+    },
+    {
+      "id": "REPAIR-PR-REVIEW-SWEEP-2026-11-13",
+      "kind": "CodeRabbit review refinements on repair PRs",
+      "measuredAt": "2026-11-13",
+      "prs": [
+        819,
+        821,
+        822,
+        823,
+        829
+      ],
+      "threads": 19,
+      "distinctFingerprints": 19,
+      "resolvedThreads": 19,
+      "comments": {
+        "819": {
+          "threads": 1,
+          "fingerprints": [
+            "6056f465697a0c6cc12d255c"
+          ],
+          "state": "open PR; thread resolved"
+        },
+        "821": {
+          "threads": 3,
+          "fingerprints": [
+            "ac3e594e0534f06e07fe39fe",
+            "e2c6d50b26cbf68f5f05efe9",
+            "305cfa98db5721ca03989123"
+          ],
+          "state": "open PR; all threads resolved"
+        },
+        "822": {
+          "threads": 2,
+          "fingerprints": [
+            "90dfc8d16024de702dead78e",
+            "0a1452eafed4aa4741de45c2"
+          ],
+          "state": "open PR; all threads resolved"
+        },
+        "823": {
+          "threads": 1,
+          "fingerprints": [
+            "821920d82b791e9f657ee4cf"
+          ],
+          "state": "open PR; thread resolved"
+        },
+        "829": {
+          "threads": 12,
+          "fingerprints": [
+            "19fd2089dd880a56ca59c2d6",
+            "6f34a73fc9e2eb46e2fb9a6d",
+            "15ed2d13f76721c231090721",
+            "4b60b618d8f031cc158c9cb3",
+            "741076d758f0c71a4144a277",
+            "2730eaec11b7f0a9dfe7ac80",
+            "e21e537cc289fdbbed9eebae",
+            "bd14ad527bc8b5e915c87bb0",
+            "61ed4bfa9ce8a9b1ce65d654",
+            "e8ef37aa1d2e8151ba073c79",
+            "96a64638802e0027d5ea5a84",
+            "3f99923d2ad1ab8f5a697f72"
+          ],
+          "state": "merged PR; all 12 threads resolved"
+        }
+      },
+      "interpretation": "These are distinct CodeRabbit review fingerprints raised while fixing earlier findings. They are repair refinements/secondary defects, not automatically 19 new independent product defects; each has a linked E-case and a branch-aware disposition."
     }
   ],
   "findings": [
@@ -97,14 +165,14 @@
       "id": "A2",
       "classification": "confirmed-defect",
       "severity": "moderate-high",
-      "status": "open",
+      "status": "fixed-main",
       "patterns": [
         "P4"
       ],
       "sourceReport": "ADV-2026-11-10",
       "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
       "repairPr": 829,
-      "summary": "Full refund reversed seller credit but not the commission mirror, leaving seller balance negative by the commission."
+      "summary": "Full refund now reverses both the seller credit and its posted commission mirror; PR #829 merged to main at f92873c9 on 2026-11-13. Its 12 CodeRabbit review findings were resolved before merge and are separately recorded as E-33..E-42."
     },
     {
       "id": "A3",
@@ -631,6 +699,108 @@
       "patterns": [
         "P13"
       ]
+    },
+    {
+      "id": "E-33",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "legacy refund reversal reads original posted commission, not recomputed live rate"
+    },
+    {
+      "id": "E-34",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "asynchronous REFUNDED event cannot silently complete before settlement commission is posted"
+    },
+    {
+      "id": "E-35",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "zero commission is distinguished from a commission row not yet posted"
+    },
+    {
+      "id": "E-36",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "historical full refunds and deploy-overlap stragglers require idempotent reconciliation"
+    },
+    {
+      "id": "E-37",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "multiple reversals for one provider/currency are aggregated before one UPSERT"
+    },
+    {
+      "id": "E-38",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "native SQL reconciliation advances the ProviderBalance optimistic version"
+    },
+    {
+      "id": "E-39",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "net ledger aggregation treats commission reversal as a positive credit"
+    },
+    {
+      "id": "E-40",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "ledger response sign metadata describes reversal credit as positive"
+    },
+    {
+      "id": "E-41",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "shared async test fixtures model lookup state by phase instead of call order"
+    },
+    {
+      "id": "E-42",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "scheduled refund reconciliation bounds its payment-intent scan"
+    },
+    {
+      "id": "E-43",
+      "source": "https://github.com/waelhe/app-java-v3/pull/819",
+      "status": "addressed-on-open-pr",
+      "summary": "GraphQL error resolver uses a safe fallback for a null exception message"
+    },
+    {
+      "id": "E-44",
+      "source": "https://github.com/waelhe/app-java-v3/pull/821",
+      "status": "addressed-on-open-pr",
+      "summary": "VAL-001 field error messages follow the request locale"
+    },
+    {
+      "id": "E-45",
+      "source": "https://github.com/waelhe/app-java-v3/pull/821",
+      "status": "addressed-on-open-pr",
+      "summary": "type mismatch detail preserves field, rejected value and expected type"
+    },
+    {
+      "id": "E-46",
+      "source": "https://github.com/waelhe/app-java-v3/pull/821",
+      "status": "addressed-on-open-pr",
+      "summary": "MessageFormat fallback does not parse untrusted rejected input as a pattern"
+    },
+    {
+      "id": "E-47",
+      "source": "https://github.com/waelhe/app-java-v3/pull/822",
+      "status": "addressed-on-open-pr",
+      "summary": "unresolved mail-base placeholder is rejected at Spring Boot startup rather than emitted as a literal URL"
+    },
+    {
+      "id": "E-48",
+      "source": "https://github.com/waelhe/app-java-v3/pull/822",
+      "status": "addressed-on-open-pr",
+      "summary": "mail origin rejects query and fragment components including empty delimiters"
+    },
+    {
+      "id": "E-49",
+      "source": "https://github.com/waelhe/app-java-v3/pull/823",
+      "status": "addressed-on-open-pr",
+      "summary": "fix-plan summary and counts match the detailed owner-gate records"
     }
   ],
   "capabilityAndDecisionGaps": [
@@ -695,11 +865,79 @@
       "mergeCommit": "55f1a1961a061f6e19f065bf86558e49b85b28e0",
       "status": "ancestor-of-main",
       "url": "https://github.com/waelhe/app-java-v3/pull/818"
+    },
+    {
+      "pr": 829,
+      "mergeCommit": "f92873c947e94c76ed3e7ea211db40a985ea3d63",
+      "status": "current-main-tip",
+      "url": "https://github.com/waelhe/app-java-v3/pull/829"
     }
   ],
   "limitations": [
     "The 75 PR entries created after #746 were inventoried from GitHub PR metadata and available descriptions; detailed diffs/review evidence were concentrated on PRs that report or carry defects, remediations, review shards, or governance changes. Dependency/OpenRewrite-only PRs were classified by their purpose and description, not treated as defect findings.",
     "The 682 CodeRabbit comments on #806–#811 are individual review comments with distinct comment fingerprints in that snapshot, not 682 confirmed unique defects. A single finding can generate multiple comments/review iterations; some comments are test-shard artifacts, nits, false positives, or repeated observations.",
-    "The review finding registry is a reconciliation index for the named reports. It does not claim a complete historical diff audit of every commit in all 75 PRs."
+    "The review finding registry is a reconciliation index for the named reports. It does not claim a complete historical diff audit of every commit in all 75 PRs.",
+    "The Nov 13 repair-PR review sweep added 19 distinct CodeRabbit fingerprints across #819/#821/#822/#823/#829. All 19 review threads were resolved at measurement; only #829 had merged, so its E-33..E-42 cases are fixed on main while the other cases remain attached to open PRs."
+  ],
+  "repairReviewReconciliations": [
+    {
+      "pr": 829,
+      "threads": 12,
+      "fingerprints": [
+        "19fd2089dd880a56ca59c2d6",
+        "6f34a73fc9e2eb46e2fb9a6d",
+        "15ed2d13f76721c231090721",
+        "4b60b618d8f031cc158c9cb3",
+        "741076d758f0c71a4144a277",
+        "2730eaec11b7f0a9dfe7ac80",
+        "e21e537cc289fdbbed9eebae",
+        "bd14ad527bc8b5e915c87bb0",
+        "61ed4bfa9ce8a9b1ce65d654",
+        "e8ef37aa1d2e8151ba073c79",
+        "96a64638802e0027d5ea5a84",
+        "3f99923d2ad1ab8f5a697f72"
+      ],
+      "status": "fixed-main",
+      "note": "All 12 CodeRabbit threads resolved before the A2 repair merged; E-33..E-42 record the mechanisms."
+    },
+    {
+      "pr": 819,
+      "threads": 1,
+      "fingerprints": [
+        "6056f465697a0c6cc12d255c"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Null GraphQL error detail fallback addressed; PR itself remains open."
+    },
+    {
+      "pr": 821,
+      "threads": 3,
+      "fingerprints": [
+        "ac3e594e0534f06e07fe39fe",
+        "e2c6d50b26cbf68f5f05efe9",
+        "305cfa98db5721ca03989123"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Localization, rendered diagnostic detail, and safe MessageFormat fallback; PR remains open."
+    },
+    {
+      "pr": 822,
+      "threads": 2,
+      "fingerprints": [
+        "90dfc8d16024de702dead78e",
+        "0a1452eafed4aa4741de45c2"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Spring Boot unresolved-placeholder fail-fast and URI query/fragment rejection; PR remains open."
+    },
+    {
+      "pr": 823,
+      "threads": 1,
+      "fingerprints": [
+        "821920d82b791e9f657ee4cf"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Documentation gate counts/summary corrected; PR remains open."
+    }
   ]
 }
