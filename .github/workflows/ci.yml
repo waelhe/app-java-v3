@@ -121,10 +121,10 @@ jobs:
           else
             cp .ci/check_defect_knowledge.py "$checker"
           fi
-          python3 "$checker" validate \\
-            --pr-number "$PR_NUMBER" \\
-            --created-at "$PR_CREATED_AT" \\
-            --base-sha "$PR_BASE_SHA" \\
+          python3 "$checker" validate \
+            --pr-number "$PR_NUMBER" \
+            --created-at "$PR_CREATED_AT" \
+            --base-sha "$PR_BASE_SHA" \
             --head-sha "$PR_HEAD_SHA"
 
       - name: Gitleaks secret scan (high/critical policy)
