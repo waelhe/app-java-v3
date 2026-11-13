@@ -245,7 +245,7 @@ public class CommercialPricingService implements CommercialPricingPort {
     @Override
     @Transactional
     public void settleVoucher(UUID orderId, UUID consumerId, String voucherCode,
-                              long discountMinor, String currency) {
+                              long discountedSubtotalMinor, long discountMinor, String currency) {
         if (voucherCode == null || voucherCode.isBlank()) {
             return;
         }
@@ -266,6 +266,17 @@ public class CommercialPricingService implements CommercialPricingPort {
         if (!voucher.getCurrency().equals(currency)) {
             throw new ConflictException("Voucher " + normalized + " is denominated in "
                     + voucher.getCurrency() + " — the order is in " + currency);
+        }
+        // #810-H3 (the 2026-11-03 adversarial review's secondary risks —
+        // evaluated with W3-B15): the minimum spend re-validates under the
+        // SAME row lock — an administrative tightening that lands between
+        // the unlocked validation half and this settlement answers the
+        // honest refusal here, never a redemption below the threshold the
+        // voucher row now carries.
+        if (discountedSubtotalMinor < voucher.getMinSpendMinor()) {
+            throw new ConflictException("Voucher " + normalized + " requires a minimum spend of "
+                    + voucher.getMinSpendMinor() + " — the order's discounted subtotal is "
+                    + discountedSubtotalMinor);
         }
         if (voucher.getMaxRedemptions() != null
                 && redemptions.countByVoucherId(voucher.getId()) >= voucher.getMaxRedemptions()) {

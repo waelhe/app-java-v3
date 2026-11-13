@@ -1,0 +1,346 @@
+package com.marketplace.catalog;
+
+import com.marketplace.catalog.spi.CategoryCreateCommand;
+import com.marketplace.catalog.spi.CategoryMutationError;
+import com.marketplace.catalog.spi.CategoryMutationErrorCode;
+import com.marketplace.catalog.spi.CategoryMutationResult;
+import com.marketplace.catalog.spi.CategoryUpdateCommand;
+import com.marketplace.catalog.spi.CategoryView;
+import com.marketplace.catalog.spi.CategoryWriteSpi;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
+/**
+ * P2 (the canonical Saleor plan §5-P2 — the Saleor {@code categoryCreate},
+ * {@code categoryUpdate}, {@code categoryDelete} and
+ * {@code categoryBulkDelete} mutation roots): the owning use case for the
+ * listing-category registry's ADMIN write surface. These are Saleor
+ * MANAGEMENT roots ("Requires one of the following permissions:
+ * MANAGE_PRODUCTS") mapped through the platform's ADMIN capability (the
+ * SaleorPermissionCatalog contract) and enforced HERE at the owning
+ * use-case boundary by Spring Security's method security — the same
+ * {@code @PreAuthorize} mechanism the pricing module's discount reads
+ * established — never only in a resolver.
+ *
+ * <p><b>The validation rules are the registry's own contracts</b> — the
+ * entity's own documented shapes: the code is the stable API-facing key
+ * whose DB CHECK pins lowercase latin/digits/dashes (the {@code V70}
+ * shape), and the GLOBAL {@code uq_categories_code} unique index keeps
+ * every code reserved — soft-deleted rows included (the V70 identity
+ * stance: referential identity values are never recycled, unlike the
+ * V47 slug's presentation identity). The service re-checks both BEFORE
+ * the write (the honest precheck over the RAW-table count, which sees
+ * the soft-deleted reservations the derived {@code findByCode} lookup
+ * cannot) and the global unique index remains the concurrent-write
+ * backstop whose loser answers the SAME classified ALREADY_EXISTS —
+ * the same no-TOCTOU stance the repository's own javadoc
+ * documents. Domain validation outcomes answer as result error entries
+ * (the Saleor payload-error ADAPT); transport concerns (malformed typed
+ * global IDs, denied authorization) never reach this service.</p>
+ *
+ * <p><b>Create assigns the display position</b> — the registry's own
+ * {@code position} column is platform extension data the Saleor input
+ * does not carry: the row lands after the current tail (the honest
+ * deterministic choice; a reorder capability, if ever owned, is its own
+ * root). <b>Update is partial</b> — {@code null} command fields preserve
+ * the column, the Saleor input's omit-to-preserve semantics.
+ * <b>Soft delete</b> rides the {@code BaseEntity} {@code @SoftDelete}
+ * discipline: {@code repository.delete} converts to the
+ * {@code is_deleted} flag, and the deleted row's last-known projection
+ * answers in the payload (Saleor's own delete-payload semantics).</p>
+ */
+@Service
+public class CategoryWriteService implements CategoryWriteSpi {
+
+    /**
+     * The code shape the DB CHECK itself pins — lowercase latin letters,
+     * digits and dashes (the {@code V70} CHECK, mirrored at the boundary
+     * so an invalid shape answers the classified INVALID domain error,
+     * never a DB CHECK failure.
+     */
+    static final Pattern CODE_SHAPE = Pattern.compile("[a-z0-9][a-z0-9-]*");
+
+    /** The registry's own column ceilings (the entity's own length contracts). */
+    private static final int CODE_MAX_LENGTH = 50;
+    private static final int NAME_MAX_LENGTH = 100;
+
+    /**
+     * The registry's code-identity constraint — V70's GLOBAL unique index
+     * name, the concurrent-create backstop the classified catch binds to
+     * (the AdBillingJob discrimination precedent: a DIVE carries more
+     * than uniqueness, so only the violation that names THIS constraint
+     * answers the payload error).
+     */
+    private static final String CODE_UNIQUENESS_CONSTRAINT = "uq_categories_code";
+
+    private final CategoryRepository categoryRepository;
+    /** The insert's own transaction door (the 2026-11-06 #808 round — the AdBillingBatchExecutor precedent). */
+    private final CategoryCreationExecutor creationExecutor;
+
+    public CategoryWriteService(CategoryRepository categoryRepository,
+                                 CategoryCreationExecutor creationExecutor) {
+        this.categoryRepository = categoryRepository;
+        this.creationExecutor = creationExecutor;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    // The 2026-11-06 #808 round-3 review (Major · Stability &amp;
+    // Availability): NO outer transaction — the AdBillingJob precedent
+    // verbatim (settleWindowsThrough holds no @Transactional while it
+    // loops the executor's REQUIRES_NEW doors). A transactional outer
+    // method held its pooled connection ACROSS the executor's REQUIRES_NEW
+    // insert, so N concurrent creates held N connections while each
+    // waited for a second one — the pool-exhaustion deadlock the finding
+    // proved. Non-transactional here, the reserved-code precheck
+    // (countByCodeIncludingDeleted) is a plain derived-query read: it
+    // borrows a connection, answers the count auto-commit, and RETURNS
+    // the connection to the pool BEFORE the executor's insert asks for
+    // its own (the 2026-11-07 #808 round-7 review's correction: the read
+    // opens no transaction of its own — a derived count rides no
+    // @Transactional boundary); the insert rides the executor's own
+    // transaction alone; the DIVE catch below classifies the loser's
+    // cleanly-rolled-back violation exactly as before (nothing between
+    // the precheck and the insert needs one atomic unit — the precheck is
+    // honest-but-not-atomic by its own documented law, the V70 index is
+    // the backstop).
+    public CategoryMutationResult createCategory(CategoryCreateCommand command) {
+        List<CategoryMutationError> errors = new ArrayList<>();
+        String name = command.name() == null ? null : command.name().strip();
+        String code = command.slug() == null ? null : command.slug().strip().toLowerCase(Locale.ROOT);
+        if (name == null || name.isBlank()) {
+            errors.add(new CategoryMutationError("name", CategoryMutationErrorCode.REQUIRED,
+                    "A category name is required"));
+        } else if (name.length() > NAME_MAX_LENGTH) {
+            errors.add(new CategoryMutationError("name", CategoryMutationErrorCode.INVALID,
+                    "A category name is at most " + NAME_MAX_LENGTH + " characters"));
+        }
+        if (code == null || code.isBlank()) {
+            errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.REQUIRED,
+                    "A category slug is required"));
+        } else if (!CODE_SHAPE.matcher(code).matches() || code.length() > CODE_MAX_LENGTH) {
+            errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
+                    "A category slug is lowercase latin letters, digits and dashes (at most "
+                            + CODE_MAX_LENGTH + " characters)"));
+        } else if (categoryRepository.countByCodeIncludingDeleted(code) > 0) {
+            // The 2026-11-05 #808 round (Major · Functional Correctness):
+            // the reserved-code check spans the RAW table — a soft-deleted
+            // category's code is still reserved by V70's global unique
+            // index, so the classified ALREADY_EXISTS answers BEFORE the
+            // save (never a raw DataIntegrityViolation from the index).
+            errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.ALREADY_EXISTS,
+                    "A category with the slug already exists"));
+        }
+        if (!errors.isEmpty()) {
+            return CategoryMutationResult.failure(errors);
+        }
+        Category created;
+        try {
+            // The 2026-11-06 #808 round review (Minor · Data Integrity &
+            // Integration): the INSERT moved to the executor's OWN
+            // transaction — the violation marks the flushing transaction
+            // rollback-only, and a catch inside it returns into a commit
+            // that throws UnexpectedRollbackException instead of the
+            // classified result (the finding's exact 500). Crossing the
+            // executor's boundary the loser arrives fully rolled back,
+            // and the classification below answers it honestly (the
+            // AdBillingBatchExecutor precedent verbatim).
+            created = creationExecutor.insert(code, name);
+        } catch (com.marketplace.shared.api.ConflictException exhaustion) {
+            // The 2026-11-07 #808 round-19 review (Minor · Functional
+            // Correctness, the overflow family): the position-exhaustion
+            // guard rides the executor's own boundary — the classified
+            // INVALID result (never the raw DB failure the wrapped
+            // max+1 would answer).
+            if (exhaustion.getMessage() != null && exhaustion.getMessage().contains("positions are exhausted")) {
+                return CategoryMutationResult.failure(List.of(new CategoryMutationError(
+                        "position", CategoryMutationErrorCode.INVALID,
+                        "The category positions are exhausted — remove categories to free the sequence")));
+            }
+            throw exhaustion;
+        } catch (DataIntegrityViolationException violation) {
+            // The 2026-11-06 #808 round (Minor · Stability &
+            // Availability): the reserved-code precheck is honest but
+            // not atomic — two concurrent creates of the same code both
+            // pass it and V70's global unique index is the backstop. The
+            // loser's raw violation answers the SAME classified
+            // ALREADY_EXISTS, bound to uq_categories_code ONLY — every
+            // other integrity violation keeps its own propagation (never
+            // a blanket catch that would hide real registry bugs).
+            if (isCategoryCodeConflict(violation)) {
+                return CategoryMutationResult.failure(List.of(new CategoryMutationError(
+                        "slug", CategoryMutationErrorCode.ALREADY_EXISTS,
+                        "A category with the slug already exists")));
+            }
+            throw violation;
+        }
+        return CategoryMutationResult.success(toView(created));
+    }
+
+    /**
+     * The DIVE discrimination: the violation's most specific cause names
+     * the code-identity constraint — the same cause-chain walk the
+     * AdBillingJob window-uniqueness discrimination uses.
+     */
+    private static boolean isCategoryCodeConflict(DataIntegrityViolationException violation) {
+        Throwable cause = violation;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(CODE_UNIQUENESS_CONSTRAINT)) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public CategoryMutationResult updateCategory(UUID id, CategoryUpdateCommand command) {
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the lifecycle's locked load — the edit serializes
+        // with the delete (and every other writer) on the row itself; an
+        // unlocked read let a concurrent delete commit between the load
+        // and the save, and the update then wrote over the soft-deleted
+        // row (the fabricated SUCCESS the round-21 finding proved) or
+        // answered the stale @Version's raw OptimisticLockException.
+        Optional<Category> addressed = id == null ? Optional.empty()
+                : categoryRepository.findByIdForUpdate(id);
+        if (addressed.isEmpty()) {
+            return CategoryMutationResult.failure(List.of(new CategoryMutationError(
+                    "id", CategoryMutationErrorCode.NOT_FOUND, "No category found for the id")));
+        }
+        List<CategoryMutationError> errors = new ArrayList<>();
+        String name = command.name() == null ? null : command.name().strip();
+        String code = command.slug() == null ? null : command.slug().strip().toLowerCase(Locale.ROOT);
+        if (name != null) {
+            if (name.isBlank()) {
+                errors.add(new CategoryMutationError("name", CategoryMutationErrorCode.INVALID,
+                        "A category name cannot be blank"));
+            } else if (name.length() > NAME_MAX_LENGTH) {
+                errors.add(new CategoryMutationError("name", CategoryMutationErrorCode.INVALID,
+                        "A category name is at most " + NAME_MAX_LENGTH + " characters"));
+            }
+        }
+        // The 2026-11-07 #808 round-19 review: the slug's own shape law
+        // moved BELOW the row load — it adjudicates NEW or CHANGED codes
+        // only (the different-code branch); the equal-code idempotent
+        // re-send never re-validates the stored identity here.
+        if (!errors.isEmpty()) {
+            return CategoryMutationResult.failure(errors);
+        }
+        Category row = addressed.get();
+        // The wave-19 #808 review (Major · Functional Correctness): the
+        // code is the category's stable reference identity — the entity's
+        // own contract pins it immutable. A slug command equal to the
+        // row's own code is the idempotent re-send (it preserves the
+        // column); any DIFFERENT slug answers the classified INVALID
+        // domain error — never a silent code move that strands the
+        // standing references.
+        //
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): the shape law rides the SAME branch — a slug
+        // EQUAL to the stored code is the idempotent re-send even when
+        // the stored code predates the shape rule (a legacy row's
+        // re-send never re-validates its own stored identity); the
+        // shape check applies to NEW or CHANGED codes only (and a
+        // changed code refuses as immutable below, both errors riding
+        // the same verdict).
+        if (code != null && !code.equals(row.getCode())) {
+            if (!CODE_SHAPE.matcher(code).matches() || code.length() > CODE_MAX_LENGTH) {
+                errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
+                        "A category slug is lowercase latin letters, digits and dashes (at most "
+                                + CODE_MAX_LENGTH + " characters)"));
+            }
+            errors.add(new CategoryMutationError("slug", CategoryMutationErrorCode.INVALID,
+                    "A category slug is immutable; it cannot change after creation"));
+        }
+        if (!errors.isEmpty()) {
+            return CategoryMutationResult.failure(errors);
+        }
+        row.revise(null, name);
+        Category updated = categoryRepository.save(row);
+        return CategoryMutationResult.success(toView(updated));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public CategoryMutationResult deleteCategory(UUID id) {
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the locked load the whole lifecycle now owns —
+        // the delete serializes with the edit/translate pair on the row
+        // itself (a concurrent writer's stale row never rides past this
+        // commit; the loser's own locked load answers the honest
+        // NOT_FOUND on the soft-delete-filtered re-read).
+        Optional<Category> addressed = id == null ? Optional.empty()
+                : categoryRepository.findByIdForUpdate(id);
+        if (addressed.isEmpty()) {
+            return CategoryMutationResult.failure(List.of(new CategoryMutationError(
+                    "id", CategoryMutationErrorCode.NOT_FOUND, "No category found for the id")));
+        }
+        Category row = addressed.get();
+        CategoryView lastKnown = toView(row);
+        categoryRepository.delete(row);
+        return CategoryMutationResult.success(lastKnown);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public int deleteCategories(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        int deleted = 0;
+        // The 2026-11-08 #808 round-21 review (Minor · Data Integrity &
+        // Integration): the bulk rides the SAME locked load in ONE
+        // sorted, null-free pass — the module's own bulk law (two
+        // concurrent bulk deletes naming overlapping ids in opposite
+        // orders can never deadlock, and every row lock is a fresh
+        // locked load, never an unlocked pre-read).
+        for (UUID id : ids.stream().filter(java.util.Objects::nonNull).sorted().toList()) {
+            // Unknown ids are skipped — the honest affected count answers
+            // what the registry itself deleted (never a fabricated count,
+            // never an error entry for an id the registry never knew).
+            Optional<Category> addressed = categoryRepository.findByIdForUpdate(id);
+            if (addressed.isPresent()) {
+                categoryRepository.delete(addressed.get());
+                deleted++;
+            }
+        }
+        return deleted;
+    }
+
+    /**
+     * The new row's display position — after the registry's current tail
+     * (the platform extension column's honest deterministic choice for a
+     * create; a reorder capability is its own future root). The tail is
+     * the HIGHEST live position plus one (the wave-19 #808 review: after
+     * any mid-registry delete a size+1 derivation would collide with the
+     * last row's own position and make the position order non-
+     * deterministic between them).
+     */
+    private int nextPosition() {
+        return categoryRepository.findAllByOrderByPositionAscIdAsc().stream()
+                .mapToInt(Category::getPosition)
+                .max().orElse(0) + 1;
+    }
+
+    /** The bounded projection — the read service's own rendering rule. */
+    private static CategoryView toView(Category category) {
+        String name = category.getNameEn() != null ? category.getNameEn() : category.getNameAr();
+        return new CategoryView(category.getId(), name, category.getNameAr(),
+                category.getCode(), category.getPosition());
+    }
+}

@@ -33,7 +33,37 @@
         // catalog-spi/discovery-spi pattern every journey seam follows
         // (the declared interface, never the internals; the ADMIN
         // enforcement lives in the owning use case, not here).
-        "identity :: identity-spi"
+        "identity :: identity-spi",
+        // Campaign packets campaign-b3-a2b/campaign-b3-a3 (A0 stewardship): the
+        // GraphQL surface's attribute and discount read fields delegate to the
+        // catalog and pricing modules' OWN named read SPIs — the same
+        // identity-spi/catalog-spi pattern every journey seam follows (the
+        // declared interface plus its propagated signature types, never the
+        // internals; the ADMIN enforcement lives in the owning use cases).
+        "pricing :: pricing-spi",
+        // Campaign packet campaign-b5-b (P4 order read roots, A0 stewardship):
+        // the GraphQL surface's order read fields delegate to the orders
+        // module's OWN named SPI — the same identity-spi/catalog-spi pattern
+        // every journey seam follows (the declared interface plus its
+        // propagated signature types, never the internals; the ADMIN
+        // enforcement lives in the owning use case's method security).
+        "orders :: orders-spi",
+        // Agent-2 packet campaign-b5-a (the canonical Saleor plan §5-P2 — the
+        // product-media mutation roots): the GraphQL surface's media
+        // mutation fields delegate to the media module's OWN declared write
+        // SPI — the same catalog-spi/identity-spi pattern every journey
+        // seam follows (the declared interface, never the internals; the
+        // PROVIDER ownership enforcement lives in the owning use case).
+        "media :: media-spi",
+        // Post-merge integration round of PR #696 (the A0-landed migration
+        // the agent-1 handoff recorded): the GraphQL surface's CMS page and
+        // navigation fields delegate to the console module's OWN named SPI —
+        // the seam was born as the shared-api CmsPagePort/CmsNavigationPort
+        // pair, which the house rule sharedPortsAreFrameworkNeutral forbids
+        // (a shared port speaking Spring drags every consumer into that type
+        // system); the identity-spi/catalog-spi pattern every journey seam
+        // follows is the recorded migration path, executed here.
+        "console :: console-spi"
     }
 )
 package com.marketplace.app;

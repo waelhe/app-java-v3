@@ -671,6 +671,34 @@ resilience4j:
         limit-for-period: 100
         limit-refresh-period: 1m
         timeout-duration: 5s
+      # The shard review (Major · Stability & Availability, 2026-11-01
+      # wave 2): the per-CALLER budget the anonymous entry points carry
+      # (PerCallerRateLimitGuard) — dynamically keyed instances created
+      # through the official RateLimiterRegistry.rateLimiter(name,
+      # configName) API. 10/min fail-fast per caller address: one address
+      # can only exhaust itself. The named instances below stay as the
+      # per-JVM outer ceilings; this config is the inner per-caller bound.
+      perCallerGrant:
+        limit-for-period: 10
+        limit-refresh-period: 1m
+        timeout-duration: 0
+      # The wave-4 #806 review (second cycle, Major · Security & Privacy):
+      # the ACCOUNT-keyed budget (PerCallerRateLimitGuard's email-hash
+      # instances — credential-stuffing defense) is SEPARATE from the
+      # address budget above. Riding perCallerGrant's own 10/min let ONE
+      # address burn the victim's ACCOUNT budget (ten tokenCreate calls
+      # with the victim's email) and lock the victim's login out of its
+      # own account for the refresh period — RequestNotPermitted from a
+      # fresh address. perAccountGrant strictly EXCEEDS the address budget
+      # (3×): a single address can only ever consume a third of an
+      # account's budget, so the legitimate owner keeps login headroom,
+      # while distributed stuffing against one account stays capped at
+      # 30 attempts/min (the per-JVM outer ceilings and the address
+      # budgets bound the aggregate).
+      perAccountGrant:
+        limit-for-period: 30
+        limit-refresh-period: 1m
+        timeout-duration: 0
     instances:
       catalog:
         base-config: default
@@ -770,6 +798,83 @@ resilience4j:
       # fail-fast model; the ADMIN-enforced legs delegate to the identity
       # owner's use cases.
       graphqlUserQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b1-a1 (A1 identity agent request, applied by
+      # A0): the permission-group read roots' named instance at the same
+      # identity read budget as graphqlUserQuery (50/min, fail-fast).
+      graphqlPermissionGroupQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b2-a2 (A2 catalog read roots, applied by
+      # A0): the product-type read roots' named instance at the shared
+      # catalog read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlCatalogRead:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a1b (A1 identity agent request, applied
+      # by A0): the customers read root's named instance at the same
+      # identity read budget as graphqlUserQuery (50/min, fail-fast).
+      graphqlCustomerQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a2b (A2 catalog agent request, applied
+      # by A0): the attribute read roots' named instance at the shared
+      # catalog read budget (50/min, fail-fast).
+      graphqlCatalogAttributeQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b4-a (A2 catalog read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the
+      # category read roots' named instance at the shared catalog
+      # read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlCategoryQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b4-c (A2 catalog read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the
+      # product read roots' named instance at the shared catalog
+      # read budget (50/min, fail-fast).
+      graphqlProductQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b5-a (A2 catalog read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the
+      # product-variant read roots' named instance at the shared catalog
+      # read budget (50/min, fail-fast — the catalog limiter
+      # precedent's own budget).
+      graphqlProductVariantQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b5-b (P4 order read roots, applied
+      # in-branch by A0 — the sequential single-writer flow): the order
+      # read roots' named instance at the shared management read budget
+      # (50/min, fail-fast — the catalog limiter precedent's own budget).
+      graphqlOrderQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a3 (A3 pricing agent request, applied
+      # by A0): the promotion read roots' named instance at the shared
+      # read budget (50/min, fail-fast).
+      graphqlPromotionQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # Campaign packet campaign-b3-a3 (A3 pricing agent request, applied
+      # by A0): the voucher read roots' named instance at the shared
+      # read budget (50/min, fail-fast).
+      graphqlVoucherQuery:
         base-config: default
         limit-for-period: 50
         timeout-duration: 0
@@ -948,6 +1053,134 @@ resilience4j:
         base-config: default
         limit-for-period: 30
         timeout-duration: 0
+      # A0's central pass (the Saleor 458-root campaign): the agents'
+      # declared named instances, applied by the integrator exactly as the
+      # handoffs requested — the @RateLimiter annotations were landing on
+      # the registry's default budget (100/min, 5s wait) until these keys
+      # existed; now every write family sits at the platform's own write
+      # budget (10/min fail-fast, the graphqlStoreProductMutation
+      # precedent) and the collection read at the shared catalog read
+      # budget (50/min, the graphqlCategoryQuery precedent).
+      # Agent 1 (P1 identity — TokenDataFetcher's own request): the token
+      # mutation family — tokenCreate IS the password grant (the
+      # unauthenticated sign-in surface), tokenRefresh the rotation.
+      # The shard review (Major · Stability, 2026-11-01 wave 2) RAISED the
+      # per-instance ceiling 10 -> 60: the per-JVM budget is the OUTER
+      # bound only (an instance-level 10/min meant the ELEVENTH login
+      # platform-wide answered 429); the real flood control is the
+      # per-caller guard (PerCallerRateLimitGuard, the perCallerGrant
+      # config) — each caller address gets its own 10/min fail-fast budget.
+      graphqlTokenMutation:
+        base-config: default
+        limit-for-period: 60
+        timeout-duration: 0
+      # The shard review (Minor · Functional Correctness, 2026-11-01): the
+      # three names below are annotated 70x across the account/CMS fetchers
+      # but were never declared — every call silently fell back to the
+      # default instance's limits instead of the intended per-surface
+      # budgets. graphqlAccountMutation and graphqlCmsMutation follow the
+      # mutation shape (10/min, fail fast); graphqlCmsQuery follows the
+      # read shape (50/min). graphqlTokenVerify (the read-shaped
+      # verification leg) and graphqlTokenDeactivate (the authenticated
+      # sign-out leg) are the budget split the same review required.
+      graphqlAccountMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      # The shard review (Major · Stability & Availability, 2026-11-01
+      # wave 2): the ANONYMOUS account roots (accountRegister,
+      # requestPasswordReset, sendConfirmationEmail, setPassword,
+      # confirmAccount) leave the shared graphqlAccountMutation budget —
+      # a flood of reset requests must never starve the authenticated
+      # customer/staff admin mutations sharing that instance. The wave-3
+      # review RAISED the outer ceiling 10 -> 60 (the same reasoning as
+      # graphqlTokenMutation): a per-JVM 10/min meant ONE caller's ten
+      # reset requests starved every other caller's registration — the
+      # outer ceiling must fit aggregate traffic; the per-caller guard
+      # (PerCallerRateLimitGuard, the perCallerGrant config — now wired
+      # into ALL FIVE anonymous roots) does the real flood control.
+      graphqlAccountAnonymousMutation:
+        base-config: default
+        limit-for-period: 60
+        timeout-duration: 0
+      graphqlCmsMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCmsQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlTokenVerify:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      graphqlTokenDeactivate:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      # Agent 2 (campaign-b5/a — the catalog/pricing write roots): each
+      # mutation family its own instance at the same write budget, so one
+      # family's burst cannot exhaust another's window.
+      graphqlCategoryMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductTypeMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlVoucherMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlAttributeMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlAttributeValueMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductVariantMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCollectionMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlProductMediaMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCollectionQuery:
+        base-config: default
+        limit-for-period: 50
+        timeout-duration: 0
+      # The 2026-11-06 #806 round (Minor · Stability & Availability): the
+      # order and checkout mutation families carried NO call-rate budget
+      # at all — the bulk-list bounds capped one request's size only, and
+      # neither the named instances nor PerCallerBudgetAspect reached
+      # them. Two new families, the same two-layer model every other
+      # mutation family carries: the per-caller address budget (the
+      # perCallerGrant config, 10/min fail-fast per address, consumed
+      # FIRST through PerCallerBudget's aspect ordering) plus this named
+      # per-JVM outer ceiling. graphqlCheckoutMutation rides the
+      # aggregate shape (60/min — cart writes are the platform's
+      # highest-frequency mutations; a 10/min ceiling would let ONE
+      # caller's cart traffic starve every other cart, the wave-3
+      # starvation precedent); graphqlOrderMutation rides the admin
+      # mutation shape (10/min — orderCancel/orderBulkCancel are
+      # ADMIN-gated, low-frequency money-moving writes).
+      graphqlOrderMutation:
+        base-config: default
+        limit-for-period: 10
+        timeout-duration: 0
+      graphqlCheckoutMutation:
+        base-config: default
+        limit-for-period: 60
+        timeout-duration: 0
 
 app:
   commission:
@@ -1042,6 +1275,15 @@ marketplace:
       # Presigned URL lifetime (upload + download). Official bounds: 1s to 7d
       # (R2 doc + S3Presigner javadoc).
       presign-ttl: ${MEDIA_PRESIGN_TTL:15m}
+    # The 2026-11-06 #809 round (Major · Functional Correctness): the
+    # abandoned pending-upload reaper's horizon and cadence — a PENDING
+    # upload row is expired (terminal state, un-confirmable, object
+    # best-effort deleted, cap slot freed) only once it is older than
+    # presignTtl PLUS this grace (an object genuinely uploaded before the
+    # URL expired stays confirmable inside the window), on the scheduled
+    # pass cadence below (the ConsumedRefreshTokenCleanupJob model).
+    pending-upload-expiry-grace-hours: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_GRACE_HOURS:24}
+    pending-upload-cleanup-interval-ms: ${MARKETPLACE_MEDIA_PENDING_UPLOAD_CLEANUP_INTERVAL_MS:3600000}
   security:
     jwt:
       audience: ${JWT_AUDIENCE:marketplace-api}

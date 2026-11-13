@@ -215,7 +215,7 @@ class StoreProductKeysetGraphQlTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSizeGreaterThan(0);
                     assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
     }
@@ -239,7 +239,7 @@ class StoreProductKeysetGraphQlTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSizeGreaterThan(0);
                     assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
     }
@@ -261,7 +261,7 @@ class StoreProductKeysetGraphQlTest {
                 .execute()
                 .errors()
                 .satisfy(errors -> {
-                    assertThat(errors).isNotEmpty();
+                    assertThat(errors).hasSizeGreaterThan(0);
                     assertThat(errors.getFirst().getExtensions()).containsEntry("errorCode", "VAL-001");
                 });
     }

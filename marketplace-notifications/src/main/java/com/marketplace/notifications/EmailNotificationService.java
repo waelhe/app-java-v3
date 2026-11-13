@@ -61,4 +61,47 @@ public class EmailNotificationService {
                 })
         );
     }
+
+    /**
+     * Sends an email notification to an EXPLICIT address — the recipient
+     * the mail's own semantics name, not the user record's current one.
+     *
+     * <p>B11 (ORD-03 — the 2026-11-03 adversarial review): the
+     * email-change confirmation's redemption right belongs to the NEW
+     * address's mailbox (the pinned Saleor behavior: the change
+     * confirmation mails the new address, so possession of the one-time
+     * token is the proof the new address works — the whole point of the
+     * confirmation). The user-record lookup would resolve the OLD
+     * address, which is why this seam takes the recipient verbatim from
+     * the event's own frozen contract.</p>
+     *
+     * @param to        the recipient address the event's contract names
+     * @param subject   email subject
+     * @param template  Thymeleaf template path
+     * @param variables template model variables
+     */
+    public void sendEmailTo(String to, String subject, String template, Map<String, Object> variables) {
+        emailService.ifPresent(es -> {
+            es.send(to, subject, template, variables);
+            // The 2026-11-06 #810 round review (Minor · Security &
+            // Privacy): the full recipient address never rides the logs
+            // (the sibling send() logs the userId alone) — the security
+            // legs (deletion, email change) carry the MOST sensitive
+            // addresses; a masked local-part answers the operator's
+            // "which mailbox" question without the PII.
+            log.info("Email notification sent: to={}, subject={}", mask(to), subject);
+        });
+    }
+
+    /** The logging-safe rendering: the first character plus the domain. */
+    private static String mask(String address) {
+        if (address == null) {
+            return null;
+        }
+        int at = address.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+        return address.charAt(0) + "***" + address.substring(at);
+    }
 }

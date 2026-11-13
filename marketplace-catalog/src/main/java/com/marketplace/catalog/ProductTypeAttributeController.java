@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,8 +52,30 @@ public class ProductTypeAttributeController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * The 2026-11-07 #808 round-10 review: the required-flag promotion
+     * route — the required-attribute migration path's executable half
+     * (the assign guards' own refusal names this route). The promotion is
+     * fail-closed: it refuses while any published-shelf row of the type
+     * still lacks the assignment's value; the demotion is a probe-free
+     * relaxation; VARIANT_SELECTION keeps its every-variant law.
+     */
+    @PatchMapping("/admin/store/product-type-attributes/{assignmentId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Promote or demote an assignment's required flag",
+            description = "The promotion to required is refused while a published product (PRODUCT scope) "
+                    + "or a published product's live variant (VARIANT scope) still lacks the value — "
+                    + "the owners migrate the values first. VARIANT_SELECTION assignments stay required.")
+    public ResponseEntity<AssignmentResponse> setRequired(@PathVariable UUID assignmentId,
+            @Valid @RequestBody SetRequiredRequest request) {
+        return ResponseEntity.ok(AssignmentResponse.of(service.setRequired(assignmentId, request.required())));
+    }
+
     public record AssignAttributeRequest(@NotNull UUID attributeDefinitionId,
             @NotNull ProductTypeAttributeScope scope, boolean required, @Min(0) int position) { }
+
+    /** The explicit-flag contract: an absent body field is a 400, never a silent demotion. */
+    public record SetRequiredRequest(@NotNull Boolean required) { }
 
     public record AssignmentResponse(UUID id, UUID productTypeId, UUID attributeDefinitionId,
             ProductTypeAttributeScope scope, boolean required, int position) {

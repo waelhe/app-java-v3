@@ -896,7 +896,7 @@ public class CatalogService implements CatalogSearchPort, ListingPriceProvider, 
      */
     @Transactional(readOnly = true)
     public java.util.List<CategoryView> listCategories() {
-        return categoryRepository.findAllByOrderByPositionAsc().stream()
+        return categoryRepository.findAllByOrderByPositionAscIdAsc().stream()
                 .map(c -> new CategoryView(c.getCode(), c.getNameEn(), c.getNameAr()))
                 .toList();
     }
