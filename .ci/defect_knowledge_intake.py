@@ -344,6 +344,18 @@ def list_pull_requests(repo: str, token: str, state: str) -> list[dict[str, Any]
     return api_pages(f"/repos/{repo}/pulls?state={urllib.parse.quote(state)}&sort=updated&direction=desc", token)
 
 
+def event_pull_request_number(event: dict[str, Any], event_name: str) -> int | None:
+    pull_request = event.get("pull_request") or {}
+    if pull_request.get("number"):
+        return int(pull_request["number"])
+    if event.get("number") and event_name.startswith("pull_request"):
+        return int(event["number"])
+    issue = event.get("issue") or {}
+    if issue.get("pull_request") and issue.get("number"):
+        return int(issue["number"])
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
@@ -363,13 +375,7 @@ def main() -> int:
     if pr_number is None and args.event_path:
         with open(args.event_path, encoding="utf-8") as handle:
             event = json.load(handle)
-        pull_request = event.get("pull_request") or {}
-        if pull_request.get("number"):
-            pr_number = int(pull_request["number"])
-        elif event.get("number") and args.event_name.startswith("pull_request"):
-            pr_number = int(event["number"])
-        elif (event.get("issue") or {}).get("pull_request"):
-            pr_number = int(event["issue"]["number"])
+        pr_number = event_pull_request_number(event, args.event_name)
 
     try:
         if pr_number is not None:
