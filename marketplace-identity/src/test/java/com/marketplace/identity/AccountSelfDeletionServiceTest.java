@@ -4,19 +4,24 @@ import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.UserDetailsManager;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -46,17 +51,29 @@ class AccountSelfDeletionServiceTest {
     private UserService userService;
     @Mock
     private ObjectProvider<PasswordEncoder> passwordEncoder;
+    @Mock
+    private JdbcTemplate jdbcTemplate;
 
     private AccountSelfDeletionService service;
 
     @BeforeEach
     void setUp() {
         service = new AccountSelfDeletionService(
-                userRepository, userDetailsManager, userService, passwordEncoder);
+                userRepository, userDetailsManager, userService, passwordEncoder, jdbcTemplate);
         // The real delegating encoder — the same primitive the login gate's
         // DaoAuthenticationProvider consults, so the {bcrypt}/{noop} stored
         // forms verify exactly as production would.
         lenient().when(passwordEncoder.getObject()).thenReturn(createDelegatingPasswordEncoder());
+    }
+
+    /**
+     * B2 round 2 (CodeRabbit Minor 2026-11-13): the lock statement's own
+     * stub — the row exists and is locked on the caller's transaction.
+     */
+    private void lockedAccountRow() {
+        when(jdbcTemplate.queryForList(
+                eq(AccountSelfDeletionService.LOCK_ACCOUNT_ROW), eq(String.class), eq(EMAIL)))
+                .thenReturn(List.of(EMAIL));
     }
 
     private User member() {
@@ -76,6 +93,7 @@ class AccountSelfDeletionServiceTest {
         User user = member();
         when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(loginRow());
+        lockedAccountRow();
 
         service.deleteOwnAccount(EMAIL, RAW_PASSWORD);
 
@@ -155,7 +173,7 @@ class AccountSelfDeletionServiceTest {
                 org.mockito.Mockito.mock(ObjectProvider.class);
         when(localProvider.getObject()).thenReturn(encoder);
         AccountSelfDeletionService localService = new AccountSelfDeletionService(
-                userRepository, userDetailsManager, userService, localProvider);
+                userRepository, userDetailsManager, userService, localProvider, jdbcTemplate);
 
         assertThatThrownBy(() -> localService.deleteOwnAccount(EMAIL, RAW_PASSWORD))
                 .isInstanceOf(BadCredentialsException.class);
@@ -186,6 +204,7 @@ class AccountSelfDeletionServiceTest {
                 .disabled(true)
                 .build();
         when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(disabledRow);
+        lockedAccountRow();
 
         assertThatThrownBy(() -> service.deleteOwnAccount(EMAIL, RAW_PASSWORD))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
@@ -235,6 +254,7 @@ class AccountSelfDeletionServiceTest {
         User user = member();
         when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
         when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(loginRow());
+        lockedAccountRow();
 
         service.deleteOwnAccount(EMAIL, RAW_PASSWORD);
 
@@ -243,5 +263,72 @@ class AccountSelfDeletionServiceTest {
         verify(userService).pseudonymizeAccount(
                 user.getId(), AccountSelfDeletionService.SELF_DELETION_REASON,
                 AccountSelfDeletionService.SELF_ACTOR);
+    }
+
+    // ---- B2 round 2 (CodeRabbit Minor 2026-11-13 — the serialization point) ----
+
+    /**
+     * B2 round 2's own race proof: the credential proof's pre-lock read can
+     * be stale — an administrative disable committing between that read and
+     * the purge would have sailed through the unlocked check. The row lock
+     * serializes the disable decision against the delete decision, and the
+     * fresh read UNDER the lock carries the committed truth: the pre-lock
+     * row says ENABLED, the committed row says DISABLED, and the answer is
+     * the honest 409 with the erasure never reached — the lock is verifiably
+     * taken BEFORE the enabled verdict's read.
+     */
+    @Test
+    void deleteOwnAccount_disableCommittingInsideTheWindowIsSeenByTheCommittedRead() {
+        User user = member();
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
+        // The pre-lock read (the password proof's own copy): still enabled.
+        // The committed read under the lock: the administrator's disable has
+        // landed — the stale copy is exactly what the row lock retires.
+        UserDetails disabledRow = org.springframework.security.core.userdetails.User
+                .withUsername(EMAIL)
+                .password("{noop}" + RAW_PASSWORD)
+                .roles("CONSUMER")
+                .disabled(true)
+                .build();
+        when(userDetailsManager.loadUserByUsername(EMAIL))
+                .thenReturn(loginRow())
+                .thenReturn(disabledRow);
+        lockedAccountRow();
+
+        assertThatThrownBy(() -> service.deleteOwnAccount(EMAIL, RAW_PASSWORD))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("disabled account cannot execute the self-service deletion");
+
+        // The lock precedes the enabled verdict's read: the second
+        // loadUserByUsername (the committed truth) happens AFTER the row
+        // lock is taken, never before it.
+        InOrder order = inOrder(jdbcTemplate, userDetailsManager);
+        order.verify(jdbcTemplate).queryForList(
+                eq(AccountSelfDeletionService.LOCK_ACCOUNT_ROW), eq(String.class), eq(EMAIL));
+        order.verify(userDetailsManager).loadUserByUsername(EMAIL);
+
+        verifyNoInteractions(userService);
+    }
+
+    /**
+     * B2 round 2's defensive leg: the login row existed for the credential
+     * proof but the lock finds no row — a concurrent administrative delete
+     * removed the account inside the window. The self-service surface
+     * answers the honest 404 (the L23 defensive shape), never the erasure.
+     */
+    @Test
+    void deleteOwnAccount_accountDeletedInsideTheWindowAnswersTheHonest404() {
+        User user = member();
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(loginRow());
+        when(jdbcTemplate.queryForList(
+                eq(AccountSelfDeletionService.LOCK_ACCOUNT_ROW), eq(String.class), eq(EMAIL)))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.deleteOwnAccount(EMAIL, RAW_PASSWORD))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("No authentication account for user:");
+
+        verifyNoInteractions(userService);
     }
 }

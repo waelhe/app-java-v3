@@ -4,6 +4,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -12,6 +13,7 @@ import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -91,6 +93,28 @@ public class AccountSelfDeletionService {
     /** The audit actor — the account itself (register's precedent: the actor IS the account). */
     static final String SELF_ACTOR = "self";
 
+    /**
+     * B2 round 2 (CodeRabbit Minor 2026-11-13 — the serialization point the
+     * unlocked check missed): the self-service erasure's decision lock —
+     * the login row's Postgres row lock, the same {@code FOR UPDATE}
+     * discipline {@code EmailVerificationService} (row 8, agent findings
+     * 2026-10-25 CWE-367) takes on this exact row. Every administrative
+     * surface that disables an account writes this row FIRST
+     * ({@code JdbcUserDetailsManager.updateUser} — the UPDATE takes the same
+     * lock), so a {@code FOR UPDATE} taken here after the credential proof
+     * makes the disable decision and the delete decision mutually exclusive
+     * on the account: a disable already committed is seen by the fresh read
+     * under the lock (the honest 409 below), a disable in flight holds the
+     * row and makes this erasure wait for the committed truth, and a disable
+     * arriving after the lock applies on top of the completed erasure — the
+     * honest last-writer order. The statement rides the caller's transaction
+     * through the same transaction-scoped {@link JdbcTemplate} discipline
+     * the {@code UserService} advisory locks use — the lock is held until
+     * the surrounding transaction commits.
+     */
+    static final String LOCK_ACCOUNT_ROW =
+            "select username from auth_users where username = ? for update";
+
     private final UserRepository userRepository;
     private final UserDetailsManager userDetailsManager;
     private final UserService userService;
@@ -102,15 +126,19 @@ public class AccountSelfDeletionService {
      * every surface uses.
      */
     private final ObjectProvider<PasswordEncoder> passwordEncoder;
+    /** Rides the caller's {@code @Transactional} transaction — the lock discipline above. */
+    private final JdbcTemplate jdbcTemplate;
 
     public AccountSelfDeletionService(UserRepository userRepository,
                                       UserDetailsManager userDetailsManager,
                                       UserService userService,
-                                      ObjectProvider<PasswordEncoder> passwordEncoder) {
+                                      ObjectProvider<PasswordEncoder> passwordEncoder,
+                                      JdbcTemplate jdbcTemplate) {
         this.userRepository = userRepository;
         this.userDetailsManager = userDetailsManager;
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -132,7 +160,11 @@ public class AccountSelfDeletionService {
      *       the same bit {@code updateUserStatus} flips and the login chain's
      *       {@code DisabledException} consults). The refusal runs AFTER the
      *       credential proof (the double-verification contract is unchanged —
-     *       no state oracle before the password gate) and BEFORE any store is
+     *       no state oracle before the password gate), UNDER the account's
+     *       row lock ({@link #LOCK_ACCOUNT_ROW} — B2 round 2: the disable
+     *       decision and the delete decision serialize on the same row, so
+     *       the enabled verdict is a fresh read of the committed truth, not
+     *       the pre-lock stale copy), and BEFORE any store is
      *       touched: 409 CONFLICT-001, zero mutation. The administrative
      *       erasure seam stays live (B8) — the owner's channel is the
      *       administrative surface, untouched here.</li>
@@ -186,11 +218,28 @@ public class AccountSelfDeletionService {
         // the suspended account does not write. The check runs AFTER the
         // credential proof (the double-verification contract stands — a
         // disabled account with a wrong password answers the same 401, no
-        // state oracle before the password gate) and BEFORE any store is
-        // touched: the irreversible self-service erasure joins the invariant
-        // the login/token/update doors already carry, while the
-        // administrative erasure seam stays live by design (B8).
-        if (!stored.isEnabled()) {
+        // state oracle before the password gate), UNDER the account's row
+        // lock (B2 round 2, CodeRabbit Minor 2026-11-13: the pre-lock read
+        // above is the password proof's own copy and can be stale — a
+        // disable committing between that read and the purge would be
+        // missed; {@link #LOCK_ACCOUNT_ROW} serializes the two decisions on
+        // the row, and the fresh read below carries the committed truth),
+        // and BEFORE any store is touched: the irreversible self-service
+        // erasure joins the invariant the login/token/update doors already
+        // carry, while the administrative erasure seam stays live by
+        // design (B8).
+        List<String> locked = jdbcTemplate.queryForList(
+                LOCK_ACCOUNT_ROW, String.class, subject);
+        if (locked.isEmpty()) {
+            // The L23 defensive shape: the login row existed for the
+            // credential proof but a concurrent administrative delete
+            // removed it — nothing left whose holder could be erased
+            // through this surface.
+            throw new ResourceNotFoundException(
+                    "No authentication account for user: " + user.getId());
+        }
+        UserDetails committed = userDetailsManager.loadUserByUsername(subject);
+        if (!committed.isEnabled()) {
             throw new ConflictException(
                     "A disabled account cannot execute the self-service deletion — "
                             + "the account is under administrative suspension "
