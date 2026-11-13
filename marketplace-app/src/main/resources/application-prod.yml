@@ -131,9 +131,23 @@ server:
   # the application runs behind a trusted TLS-terminating proxy, so forwarded
   # headers must be honored (official Spring Boot how-to "Running Behind a
   # Front-end Proxy Server" + Spring Security 7.1.1 reference). FRAMEWORK (the
-  # ForwardedHeaderFilter, registered at Ordered.HIGHEST_PRECEDENCE) covers both
-  # the RFC 7239 "Forwarded" header and the full X-Forwarded-* set — including
-  # host and port, which NATIVE (Tomcat RemoteIpValve) does not honor.
+  # ForwardedHeaderFilter) covers both the RFC 7239 "Forwarded" header and the
+  # full X-Forwarded-* set — including host and port, which NATIVE (Tomcat
+  # RemoteIpValve) does not honor.
+  # The rate-limit key finding's settled state (the 2026-11-03 #806
+  # review, Minor · Maintainability — the comment had drifted behind the
+  # guard): PerCallerRateLimitGuard reads NO X-Forwarded-For entry. The
+  # public path (through the Railway HTTP edge) keys on X-Real-IP — the
+  # header Railway's edge OVERWRITES on every public request and
+  # documents as the client's remote IP — accepted only when it parses
+  # as an IP literal, then normalized to the caller's routable PREFIX
+  # (IPv6 collapses to its /64, IPv4 stands whole); when absent (direct
+  # or local access, tests) it falls back to the socket peer address.
+  # The internal path (*.railway.internal — the project environment's
+  # own trust boundary) keys on the CONTAINER's root request
+  # getRemoteAddr(): any service in the same environment can send its
+  # own forwarding headers, so X-Forwarded-For/X-Real-IP are read
+  # nowhere there. The strategy itself stays FRAMEWORK.
   forward-headers-strategy: FRAMEWORK
   tomcat:
     # Official javadoc: "When using SSL terminated at a proxy, this property

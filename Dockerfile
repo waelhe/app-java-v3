@@ -236,7 +236,15 @@ EXPOSE 8080
 # HMAC input via String.format, JDK ResourceBundle candidates) must see the
 # same Latin-digit en baseline on every host. Explicit defense-in-depth,
 # not assumption about the base image's locale data.
-ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US"
+# JEP 290 process-wide serialization filter (Oracle JDK 25 pattern syntax):
+# GraphQL Java relocates selected Guava packages to graphql.com.google.common;
+# its collect namespace contains MapMakerInternalMap, confirmed by the
+# GraphQL Java maintainers (upstream PR #4498, 2026-11-03 correction).
+# Spring Data Redis defaults RedisCache/RedisTemplate to JDK serialization
+# and recommends JVM serialization filtering when native serialization is
+# retained. Reject that relocated collection namespace before readObject runs;
+# allow all other classes to preserve existing cache/session payload contracts.
+ENV JDK_JAVA_OPTIONS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError -Duser.language=en -Duser.country=US -Djdk.serialFilter=!graphql.com.google.common.collect.**;*"
 
 # The pure official Spring Boot 4.1 recipe (same reference page as above):
 #   ENTRYPOINT ["java", "-jar", "application.jar"]
