@@ -39,7 +39,7 @@ class DefectKnowledgeReceiptTests(unittest.TestCase):
 
     def test_git_diff_name_only_preserves_non_ascii_paths(self):
         from types import SimpleNamespace
-        output = b"marketplace-app/src/main/java/\\xd9\\x85\\xd8\\xab\\xd8\\xa7\\xd9\\x84.java\\0mvnw\\0"
+        output = "marketplace-app/src/main/java/مثال.java\0mvnw\0".encode("utf-8")
         with unittest.mock.patch.object(
             MODULE.subprocess, "run",
             return_value=SimpleNamespace(returncode=0, stdout=output, stderr=b""),

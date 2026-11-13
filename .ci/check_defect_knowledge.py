@@ -63,7 +63,7 @@ def git_diff_name_only(base_sha: str, head_sha: str) -> list[str]:
     )
     if result.returncode != 0:
         raise GateError(f"git diff --name-only failed: {os.fsdecode(result.stderr).strip()}")
-    return [os.fsdecode(path) for path in result.stdout.split(b"\\0") if path]
+    return [os.fsdecode(path) for path in result.stdout.split(b"\0") if path]
 
 
 def is_ancestor(ancestor_sha: str, descendant_sha: str) -> bool:
@@ -314,7 +314,7 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                 } if isinstance(findings, list) else set()
                 key_reference = successor in receipt_keys
                 url_reference = bool(re.fullmatch(
-                    r"https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/[0-9]+(?:#[A-Za-z0-9_.-]+)?",
+                    r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull)/[0-9]+(?:#[A-Za-z0-9_.-]+)?",
                     successor,
                 ))
                 require(key_reference or url_reference,
