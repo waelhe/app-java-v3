@@ -80,14 +80,27 @@ def safe_github_url(url: str | None, fallback: str) -> str:
 
 def short_excerpt(body: str | None, limit: int = 220) -> str:
     if not body:
-        return "No review body; inspect the recorded verdict and linked thread."
+        return "No review body; inspect the recorded verdict and linked thread."[:limit]
     for raw_line in body.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("<!--") or line.startswith(chr(96) * 3):
             continue
         line = re.sub(r"\s+", " ", line)
-        return html.escape(line[:limit], quote=True)
-    return "Review body contains no plain-text summary; open the original source."
+        escaped = html.escape(line, quote=True)
+        if len(escaped) <= limit:
+            return escaped
+        suffix = "…" if limit > 0 else ""
+        budget = max(0, limit - len(suffix))
+        parts: list[str] = []
+        used = 0
+        for character in line:
+            token = html.escape(character, quote=True)
+            if used + len(token) > budget:
+                break
+            parts.append(token)
+            used += len(token)
+        return "".join(parts) + suffix
+    return "Review body contains no plain-text summary; open the original source."[:limit]
 
 
 def make_item(kind: str, source_id: Any, author: str, created_at: str,
