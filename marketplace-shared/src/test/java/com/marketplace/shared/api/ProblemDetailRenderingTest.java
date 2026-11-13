@@ -126,4 +126,28 @@ class ProblemDetailRenderingTest {
         assertThat(ProblemDetailRendering.resolve(null, "any.key", floor, "a")).isEqualTo(floor);
         assertThat(ProblemDetailRendering.resolve(oneEntrySource(), null, floor, "a")).isEqualTo(floor);
     }
+
+    /** The localized leg's rejected value travels as a format ARGUMENT —
+     * never interpolated into the template before formatting. Interpolation
+     * is the exact D4 collapse family: a raw value such as {@code '{0,number}}
+     * would collapse the template's {@code ''} apostrophe quoting and turn
+     * into an active {@code number}-styled element (the missing-key leg pins
+     * that hazard for the floor; this pins its localized sibling). The
+     * argument path is verbatim per the {@code MessageFormat.format}
+     * contract, so the raw meta-syntax must render unchanged inside the
+     * value slot — no exception, no re-scan. */
+    @Test
+    void presentKey_theRejectedValueIsAFormatArgument_neverASecondInterpolation() {
+        LocaleContextHolder.setLocale(Locale.of("ar"));
+        String value = "'{0,number}";
+
+        assertThatCode(() -> ProblemDetailRendering.resolve(
+                oneEntrySource(), "error.VAL-001.type-mismatch-detail", "the floor is ignored",
+                "purpose", value, "TimeUnit"))
+                .doesNotThrowAnyException();
+        assertThat(ProblemDetailRendering.resolve(
+                oneEntrySource(), "error.VAL-001.type-mismatch-detail", "the floor is ignored",
+                "purpose", value, "TimeUnit"))
+                .isEqualTo("قيمة غير صالحة '{0,number}' للمعامل 'purpose' — النوع المتوقع 'TimeUnit'");
+    }
 }
