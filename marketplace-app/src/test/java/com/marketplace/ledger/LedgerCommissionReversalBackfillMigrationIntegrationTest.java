@@ -111,7 +111,7 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
 
         // The payment transaction's own read — the entity as it was BEFORE
         // the reconciliation ran (version 0, the minus-commission amount).
-        var stale = balanceRepository.findById(new ProviderBalanceId(providerId, "SAR")).orElseThrow();
+        var stale = balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, "SAR")).orElseThrow();
 
         // The reconciliation interleaves: the balance gains the reversal
         // credit and the optimistic version moves with it.
@@ -130,7 +130,7 @@ class LedgerCommissionReversalBackfillMigrationIntegrationTest {
         assertThat(balanceOf(providerId))
                 .as("the reconciliation's converging credit survives the refused stale save")
                 .isZero();
-        var fresh = balanceRepository.findById(new ProviderBalanceId(providerId, "SAR")).orElseThrow();
+        var fresh = balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, "SAR")).orElseThrow();
         assertThat(fresh.getAvailableCents()).isZero();
     }
 
