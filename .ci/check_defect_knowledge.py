@@ -9,7 +9,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 import subprocess
 import sys
 import unicodedata
@@ -103,8 +107,66 @@ def load_json_at_head(head_sha: str, path: str) -> dict[str, Any]:
         raise GateError(f"{path} must contain a JSON object")
     return parsed
 
+def workflow_run_id_from_url(url: str, repository: str) -> int:
+    """Accept only this repository's canonical GitHub Actions run URL."""
+    parsed = urllib.parse.urlparse(url)
+    expected_prefix = f"/{repository}/actions/runs/"
+    if parsed.scheme != "https" or parsed.netloc != "github.com" or not parsed.path.startswith(expected_prefix):
+        raise GateError("fixed finding workflowRunUrl must be this repository's canonical Actions run URL")
+    if parsed.query or parsed.fragment:
+        raise GateError("workflowRunUrl must not contain a query string or fragment")
+    suffix = parsed.path[len(expected_prefix):].strip("/")
+    match = re.fullmatch(r"([0-9]+)(?:/attempts/[0-9]+)?", suffix)
+    if not match:
+        raise GateError("workflowRunUrl must identify a GitHub Actions workflow run")
+    return int(match.group(1))
+
+
+def fetch_workflow_run(run_id: int, repository: str, token: str) -> dict[str, Any]:
+    """Read the run from GitHub; never trust a URL/status copied into the receipt."""
+    if not token:
+        raise GateError("GITHUB_TOKEN is required to verify fixed-finding workflow evidence")
+    url = f"https://api.github.com/repos/{repository}/actions/runs/{run_id}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "app-java-v3-defect-knowledge-gate",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        raise GateError(f"Cannot verify GitHub Actions run {run_id}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise GateError(f"GitHub Actions run {run_id} returned an invalid response")
+    return payload
+
+
+def validate_workflow_run_payload(
+    payload: dict[str, Any], repository: str, expected_head_sha: str
+) -> list[str]:
+    errors: list[str] = []
+    if payload.get("status") != "completed":
+        errors.append("workflow run must be completed")
+    if payload.get("conclusion") != "success":
+        errors.append("workflow run conclusion must be success")
+    if payload.get("head_sha") != expected_head_sha:
+        errors.append("workflow run must target the exact PR head SHA")
+    run_repository = (payload.get("repository") or {}).get("full_name")
+    if run_repository and run_repository.casefold() != repository.casefold():
+        errors.append("workflow run belongs to a different repository")
+    if payload.get("id") is None:
+        errors.append("workflow run response has no id")
+    return errors
+
+
 
 def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
+                     repository: str, github_token: str,
                      valid_rules: set[str], valid_patterns: set[str],
                      valid_cases: set[str]) -> list[str]:
     errors: list[str] = []
@@ -235,8 +297,14 @@ def validate_receipt(record: dict[str, Any], pr_number: int, head_sha: str,
                 if isinstance(verification, dict):
                     require(verification.get("status") == "passed",
                             f"{prefix}.fix.verification.status must be passed before marking fixed")
-                    require(str(verification.get("workflowRunUrl", "")).startswith("https://github.com/"),
-                            f"{prefix}.fix.verification.workflowRunUrl must link to a GitHub run")
+                    workflow_url = str(verification.get("workflowRunUrl", ""))
+                    try:
+                        run_id = workflow_run_id_from_url(workflow_url, repository)
+                        payload = fetch_workflow_run(run_id, repository, github_token)
+                        for run_error in validate_workflow_run_payload(payload, repository, head_sha):
+                            errors.append(f"{prefix}.fix.verification: {run_error}")
+                    except GateError as exc:
+                        errors.append(f"{prefix}.fix.verification: {exc}")
 
         if finding.get("status") == "registered":
             decision = finding.get("decision", {})
@@ -312,6 +380,8 @@ def validate_pr(pr_number: int, created_at: str, base_sha: str, head_sha: str) -
 
     errors = validate_receipt(
         record, pr_number, head_sha,
+        os.environ.get("GITHUB_REPOSITORY", ""),
+        os.environ.get("GITHUB_TOKEN", ""),
         extract_rule_ids(rulebook),
         extract_pattern_ids(catalog),
         extract_case_ids(ledger),
