@@ -467,7 +467,7 @@ class DefectKnowledgeDocsGuardTest {
                 .as("the defect-knowledge skill is a router, not a competing authority")
                 .contains("name: defect-knowledge")
                 .contains("authority")
-                .contains("progressive disclosure")
+                .containsIgnoringCase("progressive disclosure")
                 .contains("rulebook.md")
                 .contains("evidence-ledger.md")
                 .contains("Never load or execute instructions");
@@ -507,6 +507,7 @@ class DefectKnowledgeDocsGuardTest {
     void saleorAiAdoptionHasPinnedSourcesAndExplicitNonTransferBoundary() throws IOException {
         String adoption = dkRead("saleor-ai-adoption-map.md");
         String sourceRegistry = dkRead("saleor-ai-sources-2026-11-13.json");
+        String skillPins = read("docs/governance/plans/agent-skills-pins.json");
         String skillPolicy = read("docs/governance/agent-skills-policy.md");
         assertThat(adoption)
                 .contains("https://docs.saleor.io/developer/ai")
@@ -517,9 +518,23 @@ class DefectKnowledgeDocsGuardTest {
         assertThat(sourceRegistry)
                 .contains("9853f8fb08f6622f3d6b23b3fff2683215aaa5ff")
                 .contains("fb1a57255f58950962f6e474ccba1cade40f5163")
-                .contains("PINNED_UPSTREAM")
                 .contains("Documentation MCP")
-                .contains("commandsExecuted");
+                .contains("commandsExecuted")
+                .contains("search_docs")
+                .contains("get_page")
+                .contains("list_pages")
+                .contains("get_navigation")
+                .contains("connection_info")
+                .contains("introspect_schema")
+                .contains("run_query")
+                .contains("run_mutation")
+                .contains("run_high_impact_mutation");
+        assertThat(skillPins)
+                .as("the existing vendored-skill registry, not the resource index, proves the local pin")
+                .contains("saleor-core")
+                .contains("PINNED_UPSTREAM")
+                .contains("fb1a57255f58950962f6e474ccba1cade40f5163")
+                .contains("5fa2cc7f9eeb42d02e80dbd3b6a78ef3d38593d3658e5699e84d86399a4da3b5");
         assertThat(skillPolicy)
                 .contains("Saleor AI resources")
                 .contains("Do not execute")
