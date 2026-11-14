@@ -18,9 +18,9 @@
 | البعد | القيمة المقيسة | أمر الاشتقاق |
 |---|---|---|
 | رأس main عند البدء | `7e136440` (رأس مسح 2026-11-10) ← بعد دمج #813 هذه الجولة: `445f421d` | `git ls-remote origin main` |
-| فحوص رأس main `7e136440` عند بدء الجولة | 28 فحصًا: 21 success / 2 skipped / **5 failure** (4× «Probe public production endpoints» + «OpenRewrite recipe discovery») | `gh api repos/…/commits/<sha>/check-runs` مجمّعًا بمفتاح conclusion |
+| فحوص رأس main `7e136440` عند بدء الجولة | 28 فحصًا: 21 success / 2 skipped / **5 failure** (4× «Probe public production endpoints» + «OpenRewrite recipe discovery») | أمر قابل للتشغيل يجمع النتائج بمفتاح conclusion: `gh api repos/waelhe/app-java-v3/commits/7e136440f9a834f123538e76a539acebefb7b76f/check-runs --paginate --jq '.check_runs[].conclusion' | sort | uniq -c` |
 | سبب فشل OpenRewrite (مُشخّص من سجل الوظيفة) | `RequireMavenVersion failed — Detected Maven Version: 3.9.15 is not in the allowed range [3.10,)` ← BUILD FAILURE exit 1 (job 130517291682) | تنزيل سجل الوظيفة: `GET /actions/jobs/130517291682/logs` |
-| الفحوص الستة الإلزامية للدمج (ruleset 22305466) | Build & Test (JDK 25) + Full Integration Test (JDK 25) + CodeQL Analyze + Container Image Scan + CodeRabbit + CodeRabbit Gate — **squash حصرًا، دفع مباشر ممنوع، خطية تاريخ مطلوبة** | `GET /repos/…/rulesets/22305466` |
+| الفحوص الستة الإلزامية للدمج (ruleset 22305466) | Build & Test (JDK 25) + Full Integration Test (JDK 25) + CodeQL Analyze + Container Image Scan + CodeRabbit + CodeRabbit Gate — **squash حصرًا، دفع مباشر ممنوع، خطية تاريخ مطلوبة** | `GET /repos/waelhe/app-java-v3/rulesets/22305466` |
 | حالة الدفعات المفتوحة | #816: كل الخيوط محلولة (20/20)، آخر مراجعة على الرأس COMMENTED؛ #819: APPROVED على الرأس + CodeRabbit check-run success؛ #820/#823/#824: لا مراجعة على الرأس الحالي | GraphQL `reviewThreads` + `GET /pulls/{n}/reviews` |
 | فحص «Probe public production endpoints» | 4 إخفاقات على رأس main — فئة W1 المسجلة (المسهم/البريد/الصحة المجمعة) — خارج نطاق فحوص الدمج (يعمل على push/schedule إلى main) | قياس check-runs أعلاه |
 
@@ -40,8 +40,15 @@
 4. **الأثر والشدة:** **متوسطة-عالية** — أحمر دائم غير مصنّف على main وعلى كل فرع يمس المسارات (فئة W4
    نفسها: وظائف فاشلة بلا مصنّف)، وتاريخ Actions تراكمي أحمر يخفض قيمة إشارة CI.
 5. **الحالة:** confirmed (سجل الوظيفة + الفرق النصي + الفشل المقيس على 7 رؤوس).
-6. **التسوية:** **fixed** — الدمج `445f421d` (#813) يحمل الإصلاح الحرفي (`8fcf2f1ef`: `mvn` ← `./mvnw`
-   في المواضع الخمسة نفسها) + حارس `PlatformGovernanceFilesTest` يثبّت سياسة الـwrapper. **تنبيه صدق:**
+6. **التسوية:** **مفتوح مؤقتًا — نتيجة فحص بناء المصدر غير مكتملة (نظام صدق الأدلة):** الدمج
+   `445f421d` (#813) يحمل الإصلاح الحرفي (`8fcf2f1ef`: `mvn` ← `./mvnw` في المواضع الخمسة نفسها)
+   + حارس `PlatformGovernanceFilesTest` يثبّت سياسة الـwrapper — **لكن حالة «fixed» سُجّلت قبل
+   تسجيل نتيجة فحص بناء المصدر المطلوب، وقياس الجولة السادسة (2026-11-14) يظهر أن «OpenRewrite
+   source-build probe» ما زال **skipped** على رأس الإصلاح نفسه
+   ([run 43177326837](https://github.com/waelhe/app-java-v3/actions/runs/43177326837/job/131044639460))
+   وعلى رؤوس main اللاحقة — ونجاح «OpenRewrite recipe discovery and dry-run» ليس دليل بناء
+   المصدر (فحصان مختلفان). يبقى الصف مفتوحًا حتى يكتمل فحص بناء المصدر (إشعال probe
+   بناء المصدر فعلاً) وتُسجّل نتيجته ورابطه هنا — حينها يُعاد إلى fixed.** **تنبيه صدق:**
     طلب دمج مستقل طُرح لهذه النتيجة أثناء التشخيص (#825) ثم أُغلق كمكرر بعد اكتشاف أن #813 يحمل
     الإصلاح نفسه — الإغلاق موثق بتعليق على #825. خضرة فحص OpenRewrite على رأس main الجديد
     (بعد #813) هي دليل الانحدار الواجب قياسه عند اكتمال CI على الرأس الجديد.
