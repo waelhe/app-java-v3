@@ -131,7 +131,14 @@ unchanged by it:
 
 - `HttpMessageNotReadableException` (unparseable or enum-mismatched request
   body),
-- `MissingPathVariableException`,
+- `MissingPathVariableException` — **in its 400 member only**: the framework
+  answers 400 solely when `missingAfterConversion=true` (the path variable
+  resolved but its conversion to the declared type came out `null`); a
+  `@PathVariable` name that does not match the template's own variable is a
+  **server-side misconfiguration** the framework reports as 500 — a client
+  error contract must not absorb it (the class is named here for the
+  missing-after-conversion member alone, per the Spring Framework 7.0.10
+  source),
 - `HandlerMethodValidationException`.
 
 The same client mistake therefore answers two different 400 bodies depending

@@ -358,6 +358,38 @@ class GlobalExceptionHandlerTest {
         assertThat(detail).contains("page").contains("abc").contains("the declared type");
     }
 
+    @Test
+    void handleTypeMismatch_rendersTheRepeatedParameterValues_notTheArrayIdentity()
+            throws NoSuchMethodException {
+        // CodeRabbit full-review round 2026-11-14: a repeated query
+        // parameter (purpose=BUY&purpose=SELL) binds as String[] — when
+        // its conversion fails the exception's value IS the array, and
+        // the raw String.valueOf renders the JVM's identity string
+        // («[Ljava.lang.String;@…») where the client needs the rejected
+        // values. Both surfaces — the fallback detail and the i18n
+        // argument — must carry the elements, joined, never the identity.
+        org.springframework.core.MethodParameter parameter = new org.springframework.core.MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        String[] rejected = {"BUY", "SELL"};
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex =
+                new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                        rejected, java.util.concurrent.TimeUnit.class, "purpose", parameter, null);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/search");
+        var response = handler.handleTypeMismatch(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        String detail = response.getDetail();
+        assertThat(detail)
+                .as("the rejected values render as their elements on both surfaces")
+                .contains("BUY, SELL")
+                .contains("purpose")
+                .doesNotContain("[Ljava.lang.String;");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("purpose", detail)));
+    }
+
     // ---- L31: the unique-violation (23505) backstop → 409 CONFLICT ----
 
     @Test

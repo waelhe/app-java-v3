@@ -166,12 +166,27 @@ public class GlobalExceptionHandler {
             HttpServletRequest request) {
         String expected = ex.getRequiredType() != null
                 ? ex.getRequiredType().getSimpleName() : "the declared type";
-        String englishFallback = "Invalid value '" + ex.getValue() + "' for parameter '" + ex.getName()
+        // CodeRabbit full-review round 2026-11-14 (the repeated-parameter
+        // leg): Spring binds repeated query parameters as String[] — when
+        // the conversion fails the exception's value IS that array
+        // (RequestParamMethodArgumentResolver's own contract), and the
+        // raw String.valueOf would surface the JVM's identity string
+        // («[Ljava.lang.String;@…») where the client needs the rejected
+        // values. The rejected value renders as its elements joined with
+        // ", " on BOTH surfaces — the no-source fallback and the i18n
+        // argument — so detail and fieldErrors[].message carry the facts.
+        Object rawValue = ex.getValue();
+        String rejectedValue = rawValue != null && rawValue.getClass().isArray()
+                ? java.util.Arrays.stream((Object[]) rawValue)
+                        .map(String::valueOf)
+                        .collect(java.util.stream.Collectors.joining(", "))
+                : String.valueOf(rawValue);
+        String englishFallback = "Invalid value '" + rejectedValue + "' for parameter '" + ex.getName()
                 + "' — expected " + expected;
         String detail = ProblemDetailRendering.resolve(messageSource,
                 ProblemDetailRendering.KEY_PREFIX + ApiErrorTaxonomy.VALIDATION.errorCode()
                         + ".type-mismatch-detail",
-                englishFallback, ex.getName(), String.valueOf(ex.getValue()), expected);
+                englishFallback, ex.getName(), rejectedValue, expected);
         // A null detail key passes the already-localized detail through — see
         // ProblemDetailRendering.problem: one resolve, one text, both surfaces.
         ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, detail, request, null, null);
