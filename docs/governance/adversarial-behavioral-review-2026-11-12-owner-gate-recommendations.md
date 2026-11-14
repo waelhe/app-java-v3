@@ -206,7 +206,7 @@ reversal_entry_type.sql` فعلت هذا بالضبط لـ`COMMISSION_REVERSAL_C
    [Spring Modulith — Working with Application Events](https://docs.spring.io/spring-modulith/reference/events.html):
    `IncompleteEventPublications`/`EventPublicationRegistry` يوفران
    `resubmitIncompletePublications`/`processFailedPublications` مع خيارات
-   `ResubmissionOptions` (فلتر/عمر أدنى/دفعة) — قياس الجولة 11 (2026-11-14): الإعادة التلقائية تتم عبر المهمة المجدولة `EventPublicationResubmission.resubmitDue` بسياسة محاولات محدودة، ولا يوجد في المستودع مدخل يدوي للمشغل يستدعي الواجهتين — أي إعادة إرسال يدوية بعد استنفاد المحاولات تحتاج مدخلاً تشغيلياً جديداً (كود) هو ذاته توصية بوابة قرار المالك
+   `ResubmissionOptions` (فلتر/عمر أدنى/دفعة) — قياس الجولة 11 (2026-11-14): الإعادة التلقائية تتم عبر المهمة المجدولة `EventPublicationResubmission.resubmitDue` بسياسة إعادة زمنية (`RETRY_BACKOFF` = 24 ساعة بين محاولتي تسليم، دون حد أقصى لعدد المحاولات ما دام المنشور `FAILED`)، ولا يوجد في المستودع مدخل يدوي للمشغل يستدعي الواجهتين — أي إعادة إرسال يدوية خارج جدولة المهمة تحتاج مدخلاً تشغيلياً جديداً (كود) هو ذاته توصية بوابة قرار المالك
    لا بحذف SQL يدوي (يحفظ اتساق سجل `event_publication` مع دورة حياة Modulith) — **بشرط موثق
    قبل إعادة الإرسال: فحص سبب كل فشل ومعالجته أولاً (سبب SMTP يُعالج بالخيار 1 أعلاه؛ وسبب فشل
    معالجة حدث اكتمال التسليم في `LedgerJournalService` يُدرج في المعالجة بعد قرار المالك لأنه
