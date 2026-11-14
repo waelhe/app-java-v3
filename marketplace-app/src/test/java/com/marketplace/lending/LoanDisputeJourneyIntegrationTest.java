@@ -15,11 +15,13 @@ import com.marketplace.payments.PaymentIntentRepository;
 import com.marketplace.payments.PaymentIntentStatus;
 import com.marketplace.payments.PaymentRepository;
 import com.marketplace.payments.PaymentsService;
+import com.marketplace.payments.BoundFakePspChannelConfig;
 import com.marketplace.shared.api.DisputeResolution;
 import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -71,6 +73,7 @@ import static org.mockito.Mockito.when;
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(BoundFakePspChannelConfig.class)
 class LoanDisputeJourneyIntegrationTest {
 
     private static final long FEE_MINOR = 1500L;

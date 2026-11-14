@@ -14,6 +14,8 @@ import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import com.marketplace.payments.BoundFakePspChannelConfig;
+import org.springframework.context.annotation.Import;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -127,6 +129,7 @@ import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(BoundFakePspChannelConfig.class)
 class DirectDeliveryJourneyIntegrationTest {
 
     @Container
