@@ -22,7 +22,7 @@ import java.util.Set;
  * machine — the erasure flow is an administrative overwrite, the same
  * discipline every {@code AuthoredContentPurgePort} adapter carries for
  * its tombstones). It is terminal: no transition leaves it, and the
- * database's closed-set CHECK widens with it through the V301/V302 pair
+ * database's closed-set CHECK widens with it through the V303/V304 pair
  * (the V103/V104 house shape).</p>
  */
 public enum MediaAssetStatus {

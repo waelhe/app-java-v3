@@ -19,7 +19,7 @@
 --
 -- The route is the house precedent verbatim (V187's own header
 -- prescribed it; V290/V296/V298 executed it): DROP + ADD NOT VALID
--- here, the VALIDATE in V301 under its own SHARE UPDATE EXCLUSIVE scan
+-- here, the VALIDATE in V304 under its own SHARE UPDATE EXCLUSIVE scan
 -- (the V68/V69 + V87 measured lesson — never share a transaction with
 -- the DROP/ADD: that scan would run under ACCESS EXCLUSIVE and block
 -- live traffic).
