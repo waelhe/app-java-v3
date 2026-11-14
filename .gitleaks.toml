@@ -62,5 +62,16 @@ paths = [
 regexTarget = "line"
 regexes = [
   '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$''',
-  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"\);\s*$'''
+  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"\);\s*$''',
+  # The archived commerce-review shard branch (#807's own re-cut, commit
+  # c1138ea7) carries the graphql supply IT's declared TEST fixture line
+  # (the standing pseudonymization test-key precedent the file's own comment
+  # names — AccountPseudonymizationIntegrationTest's env-bound shape). The
+  # scan surface is all-refs (fetch-depth:0), so the archived branch's
+  # fixture poisons every NEW PR's gitleaks gate; the complete-statement
+  # anchor (line start to the statement-terminating quote+paren) exempts
+  # exactly that fixture line — anything appended to the line, or any other
+  # line in the file, or anywhere else, stays DETECTED. The key value
+  # itself is a hyphenated test label, not a credential shape.
+  '''^\s*"marketplace\.security\.pseudonymization\.subject-hmac-key=b4-supply-pseudonymization-key",?\s*$'''
 ]

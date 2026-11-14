@@ -154,6 +154,164 @@ class S3MediaStorageTest {
     }
 
     @Test
+    void g3_deleteObjects_sendsTheExactKnownKeysInOneBatchCall() {
+        // G3 (owner-gate batch 6a — the erasure flow's storage leg): the
+        // documented batch API carries the purge's KNOWN keys in ONE wire
+        // call — the request holds exactly the collected originals and
+        // thumbnails, nothing else.
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            storage.deleteObjects(java.util.List.of("listings/1/a.jpg", "listings/1/a.jpg/thumb",
+                    "posts/2/b.jpg", "review-media/3/c.jpg"));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client).deleteObjects(captor.capture());
+            var request = captor.getValue();
+            org.assertj.core.api.Assertions.assertThat(request.bucket()).isEqualTo(BUCKET);
+            org.assertj.core.api.Assertions.assertThat(request.delete().objects())
+                    .extracting(software.amazon.awssdk.services.s3.model.ObjectIdentifier::key)
+                    .containsExactlyInAnyOrder("listings/1/a.jpg", "listings/1/a.jpg/thumb",
+                            "posts/2/b.jpg", "review-media/3/c.jpg");
+        }
+    }
+
+    @Test
+    void g3_deleteObjects_emptyOrNullInputIsTheHonestNoOp() {
+        // A subject with no media (or an already-purged re-run) never issues
+        // a wire call.
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            storage.deleteObjects(java.util.List.of());
+            storage.deleteObjects(null);
+
+            verify(client, org.mockito.Mockito.never())
+                    .deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
+        }
+    }
+
+    // ---- F-833-1 (the 2026-11-14 adversarial behavioral review, P2) ----
+
+    @Test
+    void f833_1_moreThanAThousandKeysSplitsIntoBoundedBatches() {
+        // The service's documented ceiling is 1,000 keys per DeleteObjects
+        // call — the pre-fix single request exceeded it and was rejected
+        // WHOLE, so a subject holding 1,500 media objects never lost a
+        // single byte in the tier-2 destruction while the purge logged
+        // completion. The fix splits into consecutive bounded batches.
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            java.util.List<String> keys = new java.util.ArrayList<>(1_500);
+            for (int i = 0; i < 1_500; i++) {
+                keys.add("listings/" + i + "/photo.jpg");
+            }
+            storage.deleteObjects(keys);
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client, org.mockito.Mockito.times(2)).deleteObjects(captor.capture());
+            var requests = captor.getAllValues();
+            org.assertj.core.api.Assertions.assertThat(requests)
+                    .as("1,500 keys split into exactly two bounded batches")
+                    .hasSize(2);
+            org.assertj.core.api.Assertions.assertThat(requests.get(0).delete().objects())
+                    .as("the first batch carries the service ceiling exactly")
+                    .hasSize(1_000);
+            org.assertj.core.api.Assertions.assertThat(requests.get(1).delete().objects())
+                    .as("the second batch carries the remainder")
+                    .hasSize(500);
+            org.assertj.core.api.Assertions.assertThat(requests.get(0).delete().objects().get(0).key())
+                    .as("the batch order preserves the collected order")
+                    .isEqualTo("listings/0/photo.jpg");
+            org.assertj.core.api.Assertions.assertThat(requests.get(1).delete().objects().get(499).key())
+                    .isEqualTo("listings/1499/photo.jpg");
+        }
+    }
+
+    @Test
+    void f833_1_exactlyTheCeilingStaysOneBatchAndDuplicatesAreDeduped() {
+        // Exactly 1,000 keys ride ONE call (the ceiling is inclusive), and a
+        // key collected twice (an original re-listed under the same object
+        // key) is deduped first — the service rejects a request holding the
+        // same key twice.
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            java.util.List<String> thousand = new java.util.ArrayList<>(1_000);
+            for (int i = 0; i < 999; i++) {
+                thousand.add("posts/" + i + "/img.jpg");
+            }
+            thousand.add("posts/0/img.jpg"); // a duplicate of the first
+            storage.deleteObjects(thousand);
+
+            verify(client, org.mockito.Mockito.times(1))
+                    .deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client).deleteObjects(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().delete().objects())
+                    .as("the duplicate never reaches the wire")
+                    .hasSize(999);
+        }
+    }
+
+    @Test
+    void f833_1_perKeyPartialFailuresSurfaceToTheCallersLogLine() {
+        // The service's own partial-failure surface: a 200-response whose
+        // body carries per-key errors. The pre-fix code discarded the
+        // response entirely — the gap stayed invisible. The fix surfaces
+        // the count and sample through the thrown message so the caller's
+        // log line fires (the tier-2 gap signal).
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            org.mockito.Mockito.when(client.deleteObjects(
+                            any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder()
+                            .errors(java.util.List.of(software.amazon.awssdk.services.s3.model.S3Error.builder()
+                                    .key("listings/1/a.jpg").code("AccessDenied").message("denied").build()))
+                            .build());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                            storage.deleteObjects(java.util.List.of("listings/1/a.jpg")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("1 per-key delete failures")
+                    .hasMessageContaining("listings/1/a.jpg")
+                    .hasMessageContaining("AccessDenied");
+        }
+    }
+
+    @Test
+    void f833_1_aFailedBatchNeverAbortsTheRemainingBatches() {
+        // Best-effort per batch: the first batch's wire failure must not
+        // cost the second batch its deletion attempt — every batch is
+        // attempted, and the FIRST failure is re-thrown once the loop ends
+        // (the caller's log still fires; a re-run converges idempotently).
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+
+            java.util.List<String> keys = new java.util.ArrayList<>(1_500);
+            for (int i = 0; i < 1_500; i++) {
+                keys.add("review-media/" + i + "/c.jpg");
+            }
+            org.mockito.Mockito.when(client.deleteObjects(
+                            any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                    .thenThrow(new RuntimeException("first batch wire failure"))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> storage.deleteObjects(keys))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("first batch wire failure");
+
+            verify(client, org.mockito.Mockito.times(2))
+                    .deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
+        }
+    }
+
+    @Test
     void close_shutsDownPresignerAndClient() {
         S3Presigner presigner = org.mockito.Mockito.mock(S3Presigner.class);
         S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
