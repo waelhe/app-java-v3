@@ -108,4 +108,80 @@ class PaymentIntentStatusTest {
         assertFalse(PaymentIntentStatus.RETRYABLE.contains(PaymentIntentStatus.CANCELLATION_PENDING));
         assertFalse(PaymentIntentStatus.COLLECTED.contains(PaymentIntentStatus.CANCELLATION_PENDING));
     }
+
+    // ------------------------------------------------------------------
+    // E2 (adversarial review 2026-11-10) — the terminal-state law, pinned
+    // exhaustively: the old single-edge pins (succeeded_rejectsAnyTransition
+    // refusing only SUCCEEDED->CANCELLED, cancelled_rejectsAnyTransition
+    // refusing only CANCELLED->PROCESSING, refunded_rejectsAnyTransition
+    // refusing only REFUNDED->SUCCEEDED) could not fail against the
+    // regression they name — widening any terminal row's allowed set keeps
+    // every named test green while dead money reopens.
+    // ------------------------------------------------------------------
+
+    /**
+     * E2's structural law itself: every terminal row's outgoing set is EMPTY
+     * — a late PSP success (or any other actor) can never complete failed,
+     * cancelled, or refunded money through the state machine's front door.
+     */
+    @Test
+    void theTerminalStatesAllowNoOutgoingTransitions_theLateSuccessLaw() {
+        org.assertj.core.api.Assertions.assertThat(PaymentIntentStatus.TRANSITIONS.get(PaymentIntentStatus.FAILED))
+                .as("FAILED is terminal — a late PSP success must never complete it")
+                .isEmpty();
+        org.assertj.core.api.Assertions.assertThat(PaymentIntentStatus.TRANSITIONS.get(PaymentIntentStatus.CANCELLED))
+                .as("CANCELLED is terminal — no transition reopens cancelled money")
+                .isEmpty();
+        org.assertj.core.api.Assertions.assertThat(PaymentIntentStatus.TRANSITIONS.get(PaymentIntentStatus.REFUNDED))
+                .as("REFUNDED is terminal — no transition reopens refunded money")
+                .isEmpty();
+    }
+
+    /**
+     * FAILED refuses EVERY other status (the enum swept exhaustively — any
+     * future status addition lands under this pin automatically).
+     */
+    @Test
+    void failed_rejectsEveryOtherStatus_exhaustively() {
+        for (PaymentIntentStatus target : PaymentIntentStatus.values()) {
+            if (target == PaymentIntentStatus.FAILED) {
+                continue;
+            }
+            assertThrows(ConflictException.class,
+                    () -> PaymentIntentStatus.FAILED.validateTransitionTo(target),
+                    "FAILED -> " + target + " must be refused");
+        }
+    }
+
+    /**
+     * CANCELLED refuses every other status exhaustively — cancelled money
+     * never reopens through any transition.
+     */
+    @Test
+    void cancelled_rejectsEveryOtherStatus_exhaustively() {
+        for (PaymentIntentStatus target : PaymentIntentStatus.values()) {
+            if (target == PaymentIntentStatus.CANCELLED) {
+                continue;
+            }
+            assertThrows(ConflictException.class,
+                    () -> PaymentIntentStatus.CANCELLED.validateTransitionTo(target),
+                    "CANCELLED -> " + target + " must be refused");
+        }
+    }
+
+    /**
+     * REFUNDED refuses every other status exhaustively — refunded money
+     * never reopens through any transition.
+     */
+    @Test
+    void refunded_rejectsEveryOtherStatus_exhaustively() {
+        for (PaymentIntentStatus target : PaymentIntentStatus.values()) {
+            if (target == PaymentIntentStatus.REFUNDED) {
+                continue;
+            }
+            assertThrows(ConflictException.class,
+                    () -> PaymentIntentStatus.REFUNDED.validateTransitionTo(target),
+                    "REFUNDED -> " + target + " must be refused");
+        }
+    }
 }
