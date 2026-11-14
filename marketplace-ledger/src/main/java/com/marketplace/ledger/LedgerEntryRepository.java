@@ -160,4 +160,95 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
                               updated_at = now()
             """, nativeQuery = true)
     int reconcileMissingCommissionReversals();
+
+    /**
+     * F-832-1 + CodeRabbit round 2 (the fee mirror's own deploy-overlap
+     * closure): the fee twin of {@link #reconcileMissingCommissionReversals}
+     * — the SAME one-statement convergence shape, verbatim semantics, on the
+     * fee pair's own deterministic keys ({@code delivery-fee-<intentId>} /
+     * {@code delivery-fee-reversal-<intentId>}, the V82-validated md5 nibble
+     * surgery the runtime's {@code nameUUIDFromBytes} reconstructs): every
+     * REFUNDED intent holding the settlement's DELIVERY_FEE_DEBIT and the
+     * refund's REFUND_DEBIT but not the pair's mirror gains the missing
+     * DELIVERY_FEE_REVERSAL_CREDIT — the POSTED fee row's own amount,
+     * currency and provider (the postedCommissionCents discipline: never a
+     * recomputation from live order facts), the per-balance-key aggregation
+     * so one provider moves once by the summed reversals, the UPSERT limited
+     * by RETURNING to rows this run actually inserted and the version bump
+     * the round-9 stale-save interleave demanded.
+     *
+     * <p>Why the twin: Railway keeps the PREVIOUS deployment serving while
+     * the new one boots — during that window the OLD deployment's refund
+     * listener (pre-F-832-1) still writes the refund leg without the fee
+     * mirror and its publications COMPLETE, so the registry never replays
+     * them. No one-time migration exists for the fee pair (the feature
+     * ships with this branch — every historical row the OLD code wrote is
+     * exactly the pre-mirror shape this sweep converges), so this runtime
+     * pass is the fee mirror's whole convergence story: hourly, idempotent,
+     * silent once converged (zero = the sweep's own idle signal).</p>
+     *
+     * @return the number of missing fee-reversal entries this run created
+     *         (zero once the world has converged)
+     */
+    @Modifying
+    @Query(value = """
+            WITH per_intent AS (
+                -- the commission sweep's own eligibility cut (reviewed
+                -- rounds 1-9): only REFUNDED intents can hold a deserving
+                -- refund; the cut spares the derivation work over the rest
+                -- of the table without excluding a single deserving row.
+                SELECT pi.id AS intent_id,
+                       (substr(md5('delivery-fee-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('delivery-fee-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('delivery-fee-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('delivery-fee-' || pi.id::text), 18, 3)
+                           || substr(md5('delivery-fee-' || pi.id::text), 21, 12))::uuid AS fee_source,
+                       (substr(md5('refund-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('refund-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('refund-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('refund-' || pi.id::text), 18, 3)
+                           || substr(md5('refund-' || pi.id::text), 21, 12))::uuid AS refund_source,
+                       (substr(md5('delivery-fee-reversal-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('delivery-fee-reversal-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('delivery-fee-reversal-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('delivery-fee-reversal-' || pi.id::text), 18, 3)
+                           || substr(md5('delivery-fee-reversal-' || pi.id::text), 21, 12))::uuid AS reversal_source
+                FROM payment_intents pi
+                WHERE pi.status = 'REFUNDED'
+            ),
+            missing AS (
+                SELECT fd.provider_id, fd.currency, fd.amount_cents, ps.reversal_source
+                FROM per_intent ps
+                JOIN ledger_entries fd ON fd.source_id = ps.fee_source
+                                       AND fd.entry_type = 'DELIVERY_FEE_DEBIT'
+                JOIN ledger_entries rd ON rd.source_id = ps.refund_source
+                                       AND rd.entry_type = 'REFUND_DEBIT'
+                LEFT JOIN ledger_entries rv ON rv.source_id = ps.reversal_source
+                WHERE rv.id IS NULL
+            ),
+            inserted AS (
+                INSERT INTO ledger_entries (id, provider_id, source_id, entry_type, amount_cents,
+                                            currency, created_at, updated_at)
+                SELECT gen_random_uuid(), m.provider_id, m.reversal_source,
+                       'DELIVERY_FEE_REVERSAL_CREDIT', m.amount_cents, m.currency, now(), now()
+                FROM missing m
+                ON CONFLICT (source_id) DO NOTHING
+                RETURNING provider_id, currency, amount_cents
+            ),
+            inserted_by_balance AS (
+                SELECT i.provider_id, i.currency, SUM(i.amount_cents) AS amount_cents
+                FROM inserted i
+                GROUP BY i.provider_id, i.currency
+            )
+            INSERT INTO provider_balances (provider_id, currency, available_cents, created_at, updated_at,
+                                           version)
+            SELECT b.provider_id, b.currency, b.amount_cents, now(), now(),
+                   0
+            FROM inserted_by_balance b
+            ON CONFLICT (provider_id, currency)
+                DO UPDATE SET available_cents = provider_balances.available_cents + EXCLUDED.available_cents,
+                              version = provider_balances.version + 1,
+                              updated_at = now()
+            """, nativeQuery = true)
+    int reconcileMissingDeliveryFeeReversals();
 }

@@ -19,6 +19,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
@@ -107,6 +108,15 @@ class LedgerModuleIntegrationTest {
      */
     @Autowired
     private LedgerEntryRepository ledgerEntryRepository;
+
+    /**
+     * The registry's own table the failure-injection journey waits through —
+     * the committed record of a FAILED delivery is the proof the failed
+     * attempt's transaction rolled back (the round-2 nitpick's completion
+     * signal).
+     */
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Autowired
     private ApplicationEventPublisher events;
@@ -630,7 +640,19 @@ class LedgerModuleIntegrationTest {
         // the settlement's balance survives and NO refund entry survives
         transactions.executeWithoutResult(tx ->
                 events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
-        awaitCondition("the injected fee-reversal failure fired", () -> feeReversalAttempts.get() >= 1);
+        // CodeRabbit round-2 nitpick, adopted: the attempts counter
+        // increments INSIDE the listener's transaction, before the throw — a
+        // wait on it alone can pass while the failed attempt's transaction is
+        // still open, and the reads below would see the pre-rollback committed
+        // state and assert vacuously. The durable signal is the registry's own
+        // record of the FAILED delivery (the Modulith reference's «Failed
+        // publications and resubmission» semantics the
+        // LedgerRefundReplayIntegrationTest's awaitPublication pattern
+        // witnesses): the FAILED row is the registry's post-rollback write —
+        // its presence is the committed proof the rollback completed, making
+        // the balance and statement reads below real.
+        awaitCondition("the injected fee-reversal failure's delivery recorded FAILED by the registry",
+                () -> failedLedgerPublications() >= 1);
 
         long afterFailure = sarBalanceOf(sellerId);
         assertThat(afterFailure)
@@ -689,6 +711,21 @@ class LedgerModuleIntegrationTest {
             }
         }
         throw new AssertionError("Condition not met within 30s: " + what);
+    }
+
+    /**
+     * The FAILED publications of the ledger listener — the committed registry
+     * record that a delivery attempt failed AND its listener transaction
+     * rolled back (the FAILED row is the registry's own post-rollback write,
+     * the LedgerRefundReplayIntegrationTest's awaitPublication pattern's
+     * shape: completed deliveries archive immediately, so a FAILED row here
+     * can only be the failure-injection journey's own refund delivery).
+     */
+    private long failedLedgerPublications() {
+        Long count = jdbc.queryForObject(
+                "select count(*) from event_publication where listener_id like ? and status = 'FAILED'",
+                Long.class, "%LedgerPaymentEventListener%");
+        return count == null ? 0 : count;
     }
 
     /**
