@@ -112,12 +112,21 @@
    [AWS S3 DeleteObject الرسمي](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html)
    (وحذف الدفعات عبر [DeleteObjects](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html)
    — الحذف الدفعي الموثق لكائنات معروفة المفاتيح) عبر منفذ `AuthoredContentPurgePort` جديد في وحدة
-   media (SPI محايد الإطار — قاعدة C4). **شروط versioning:** إن كان bucket الوسائط مفعّلًا فيه
-   versioning فالحذف بلا `versionId` ينشئ delete marker ويُبقي الإصدارات قابلة للاسترجاع
+   media (SPI محايد الإطار — قاعدة C4). **شروط versioning (كلا حالتي تشغيل الـbucket
+   الموثقتين — `Enabled` و`Suspended`):** إن كان bucket الوسائط بحالة `Enabled` فالحذف بلا
+   `versionId` ينشئ delete marker ويُبقي كل الإصدارات قابلة للاسترجاع؛ وإن كان بحالة `Suspended`
+   (وثائق AWS الرسمية — [Deleting objects from versioning-suspended
+   buckets](https://docs.aws.amazon.com/AmazonS3/latest/userguide/DeletingObjectsfromVersioningSuspendedBuckets.html))
+   فالحذف بلا `versionId` يزيل إصدار `null` الحالي نهائيًا — وإذا وُجدت إصدارات غير `null`
+   (من عصر `Enabled`) أدرج S3 نفسه delete marker يصبح هو الحالي، وتبقى تلك الإصدارات القديمة
+   قابلة للاسترجاع تمامًا
    ([AWS S3 — Troubleshooting versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/versioning-workflows.html)) —
-   فإتلاف الدرجة 2 يتطلب حصر كل الإصدارات (`ListObjectVersions`) وحذف كل إصدار بـ`versionId`
-   ومعالجة delete markers، وإعلان حالة versioning المطلوبة لـbucket الوسائط، واختبار إتلاف
-   على bucket مفعّل فيه versioning.
+   فإتلاف الدرجة 2 في **الحالتين معًا** يتطلب حصر كل الإصدارات (`ListObjectVersions`) وحذف كل
+   إصدار بـ`versionId` (بما فيها إصدارات `null` نفسها ومعالجة delete markers — والـmarker
+   ذاته يُحذف كأي إصدار بمعرّفه)، وإعلان حالة versioning المطلوبة لـbucket الوسائط، واختبار
+   إتلاف على bucket بحالة `Enabled` **وعلى bucket بحالة `Suspended` يثبت الإتلاف الكامل
+   مع السلوك المطلوب للإصدارات القديمة: إصدارات عصر `Enabled` تُتلف كلها بـ`versionId`،
+   وإصدار `null` الحالي يُتلف، ولا delete marker يبقى بعدها**.
 3. **الاختبار الواجب (كما وثّقه السجل نفسه):** اختبار انحدار ذو وجهين: (أ) عدم تجديد الروابط بعد المحو،
    **و(ب) رابط موقّع صدر قبل المحو يتعذّر به التنزيل بعد المحو** — إبطال يمس الكائن لا منع التجديد وحده.
 
