@@ -1,0 +1,421 @@
+{
+  "schemaVersion": 1,
+  "asOf": "2026-11-13",
+  "purpose": "Provenance and adoption map for external AI/documentation resources used to improve app-java-v3 defect knowledge. This registry does not authorize live Saleor access or override the repository's pinned contract.",
+  "sources": [
+    {
+      "id": "saleor-ai-docs",
+      "kind": "official-documentation",
+      "repository": "saleor/saleor-docs",
+      "commit": "9853f8fb08f6622f3d6b23b3fff2683215aaa5ff",
+      "commitDate": "2026-11-12",
+      "page": "https://docs.saleor.io/developer/ai",
+      "pageLastUpdated": "2026-11-06",
+      "resources": [
+        {
+          "name": "llms.txt",
+          "url": "https://docs.saleor.io/llms.txt",
+          "purpose": "Page index, agent resources and published Saleor schema index"
+        },
+        {
+          "name": "llms-full.txt",
+          "url": "https://docs.saleor.io/llms-full.txt",
+          "purpose": "Full documentation Markdown corpus"
+        },
+        {
+          "name": "Documentation MCP",
+          "url": "https://docs.saleor.io/mcp",
+          "purpose": "Read-only search_docs/get_page/list_pages/get_navigation; no live store or GraphQL execution"
+        },
+        {
+          "name": "MCP server card",
+          "url": "https://docs.saleor.io/.well-known/mcp/server-card.json",
+          "serverVersion": "2.0.3"
+        },
+        {
+          "name": "AI catalog",
+          "url": "https://docs.saleor.io/.well-known/ai-catalog.json"
+        },
+        {
+          "name": "Agent skills index",
+          "url": "https://docs.saleor.io/.well-known/agent-skills/index.json"
+        },
+        {
+          "name": "Agent readability",
+          "url": "https://docs.saleor.io/agent-readability.json"
+        },
+        {
+          "name": "Saleor MCP Overview",
+          "url": "https://docs.saleor.io/developer/app-store/apps/mcp/overview",
+          "purpose": "Live Saleor Cloud versus self-hosted read-only MCP; identity, permission-aware access, audited operations and limitations."
+        },
+        {
+          "name": "Saleor MCP Authentication",
+          "url": "https://docs.saleor.io/developer/app-store/apps/mcp/authentication",
+          "purpose": "User OAuth versus autonomous-agent access keys, scopes, permission levels, revocation and token handling."
+        },
+        {
+          "name": "Saleor MCP Tools",
+          "url": "https://docs.saleor.io/developer/app-store/apps/mcp/tools",
+          "purpose": "Authoritative tool contract, arguments, response shape, mutation summaries and pre-execution document checks."
+        }
+      ],
+      "limitations": [
+        "Documentation MCP is read-only and does not connect to a Saleor instance.",
+        "Saleor Cloud MCP and self-hosted Saleor MCP are separate live-data capabilities; neither is used by app-java-v3.",
+        "Schema-only GraphQL MCP must consume this repository's pinned SDL if used; never upstream main."
+      ],
+      "mcpCapabilities": {
+        "documentationMcp": {
+          "endpoint": "https://docs.saleor.io/mcp",
+          "access": "read-only",
+          "tools": [
+            "search_docs",
+            "get_page",
+            "list_pages",
+            "get_navigation"
+          ],
+          "purpose": "Search and read official documentation only; does not connect to a store or execute GraphQL."
+        },
+        "saleorCloudMcp": {
+          "availability": "Saleor Cloud",
+          "sequence": [
+            "connection_info",
+            "introspect_schema",
+            "run_query",
+            "run_mutation",
+            "run_high_impact_mutation"
+          ],
+          "semantics": {
+            "connection_info": "Call first to establish the connected store and current access/upgrade state.",
+            "introspect_schema": "Inspect the permitted live-store schema before querying or changing data.",
+            "run_query": "Read live data within granted permissions.",
+            "run_mutation": "Write within granted permissions.",
+            "run_high_impact_mutation": "Use the separately governed high-impact operation path."
+          },
+          "safeguards": [
+            "Permission-aware server-side access control",
+            "High-impact approval boundary",
+            "Server-side credential handling",
+            "Activity logging"
+          ],
+          "adoption": "not-used-by-app-java-v3",
+          "minimumSaleorVersion": "3.23",
+          "toolContracts": {
+            "introspect_schema": {
+              "actions": [
+                "search",
+                "describe_type",
+                "list_operations",
+                "describe_operation"
+              ],
+              "purpose": "Explore schema operations, arguments and fields in small slices; action-specific arguments are required."
+            },
+            "run_query": {
+              "document": "Only GraphQL query operations",
+              "optional": [
+                "variables",
+                "operation_name"
+              ],
+              "readOnly": true
+            },
+            "run_mutation": {
+              "document": "Only GraphQL mutation operations",
+              "required": [
+                "summary",
+                "query"
+              ],
+              "optional": [
+                "variables",
+                "operation_name"
+              ],
+              "permission": "Edit"
+            },
+            "run_high_impact_mutation": {
+              "document": "Only GraphQL mutation operations and at least one high-impact mutation",
+              "required": [
+                "summary",
+                "query"
+              ],
+              "optional": [
+                "variables",
+                "operation_name"
+              ],
+              "permission": "Full"
+            },
+            "schemaResource": "saleor://schema/graphql",
+            "response": {
+              "shape": "{ data, errors }",
+              "representations": [
+                "text",
+                "structuredContent"
+              ],
+              "successRule": "Inspect the mutation's own errors field; the presence of data alone is not proof of successful business effect."
+            }
+          },
+          "restrictedAreas": [
+            "staff",
+            "apps",
+            "webhooks",
+            "customers",
+            "checkouts",
+            "metadata",
+            "channels",
+            "shop settings"
+          ],
+          "restrictedAreaGuidance": "These areas cannot be changed via Saleor MCP and require the Saleor Dashboard; this is a Saleor Cloud capability limit, not an app-java-v3 constraint."
+        },
+        "selfHostedSaleorMcp": {
+          "availability": "Self-hosted Saleor",
+          "access": "read-only",
+          "adoption": "not-used-by-app-java-v3"
+        },
+        "schemaOnlyGraphQlMcp": {
+          "purpose": "Offline schema/contract inspection; not a live-store data connection.",
+          "schemaSource": "This repository's pinned Saleor 3.23.43 SDL at saleor/graphql/schema.graphql.",
+          "upstreamMainAllowed": false
+        },
+        "protocolDiscovery": {
+          "authoritativeToolMetadata": "MCP tools/list",
+          "rule": "Do not assume tools or arguments from a stale copy; inspect the connected server's advertised tool metadata."
+        },
+        "identityAndAccess": {
+          "userOAuth": "A staff-facing assistant acts as the signed-in staff user.",
+          "accessKey": "An unattended agent/automation acts as the app, limited by the key's area-level permissions.",
+          "levels": [
+            "Read",
+            "Edit",
+            "Full"
+          ],
+          "mutationRequirements": {
+            "run_mutation": "Edit",
+            "run_high_impact_mutation": "Full"
+          },
+          "scopeRule": "Requested OAuth scopes can narrow current access; they cannot widen access the user/app/group policy does not grant.",
+          "elevation": "Call connection_info first; request upgradePermissions only after the user explicitly agrees.",
+          "revocation": "Connections can be revoked; access-key changes and revocation take effect on the next request.",
+          "credentialBoundary": "MCP clients never receive Saleor tokens."
+        },
+        "operationSafety": {
+          "reviewedMutationsOnly": true,
+          "toolVisibility": "Mutation tools are exposed only when the connection has access to execute them.",
+          "response": "{ data, errors }; inspect the mutation's own errors before treating the action as successful.",
+          "activityLog": "Every tool call is visible in the app Activity tab; mutation summaries are retained for 90 days.",
+          "summaryMustAvoid": [
+            "names",
+            "emails",
+            "addresses",
+            "phone numbers",
+            "gift-card codes",
+            "voucher codes",
+            "passwords",
+            "tokens"
+          ],
+          "summaryGuidance": "Use object IDs and changed values; keep the explanation factual and minimal.",
+          "documentChecks": {
+            "queryAndMutationCannotBeMixed": true,
+            "subscriptionsSupported": false,
+            "blockedCredentialFields": [
+              "accessToken",
+              "authToken"
+            ],
+            "limits": {
+              "documentCharacters": 100000,
+              "documentTokens": 10000,
+              "rootFieldsPerOperation": 500
+            },
+            "note": "Saleor-specific MCP validation limits; do not adopt as app-java-v3 platform limits."
+          }
+        }
+      }
+    },
+    {
+      "id": "saleor-agent-skills",
+      "kind": "official-agent-skills",
+      "repository": "saleor/agent-skills",
+      "commit": "fb1a57255f58950962f6e474ccba1cade40f5163",
+      "commitDate": "2026-08-06",
+      "provenance": "saleor/saleor-docs/skills/README.md at docs commit 9853f8fb states that the complete skill directories, rules, compiled guides, references and license were imported from this exact commit.",
+      "publishedSkillDigests": {
+        "saleor-app": "sha256:13d065da9d5014475c9d4668516480f7a1c220ca87282e1f6629671ab3f86758",
+        "saleor-configurator": "sha256:060bd86bed738043064c79279c657095d85434a88c2a148532e46604679b1c48",
+        "saleor-core": "sha256:257525713919a5f7490e65cbfad7e1d99fc6f93378c957b11289275ae545c6af",
+        "saleor-storefront": "sha256:f4949c787717a549a42ee2ff6289e77796296c522366eb11882bace242c7661d",
+        "storefront-builder": "sha256:e6cafd7686b459a5b268c876a3a428a963bd99b80acaaaf3ac2761f8ab341b50"
+      },
+      "skills": [
+        {
+          "name": "saleor-core",
+          "version": "1.2.0",
+          "state": "already-adopted-and-pinned",
+          "localPath": ".agents/skills/saleor-core",
+          "purpose": "Saleor 3.23.43 discounts, order allocation, stock availability; reference only",
+          "knownErrataSource": "docs/governance/plans/agent-skills-pins.json"
+        },
+        {
+          "name": "saleor-app",
+          "version": "1.0.0",
+          "state": "not-installed-reference-methods-used",
+          "rules": [
+            "payment-app",
+            "webhook-async",
+            "permissions-access-scopes"
+          ],
+          "purpose": "Adapt stable provider identity, unknown outcomes, event reconciliation and server-side access checks; no App SDK/AppBridge/manifest runtime"
+        },
+        {
+          "name": "saleor-storefront",
+          "version": "1.0.0",
+          "state": "not-installed-reference-methods-used",
+          "rules": [
+            "api-investigation",
+            "api-data-model"
+          ],
+          "purpose": "Adapt source investigation order and deliberate nullability; no storefront runtime or Saleor field semantics"
+        },
+        {
+          "name": "saleor-configurator",
+          "version": "1.0.0",
+          "state": "not-installed-reference-methods-used",
+          "rules": [
+            "deploy-pipeline",
+            "diff-behavior"
+          ],
+          "purpose": "Adapt preflight, dependency order, diff, idempotency and partial-failure reports; no Configurator CLI or Saleor engine"
+        },
+        {
+          "name": "storefront-builder",
+          "version": "2.0.0",
+          "state": "not-installed-not-applicable",
+          "purpose": "Frontend scaffolding/UX playbook is outside this backend defect-knowledge change"
+        }
+      ],
+      "rulesConsulted": [
+        {
+          "skill": "saleor-app",
+          "path": "skills/saleor-app/rules/payment-app.md",
+          "principles": [
+            "stable attempt reference",
+            "separate app/provider/account identities",
+            "timeout or ambiguous result is unknown",
+            "verify provider state/amount/currency/object relation",
+            "idempotent webhook reconciliation",
+            "one transaction per funding source"
+          ]
+        },
+        {
+          "skill": "saleor-app",
+          "path": "skills/saleor-app/rules/webhook-async.md",
+          "principles": [
+            "raw-body signature verification",
+            "typed payloads",
+            "delivery retries and timeout contract",
+            "durable acceptance",
+            "out-of-order/duplicate event awareness"
+          ]
+        },
+        {
+          "skill": "saleor-app",
+          "path": "skills/saleor-app/rules/permissions-access-scopes.md",
+          "principles": [
+            "server-side per-route enforcement",
+            "UI visibility is not authorization",
+            "actor and service scopes differ"
+          ]
+        },
+        {
+          "skill": "saleor-core",
+          "path": "skills/saleor-core/rules/discount-precedence.md",
+          "principles": [
+            "explicit precedence and suppression",
+            "distinguish data model from displayed aggregate"
+          ]
+        },
+        {
+          "skill": "saleor-core",
+          "path": "skills/saleor-core/rules/order-discount-allocation.md",
+          "principles": [
+            "do not fabricate unexposed per-record attribution",
+            "currency-aware rounding",
+            "special-case shape tests"
+          ]
+        },
+        {
+          "skill": "saleor-core",
+          "path": "skills/saleor-core/rules/stock-availability-modes.md",
+          "principles": [
+            "mode-specific semantics",
+            "dispatch at boundary",
+            "diagnostics classify orthogonal concerns",
+            "test both modes and actual event trigger"
+          ]
+        },
+        {
+          "skill": "saleor-storefront",
+          "path": "skills/saleor-storefront/rules/api-investigation.md",
+          "principles": [
+            "generated types/schema → official docs → pinned source for behavior → local tests"
+          ]
+        },
+        {
+          "skill": "saleor-storefront",
+          "path": "skills/saleor-storefront/rules/api-data-model.md",
+          "principles": [
+            "explicit nullability",
+            "don't invent default semantics",
+            "source contract vs local behavior"
+          ]
+        },
+        {
+          "skill": "saleor-configurator",
+          "path": "skills/saleor-configurator/rules/deploy-pipeline.md",
+          "principles": [
+            "preflight validation",
+            "dependency-ordered stage plan",
+            "per-stage failure report",
+            "idempotent re-run"
+          ]
+        },
+        {
+          "skill": "saleor-configurator",
+          "path": "skills/saleor-configurator/rules/diff-behavior.md",
+          "principles": [
+            "diff before apply",
+            "stable entity identity",
+            "omitted configuration is not deletion",
+            "introspect has side effects on the local config file"
+          ]
+        }
+      ],
+      "adoptionRule": "Only general engineering principles were adapted into repository-owned focused rule packs. Saleor-specific protocol, fields, timeouts, retry constants, tokens, UI and configuration schemas remain non-transferable."
+    },
+    {
+      "id": "skills-cli",
+      "kind": "official-tooling-reference",
+      "repository": "vercel-labs/skills",
+      "commit": "b716f9dc2ba36b6aa8f0080615e5a3a6caeac63b",
+      "commitDate": "2026-11-12",
+      "docs": "https://github.com/vercel-labs/skills/blob/b716f9dc2ba36b6aa8f0080615e5a3a6caeac63b/docs/commands.md",
+      "principles": [
+        "list skills before installation",
+        "select explicit skill names and project scope",
+        "track content hashes and sources in skills-lock.json",
+        "skills check detects upstream updates and local modifications",
+        "frozen lock in CI fails rather than silently updating content"
+      ],
+      "localUse": "Reference only. The repository's existing agent-skills-pins.json plus per-file SHA-256 and PlatformGovernanceFilesTest remain the governing vendoring mechanism.",
+      "commandsExecuted": [],
+      "explicitProhibition": "Do not execute npx skills add/update in this repository; use the reviewed pin-and-registry procedure."
+    }
+  ],
+  "authorityBoundary": {
+    "order": [
+      "pinned Saleor schema and Dashboard pins",
+      "D-SALEOR-FULL-001 canonical plan",
+      "saleor-contract-divergences.csv",
+      "app-java-v3 code and tests",
+      "external skills/docs as reference only"
+    ],
+    "rule": "A resource discovery index, MCP response, skill, llms.txt, or upstream main does not override a pinned schema, local ADR, implementation or measured test."
+  }
+}

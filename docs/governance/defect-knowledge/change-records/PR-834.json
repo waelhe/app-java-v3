@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "pullRequest": 834,
+  "governingFiles": [
+    ".ci/check_defect_knowledge.py",
+    ".ci/defect_knowledge_intake.py",
+    ".github/workflows/ci.yml",
+    ".github/workflows/coderabbit-gate.yml",
+    ".github/workflows/defect-knowledge-gate.yml",
+    ".github/workflows/defect-knowledge-intake.yml",
+    "AGENTS.md",
+    "docs/agent-protocol.md",
+    "docs/governance/defect-knowledge/README.md",
+    "docs/governance/defect-knowledge/change-protocol.md",
+    "docs/governance/defect-knowledge/enforcement-map.md",
+    "docs/governance/defect-knowledge/evidence-ledger.md",
+    "docs/governance/defect-knowledge/pattern-catalog.md",
+    "docs/governance/defect-knowledge/review-findings-index-2026-11-13.json",
+    "docs/governance/defect-knowledge/review-protocol.md",
+    "docs/governance/defect-knowledge/rulebook.md"
+  ],
+  "rulesTriggered": [
+    "A1",
+    "A3",
+    "A5",
+    "A6",
+    "B2",
+    "B3",
+    "B6",
+    "D11",
+    "D12"
+  ],
+  "patternsReviewed": [
+    "P1",
+    "P6",
+    "P9",
+    "P11",
+    "P12",
+    "P13",
+    "P14",
+    "P4",
+    "P15"
+  ],
+  "historicalCasesReviewed": [
+    "E-24",
+    "E-25",
+    "E-26",
+    "E-27",
+    "E-28",
+    "E-29",
+    "E-30",
+    "E-31",
+    "E-32",
+    "E-33",
+    "E-34",
+    "E-35",
+    "E-36",
+    "E-37",
+    "E-38",
+    "E-39",
+    "E-40",
+    "E-41",
+    "E-42",
+    "E-43",
+    "E-44",
+    "E-45",
+    "E-46",
+    "E-47",
+    "E-48",
+    "E-49",
+    "E-50",
+    "E-51",
+    "E-52"
+  ],
+  "invariants": [
+    "Review submissions and comments are captured exactly once by source ID and are never auto-classified as confirmed defects.",
+    "A code/runtime PR must carry a receipt that references canonical rule, pattern and case IDs.",
+    "A finding may be marked fixed only with a reachable full commit SHA and passed GitHub workflow evidence.",
+    "The receipt validator executes from trusted base code for subsequent pull requests and reads candidate content as data.",
+    "The historical repair index keeps main-branch fixes distinct from fixes still absent from the commerce integration candidate.",
+    "Issue-comment intake and scheduled/manual recovery sweeps use one serialized writer so one PR has one intake issue.",
+    "A fixed disposition is accepted only when the repository Actions API confirms a completed successful run on the exact PR head.",
+    "Only GitHub Actions-authored intake issues/comments may control collector markers; human-authored marker lookalikes cannot suppress ingestion or be updated as managed summaries."
+  ],
+  "doors": [
+    "pull_request_review submitted/edited/dismissed events",
+    "pull_request_review_comment created/edited/deleted events",
+    "issue_comment created/edited/deleted events for pull requests",
+    "scheduled sweep of open pull requests",
+    "manual backfill for one PR or all PRs opened since a UTC date",
+    "CI receipt gate for code/runtime changes",
+    "trusted pull_request_target receipt gate on subsequent PRs",
+    "agent bootstrap instructions in AGENTS.md, docs/agent-protocol.md and docs/agent-skill.md",
+    "issue_comment webhook concurrent with daily schedule/manual sweep",
+    "D11 fixed-disposition workflow run URL parsing and GitHub Actions lookup",
+    "human-authored issue/comment containing defect-intake-pr, defect-intake-item, or defect-intake-sync-summary lookalike markers"
+  ],
+  "siblingSearch": [
+    {
+      "family": "Review signal ingestion",
+      "pathsSearched": [
+        ".github/workflows/defect-knowledge-intake.yml",
+        ".ci/defect_knowledge_intake.py",
+        ".ci/tests/test_defect_knowledge_intake.py"
+      ],
+      "result": "The new intake is the shared mechanism for review submissions, inline comments and PR discussion comments; scheduled sweep recovers missed event notifications."
+    },
+    {
+      "family": "Repository PR governance",
+      "pathsSearched": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/coderabbit-gate.yml",
+        ".github/workflows/defect-knowledge-gate.yml",
+        ".ci/check_coderabbit_review_coverage.py"
+      ],
+      "result": "Existing CodeRabbit coverage and poll gates remain intact; D11 adds a separate receipt/evidence gate and does not redefine CodeRabbit approval."
+    },
+    {
+      "family": "Existing defect knowledge",
+      "pathsSearched": [
+        "docs/governance/defect-knowledge/evidence-ledger.md",
+        "docs/governance/defect-knowledge/pattern-catalog.md",
+        "docs/governance/defect-knowledge/rulebook.md",
+        "docs/governance/defect-knowledge/enforcement-map.md"
+      ],
+      "result": "New E-24..E-32 cases and P11..P14 patterns extend the canonical system; no duplicate ledger or shadow pattern catalog was introduced."
+    },
+    {
+      "family": "Automation marker ownership and issue/comment synchronization",
+      "pathsSearched": [
+        ".ci/defect_knowledge_intake.py",
+        ".ci/tests/test_defect_knowledge_intake.py",
+        ".github/workflows/defect-knowledge-intake.yml"
+      ],
+      "result": "All marker control paths now verify bot authorship; bot-owned intake issues are bound to title PR number and exact source link; human-authored markers are ignored."
+    }
+  ],
+  "tests": [
+    {
+      "name": "test_defect_knowledge.py",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required GitHub CI run on PR #834 head; pending at receipt creation."
+    },
+    {
+      "name": "test_defect_knowledge_intake.py",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI run on PR #834 head; pending at receipt creation."
+    },
+    {
+      "name": "DefectKnowledgeDocsGuardTest",
+      "command": "./mvnw -pl marketplace-app -am -Dtest=DefectKnowledgeDocsGuardTest test",
+      "verification": "Required Maven CI Build (JDK 25) on PR #834 head; pending at receipt creation."
+    },
+    {
+      "name": "test_fixed_claim_requires_completed_successful_run_on_exact_head",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required CI Build (JDK 25) on the final PR head; pending."
+    },
+    {
+      "name": "test_workflow_run_url_must_be_canonical_and_in_this_repository",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required CI Build (JDK 25) on the final PR head; pending."
+    },
+    {
+      "name": "test_intake_workflow_uses_a_single_writer_group_and_privileged_workflow_run",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required CI Build (JDK 25) on the final PR head; pending."
+    },
+    {
+      "name": "test_issue_comment_event_resolves_the_pr_number_from_issue_payload",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required CI Build (JDK 25) on the final PR head; pending."
+    },
+    {
+      "name": "test_human_comment_markers_cannot_suppress_source_items_or_take_over_summary",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
+    },
+    {
+      "name": "test_user_authored_issue_cannot_claim_or_hijack_an_intake_marker",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
+    },
+    {
+      "name": "test_duplicate_bot_summary_comments_fail_closed",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
+    },
+    {
+      "name": "test_bot_intake_with_multiple_pr_markers_fails_closed",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR #834 head; pending."
+    },
+    {
+      "name": "test_git_diff_name_only_preserves_non_ascii_paths",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required GitHub CI on final PR head; pending until the remote run completes."
+    },
+    {
+      "name": "test_docs_only_receipt_mutation_is_still_validated",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required GitHub CI on final PR head; pending until the remote run completes."
+    },
+    {
+      "name": "test_fixed_claim_accepts_tested_code_head_when_only_receipt_changes_after_it",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required GitHub CI on final PR head; pending until the remote run completes."
+    },
+    {
+      "name": "test_superseded_finding_requires_a_resolvable_successor",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge.py' -v",
+      "verification": "Required GitHub CI on final PR head; pending until the remote run completes."
+    },
+    {
+      "name": "test_sync_pr_reopens_issue_and_never_replaces_human_triage_body",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on final PR head; pending until the remote run completes."
+    },
+    {
+      "name": "test_intake_workflows_use_unescaped_github_expressions",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_defect_knowledge_intake.py' -v",
+      "verification": "Required GitHub CI on the final PR head."
+    }
+  ],
+  "findings": [
+    {
+      "key": "G8",
+      "domain": "defect-knowledge.intake",
+      "scenario": "issue_comment and scheduled sweep concurrently observe no matching intake issue before creating separate issues",
+      "invariant": "A single PR has at most one intake issue and a review signal is never dropped due to concurrent intake/sweep runs",
+      "fingerprint": "sha256:240b8b920829d2335521e6be65ae80fd10d451a731b8f0cfefa5579ab180461a",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/834"
+      ],
+      "caseId": "E-50",
+      "classification": "confirmed_defect",
+      "severity": "high",
+      "status": "open",
+      "note": "Fix is in this PR through a single-writer workflow concurrency group and routing tests; final CI validation is pending."
+    },
+    {
+      "key": "G9",
+      "domain": "defect-knowledge.receipt",
+      "scenario": "receipt supplies any github.com workflow URL with status passed while the referenced workflow run is failed, nonexistent, or bound to another commit",
+      "invariant": "fixed requires a completed successful workflow run on the exact PR head",
+      "fingerprint": "sha256:7474bcab0576a8dd8bc32179ad4c1d74de8f15e80c119775661e184d544a4585",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/834"
+      ],
+      "caseId": "E-51",
+      "classification": "confirmed_defect",
+      "severity": "high",
+      "status": "open",
+      "note": "Fix is in this PR: resolve the canonical run URL through GitHub Actions API, validate success/completion/repository/head SHA; final CI validation is pending."
+    },
+    {
+      "key": "G10",
+      "domain": "defect-knowledge.intake-markers",
+      "scenario": "A human-authored issue comment contains a copied intake item or summary marker, suppressing a source item or being overwritten as the managed summary.",
+      "invariant": "Only automation-authored intake issues and comments may control deduplication or be updated by the collector.",
+      "fingerprint": "sha256:738695bfd8cb965decac012fad2e9686dade7dc8ad2d20cd52d08ab77d16f380",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/834"
+      ],
+      "caseId": "E-52",
+      "classification": "confirmed_defect",
+      "severity": "high",
+      "status": "open",
+      "note": "PR #834 restricts control markers to github-actions[bot], validates the bot-owned intake issue's title/marker/source URL, and adds adversarial tests; final CI validation is pending."
+    }
+  ],
+  "independentReviewAttempt": {
+    "provider": "GitHub Copilot Code Review",
+    "endpoint": "POST /repos/{owner}/{repo}/pulls/{pull_number}/copilot-code-review",
+    "sourceWorkflowRun": "https://github.com/waelhe/app-java-v3/actions/runs/43405862376",
+    "result": "not-created",
+    "httpStatus": 422,
+    "failureReason": "ACTOR_INELIGIBLE",
+    "message": "GitHub reported that the actor has no Copilot license including code review, or code review is disabled by organization policy. No Copilot review or review comments were created.",
+    "interpretation": "This is an eligibility failure, not an approval or completed review. An independent human reviewer or an eligible Copilot actor/policy is still required."
+  }
+}

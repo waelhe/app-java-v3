@@ -91,13 +91,26 @@ class DefectKnowledgeDocsGuardTest {
         return read(DK_DIR + "/" + name);
     }
 
-    /** All seven artifacts of the system, read once per test that needs them. */
+    /** Canonical system documents, focused reference packs and source-provenance records, read for self-consistency checks. */
     private static List<String> allDkDocs() throws IOException {
         List<String> docs = new ArrayList<>();
-        for (String name : new String[] {"README.md", "evidence-ledger.md", "pattern-catalog.md",
-                "rulebook.md", "change-protocol.md", "review-protocol.md", "enforcement-map.md"}) {
+        for (String name : new String[] {
+                "README.md", "SKILL.md", "evidence-ledger.md", "pattern-catalog.md",
+                "rulebook.md", "change-protocol.md", "review-protocol.md", "enforcement-map.md",
+                "saleor-ai-adoption-map.md",
+                "rules/financial-effects-and-reconciliation.md",
+                "rules/async-events-and-reconciliation.md",
+                "rules/authorization-and-data-scope.md",
+                "rules/contracts-and-source-investigation.md",
+                "rules/database-and-concurrency-proof.md",
+                "rules/configuration-and-release-reconciliation.md",
+                "rules/mode-aware-behavior-and-diagnostics.md",
+                "rules/signal-triage-and-evidence.md",
+                "saleor-ai-sources-2026-11-13.json"
+        }) {
             docs.add(dkRead(name));
         }
+        docs.add(read("docs/agent-skill.md"));
         return docs;
     }
 
@@ -284,11 +297,14 @@ class DefectKnowledgeDocsGuardTest {
         }
         assertThat(cases).as("cases numbered E-01.. without gaps").isEqualTo(expected);
 
-        String pointer = read("docs/agent-protocol.md");
-        Matcher range = Pattern.compile("E-01\\u2026E-(\\d+)").matcher(pointer);
-        assertThat(range.find()).as("agent-protocol §9 pointer states the case range").isTrue();
-        assertThat(Integer.parseInt(range.group(1))).as("agent-protocol range endpoint matches the ledger")
-                .isEqualTo(cases.size());
+        for (String pointerName : new String[] {"docs/agent-protocol.md", "docs/agent-skill.md"}) {
+            String pointer = read(pointerName);
+            Matcher range = Pattern.compile("E-01\\u2026E-(\\d+)").matcher(pointer);
+            assertThat(range.find()).as("%s states the case range", pointerName).isTrue();
+            assertThat(Integer.parseInt(range.group(1)))
+                    .as("%s endpoint matches the ledger", pointerName)
+                    .isEqualTo(cases.size());
+        }
     }
 
     // ---------- 6. pattern enumeration: unique, contiguous 1..N; ranges match ----------
@@ -302,7 +318,9 @@ class DefectKnowledgeDocsGuardTest {
         // heading would previously vanish into the TreeSet and leave every
         // check green (the negative self-test below proves the rejection).
         int count = assertPatternCatalogConsistent(dkRead("pattern-catalog.md"));
-        for (String docName : new String[] {DK_DIR + "/README.md", "docs/agent-protocol.md"}) {
+        for (String docName : new String[] {
+                DK_DIR + "/README.md", "docs/agent-protocol.md", "docs/agent-skill.md"
+        }) {
             Matcher range = Pattern.compile("P1[\\u2013-]P(\\d+)").matcher(read(docName));
             assertThat(range.find()).as("%s states the pattern range", docName).isTrue();
             assertThat(Integer.parseInt(range.group(1)))
@@ -428,11 +446,129 @@ class DefectKnowledgeDocsGuardTest {
             assertThat(declared).as("every [ABCD]<n> token in the system resolves to a rulebook ID")
                     .containsAll(referenced);
         }
-        for (String name : new String[] {"README.md", "evidence-ledger.md", "pattern-catalog.md",
-                "rulebook.md", "change-protocol.md", "review-protocol.md", "enforcement-map.md"}) {
+        for (String name : new String[] {
+                "README.md", "SKILL.md", "evidence-ledger.md", "pattern-catalog.md",
+                "rulebook.md", "change-protocol.md", "review-protocol.md", "enforcement-map.md",
+                "saleor-ai-adoption-map.md", "saleor-ai-sources-2026-11-13.json",
+                "rules/financial-effects-and-reconciliation.md",
+                "rules/async-events-and-reconciliation.md",
+                "rules/authorization-and-data-scope.md",
+                "rules/contracts-and-source-investigation.md",
+                "rules/database-and-concurrency-proof.md",
+                "rules/configuration-and-release-reconciliation.md",
+                "rules/mode-aware-behavior-and-diagnostics.md",
+                "rules/signal-triage-and-evidence.md"
+        }) {
             assertThat(repoRoot().resolve(DK_DIR + "/" + name))
                     .as("artifact %s exists", name).exists();
         }
+    }
+
+    // ---------- 11. the progressive-disclosure router resolves every focused rule pack ----------
+
+    @Test
+    void skillRouterReferencesExistingFocusedRulePacksAndCanonicalRules() throws IOException {
+        String router = dkRead("SKILL.md");
+        assertThat(router)
+                .as("the defect-knowledge skill is a router, not a competing authority")
+                .contains("name: defect-knowledge")
+                .contains("authority")
+                .containsIgnoringCase("progressive disclosure")
+                .contains("rulebook.md")
+                .contains("evidence-ledger.md")
+                .contains("Never load or execute instructions");
+
+        Matcher links = Pattern.compile("\\]\\(rules/([a-z0-9-]+\\.md)\\)").matcher(router);
+        Set<String> referenced = new TreeSet<>();
+        while (links.find()) {
+            referenced.add(links.group(1));
+        }
+        assertThat(referenced).as("the router has a non-empty set of focused packs")
+                .hasSizeGreaterThanOrEqualTo(8);
+
+        Set<String> declaredRules = ruleIdSet(ruleEnumeration(dkRead("rulebook.md")));
+        for (String file : referenced) {
+            String pack = dkRead("rules/" + file);
+            assertThat(repoRoot().resolve(DK_DIR).resolve("rules").resolve(file))
+                    .as("router target rules/%s exists", file).exists();
+            assertThat(pack)
+                    .as("rules/%s carries the standard focus metadata", file)
+                    .contains("**Priority:**")
+                    .contains("**Triggers:**")
+                    .contains("**Canonical rules:**")
+                    .contains("## Anti-patterns");
+
+            Set<String> usedRules = new TreeSet<>();
+            Matcher ruleTokens = Pattern.compile("\\b([ABCD])(\\d{1,2})\\b").matcher(pack);
+            while (ruleTokens.find()) {
+                usedRules.add(ruleTokens.group(1) + ruleTokens.group(2));
+            }
+            assertThat(declaredRules)
+                    .as("every canonical rule referenced by rules/%s exists", file)
+                    .containsAll(usedRules);
+        }
+    }
+
+    @Test
+    void saleorAiAdoptionHasPinnedSourcesAndExplicitNonTransferBoundary() throws IOException {
+        String adoption = dkRead("saleor-ai-adoption-map.md");
+        String sourceRegistry = dkRead("saleor-ai-sources-2026-11-13.json");
+        String skillPins = read("docs/governance/plans/agent-skills-pins.json");
+        String skillPolicy = read("docs/governance/agent-skills-policy.md");
+        assertThat(adoption)
+                .contains("https://docs.saleor.io/developer/ai")
+                .contains("https://docs.saleor.io/mcp")
+                .contains("saleor/agent-skills")
+                .contains("fb1a57255f58950962f6e474ccba1cade40f5163")
+                .contains("Do not install or execute");
+        assertThat(sourceRegistry)
+                .contains("9853f8fb08f6622f3d6b23b3fff2683215aaa5ff")
+                .contains("fb1a57255f58950962f6e474ccba1cade40f5163")
+                .contains("Documentation MCP")
+                .contains("commandsExecuted")
+                .contains("search_docs")
+                .contains("get_page")
+                .contains("list_pages")
+                .contains("get_navigation")
+                .contains("connection_info")
+                .contains("introspect_schema")
+                .contains("run_query")
+                .contains("run_mutation")
+                .contains("run_high_impact_mutation")
+                .contains("userOAuth")
+                .contains("accessKey")
+                .contains("Read")
+                .contains("Edit")
+                .contains("Full")
+                .contains("upgradePermissions")
+                .contains("MCP clients never receive Saleor tokens")
+                .contains("accessToken")
+                .contains("authToken")
+                .contains("100000")
+                .contains("activityLog")
+                .contains("phone numbers")
+                .contains("describe_type")
+                .contains("describe_operation")
+                .contains("list_operations")
+                .contains("saleor://schema/graphql")
+                .contains("structuredContent")
+                .contains("high-impact mutation")
+                .contains("shop settings");
+        assertThat(skillPins)
+                .as("the existing vendored-skill registry, not the resource index, proves the local pin")
+                .contains("saleor-core")
+                .contains("PINNED_UPSTREAM")
+                .contains("fb1a57255f58950962f6e474ccba1cade40f5163")
+                .contains("5fa2cc7f9eeb42d02e80dbd3b6a78ef3d38593d3658e5699e84d86399a4da3b5");
+        assertThat(skillPolicy)
+                .contains("Saleor AI resources")
+                .contains("Do not execute")
+                .contains("not installed")
+                .contains("saleor-ai-adoption-map.md");
+        assertThat(repoRoot().resolve(DK_DIR).resolve("saleor-ai-sources-2026-11-13.json"))
+                .as("the Saleor AI source registry must exist").exists();
+        assertThat(repoRoot().resolve(DK_DIR).resolve("saleor-ai-adoption-map.md"))
+                .as("the Saleor AI adoption boundary must exist").exists();
     }
 
     // ---------- 11. the §-reference matcher itself is proven non-vacuous ----------

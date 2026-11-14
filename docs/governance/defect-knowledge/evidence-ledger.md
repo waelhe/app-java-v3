@@ -287,3 +287,234 @@
 - **Correction:** the thirteen files reformatted to standard layout (tokens preserved — no semantic change; wildcards kept for the automation to expand as designed) plus `SourceFormatGuardTest` (D9) rejecting packed package/import lines repo-wide.
 - **Verification evidence:** the guard runs in CI from this commit; the next Auto Apply run over a touched delivery/ledger/provider module produces an import-only patch the publication guard accepts.
 - **Recurrence risk:** medium — every carry pasting generated sources re-opens the surface; the guard converts the recurrence into a test failure on the carrying PR itself.
+
+## E-24 · Opposite lock order creates an order/delivery ABBA deadlock [VERIFIED]
+
+- **Observed defect (issue #749, 2026-10-28):** delivery paths acquire the order row and delivery-request rows in opposite orders. addLegForOrder takes the order row first; cancellation takes a delivery-request row first and then the order row. Two concurrent transactions can form an ABBA cycle; PostgreSQL aborts one transaction, surfacing a retryable user-visible failure.
+- **Violated invariant:** all paths touching the same shared rows must acquire locks in one global order.
+- **Root cause:** lock order was reasoned about per method rather than across the complete call graph.
+- **Required correction:** resolve the leg/order identity without a lock, acquire the order lock, re-read/revalidate the leg under the global order, then write. Add a real-PostgreSQL interleaving test.
+- **Status:** OPEN — issue #749 remains open in the measured snapshot; no repair PR was verified.
+- **Prevention:** A3/B2 + P11; sibling-path lock-order table and two-transaction integration proof.
+
+## E-25 · Outbound routing HTTP call holds a database transaction and order lock [VERIFIED]
+
+- **Observed defect (issue #749, 2026-10-28):** routes.route calls the OSRM provider after the order row's FOR UPDATE lock is taken, inside a class-level transactional method. The order lock and DB connection remain occupied for the network round-trip. A related fulfillment listener also performs route lookup while a transaction is open.
+- **Violated invariant:** slow external I/O must not extend a shared-row lock or database transaction unless an explicitly measured consistency requirement demands it.
+- **Root cause:** provider route computation and persistence were combined in one transactional operation.
+- **Required correction:** calculate the route before entering the persistence transaction; keep transaction scope to local reads/writes and validate the snapshot used.
+- **Status:** OPEN — issue #749 remains open in the measured snapshot.
+- **Prevention:** A3/B2 + P11; test that route lookup happens before transaction/lock acquisition.
+
+## E-26 · CodeRabbit review poll and review-coverage verifier disagree [VERIFIED]
+
+- **Observed defect (PR #826 follow-up, 2026-11-12):** the CodeRabbit review poll accepted an approval with an empty review body, while the exact processed-file coverage verifier rejected the same review because it contained no processed-file evidence. The composed gate could remain blocked after review threads had been resolved.
+- **Violated invariant:** a composed release gate must use one coherent acceptance predicate for the same review artifact.
+- **Root cause:** the poll and coverage verifier independently interpreted the review submission with different acceptance rules.
+- **Correction/status:** an operational workaround is recorded in #826; **structural repair remains OPEN**. Do not treat the workaround as closure.
+- **Prevention:** P13; share one parser/verdict contract and run the same negative corpus through both gate consumers.
+
+## E-27 · OpenRewrite uses an ambient Maven version instead of the pinned wrapper [VERIFIED]
+
+- **Observed defect (PR #813, merged 2026-11-12):** OpenRewrite catalog automation invoked system Maven 3.9.15 while the repository's Maven Enforcer required Maven 3.10 or later; this produced automation failure unrelated to source correctness.
+- **Violated invariant:** repository automation must execute through the repository's declared and pinned toolchain.
+- **Correction:** PR #813 changed the OpenRewrite workflow to use Maven Wrapper. Merge commit 445f421d67ad58bd533d42be9d5bbf6d268d9161 is the current main tip.
+- **Status:** FIXED ON MAIN; the commerce candidate must still be checked for the same workflow path before release.
+- **Prevention:** P14; use the wrapper and fail if automation silently falls back to ambient Maven.
+
+## E-28 · Purge version-advance proof required real PostgreSQL [VERIFIED]
+
+- **Observed defect (PRs #761/#762/#764, 2026-10-29):** a purge adapter's optimistic-version advancement had a test pin, but the concurrency claim required proving that a stale writer is rejected by the real database and that a repeated purge is idempotent. The first test pin did not provide that complete proof.
+- **Violated invariant:** a concurrency test must run the database behavior it claims to protect, against the real dialect/transaction semantics.
+- **Correction:** #764 added Testcontainers PostgreSQL evidence for version advancement, stale-write rejection and idempotent replay. The PR merged to main.
+- **Status:** FIXED ON MAIN as a test-evidence strengthening; the adapter family's further coverage is recorded separately in #817/#824.
+- **Prevention:** P12; test the stale concurrent write and replay path against PostgreSQL rather than relying only on SQL-shape assertions.
+
+## E-29 · OpenRewrite catalog job turns Dependabot PRs into manual-only failures [VERIFIED]
+
+- **Observed defect (PR #770, merged 2026-10-30):** the catalog audit ran on Dependabot dependency PRs matching its path filters, but the bot lacked the required secret-backed execution path. Those PRs became permanently red until manual administrator intervention.
+- **Violated invariant:** an automated workflow must explicitly handle every actor/event class that its trigger admits.
+- **Correction:** #770 added a Dependabot skip for the catalog audit; the PR merged to main.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P14; exercise Dependabot, human PR, push and manual-dispatch event classes in workflow tests.
+
+## E-30 · Vendored agent skills lacked reviewed provenance pins [VERIFIED]
+
+- **Observed defect (PR #771, merged 2026-10-30):** nine vendored skills were present without a reviewed pin/provenance registry, allowing agent behavior to change without the repository's ordinary reviewed dependency record.
+- **Violated invariant:** agent instructions and downloaded automation resources are versioned dependencies and must have reviewed provenance.
+- **Correction:** #771 introduced the pinned skills surface and adopted saleor-core under governance.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P14; skill updates move only through the reviewed pin-and-registry process.
+
+## E-31 · BCrypt reset limit measured in characters while implementation limit is bytes [VERIFIED]
+
+- **Observed defect (PR #758, merged 2026-10-29):** password-reset validation measured UTF-16 string length, while the BCrypt implementation rejects inputs beyond its 72-byte UTF-8 boundary. Multi-byte input could therefore pass validation and fail later in the encoder.
+- **Violated invariant:** validation must use the representation boundary enforced by the downstream cryptographic implementation.
+- **Correction:** #758 added a UTF-8 byte bound before consuming the one-time reset token; tests cover multi-byte input and token preservation on rejection.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P12/B7; test encoded byte lengths, not only Java character counts.
+
+## E-32 · JPEG marker scanner treated legal fill bytes as a new marker [VERIFIED]
+
+- **Observed defect (PR #758, merged 2026-10-29):** the JPEG scanner interpreted repeated 0xFF fill bytes permitted by ITU-T T.81 as a marker boundary, causing a false length jump and loss of the actual SOS marker.
+- **Violated invariant:** parsers must implement the input standard's legal framing forms, including padding/fill bytes, rather than treating a canonical sample as the only valid encoding.
+- **Correction:** #758 updated marker scanning and added regression coverage for legal fill bytes.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** P3/P12; include standards-permitted edge encodings in parser tests.
+
+
+## E-33 · Refund reversal must read the commission actually posted, not recompute a live rate [VERIFIED]
+
+- **Observed defect (PR #829 review, 2026-11-12/13):** legacy payment intents can have no frozen commission rate. Recomputing the reversal from the current configuration may credit a different amount from the original COMMISSION_DEBIT if the live rate changed.
+- **Violated invariant:** a reversal mirrors the original posted ledger entry byte-for-byte in amount/currency/provider; it does not re-price a completed transaction.
+- **Correction:** #829 reads the posted commission debit for the intent and reverses that amount. The merge commit is f92873c.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2/C2 + P4/P12; tests must cover legacy rows with no frozen rate and a configuration change after settlement.
+
+## E-34 · Asynchronous refund event can precede settlement commission posting [VERIFIED]
+
+- **Observed defect (PR #829 review):** both COMPLETED and REFUNDED are handled asynchronously. If REFUNDED runs first, a missing commission row can be treated as zero, allowing the refund event to complete without its commission reversal. The later settlement event then leaves an unreversed debit.
+- **Violated invariant:** absence of a posted commission is not evidence that the correct commission is zero; externally consequential event processing must remain replayable until prerequisites are durable.
+- **Correction:** #829 added a durable settlement-credit check and fails closed/retries when settlement has not posted; test covers a refund arriving first.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2 + P4/P12; test both event orders and prove retry/publication recovery.
+
+## E-35 · Zero commission must be distinguished from an unposted settlement [VERIFIED]
+
+- **Observed defect (PR #829 review):** a legitimate zero commission (zero configured rate or rounding to zero) creates no COMMISSION_DEBIT row. A guard that equates this absence with an unposted settlement can make the refund retry forever.
+- **Violated invariant:** zero-valued business outcomes and not-yet-committed outcomes are different states and require separate durable evidence.
+- **Correction:** #829 uses the posted payment-credit signal to distinguish a completed zero-commission settlement from one whose settlement event has not yet landed; the reversal is a no-op when the posted amount is zero.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2/C2 + P4; test configured zero, rounded zero, and not-yet-posted cases independently.
+
+## E-36 · Historical full refunds require reconciliation, including rolling-deploy overlap [VERIFIED]
+
+- **Observed defect (PR #829 review):** adding a new reversal-entry enum does not repair full refunds already completed before the runtime fix, because completed Modulith publications are not replayed. A backfill run while an old application instance is still processing refunds can also miss a refund committed after the migration's snapshot.
+- **Violated invariant:** data migrations and event-processing deployments must converge both historical rows and writes that overlap the rollout; a successful Flyway migration alone is not proof of financial convergence.
+- **Correction:** #829 added an idempotent historical backfill and a post-stop convergence sweep for stragglers after old instances are stopped.
+- **Status:** FIXED ON MAIN through #829. Operational execution of the migration/sweep must still be evidenced by deployment reconciliation; the code merge alone is not proof that production data was reconciled.
+- **Prevention:** B1/B2 + P1/P4/P8/P12; define pre-deploy, overlap and post-stop reconciliation phases for money migrations.
+
+## E-37 · One PostgreSQL UPSERT cannot update the same balance row twice in one statement [VERIFIED]
+
+- **Observed defect (PR #829 review):** a backfill that emits two commission reversals for the same provider/currency can return two source rows with the same conflict key. PostgreSQL ON CONFLICT DO UPDATE rejects a single command that would affect one target row more than once.
+- **Violated invariant:** a set-based upsert must reduce its source to at most one row per unique conflict key before updating the target.
+- **Correction:** #829 aggregates inserted reversal amounts by provider and currency before the provider_balances UPSERT; review evidence includes the two-deserving-refunds same-balance scenario.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2 + P12; every data-modifying CTE with ON CONFLICT must test repeated source keys for the same target row.
+
+## E-38 · Raw SQL balance reconciliation must advance the JPA optimistic version [VERIFIED]
+
+- **Observed defect (PR #829 review):** a raw UPSERT changed available_cents but not the ProviderBalance @Version column. A concurrent payment could save its stale entity with the unchanged version and overwrite the reconciliation amount; the reversal row would already exist, so a later replay would not repair the balance.
+- **Violated invariant:** every writer of a versioned row, including native SQL and migrations, participates in the same optimistic-lock protocol.
+- **Correction:** #829 increments version on conflict updates and initializes it for inserted balance rows; the runtime reconciliation query was updated consistently.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B2 + P4/P12; concurrency tests must interleave native reconciliation with an ORM writer.
+
+## E-39 · Net-ledger aggregation must classify a reversal credit as positive [VERIFIED]
+
+- **Observed defect (PR #829 review):** the net-by-currency query treated every entry except PAYMENT_CREDIT as a debit. A new COMMISSION_REVERSAL_CREDIT was therefore subtracted, returning a non-zero net after a correctly refunded payment.
+- **Violated invariant:** ledger read models must classify each entry type by its accounting sign, not by a single positive-type exception.
+- **Correction:** #829 updated the aggregate classification and its real query-level test; the merge is on main.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** C2 + P3/P12; every ledger enum addition triggers a search of all sums, balances, DTOs and export/read models.
+
+## E-40 · Ledger response documentation must classify reversal credits as positive [VERIFIED]
+
+- **Observed defect (PR #829 review):** the ledger response description grouped COMMISSION_REVERSAL_CREDIT with negative entries although the API returns it as a positive credit. A downstream statement consumer following the description would calculate a wrong balance.
+- **Violated invariant:** API descriptions and consumer-facing metadata must agree with the actual sign and semantics of the wire value.
+- **Correction:** #829 updated the response description and kept commission/refund debits negative.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** B4/C2 + P3/P6; contract review includes field meaning and arithmetic sign, not only type/name.
+
+## E-41 · Shared sequential mocks are not deterministic across asynchronous event consumers [VERIFIED]
+
+- **Observed defect (PR #829 review):** the integration test's PaymentIntentLookupPort mock used sequential answers. Delivery and ledger listeners both consumed the same mock, so the expected response depended on which event consumer called first.
+- **Violated invariant:** a test double must model the dependency by input/phase, not incidental invocation count when multiple consumers share it.
+- **Correction:** #829 changed fixture setup to phase-specific state and deterministic lookups.
+- **Status:** FIXED ON MAIN.
+- **Prevention:** A2/P12; multi-listener integration tests use state keyed by intent/event and assert independent consumer outcomes.
+
+## E-42 · Scheduled reconciliation must not scan every payment intent indefinitely [VERIFIED]
+
+- **Observed defect (PR #829 review):** a periodic commission-reversal reconciliation began from all payment_intents and computed multiple UUID hashes per row on each run, making work scale with the entire table rather than the outstanding reconciliation set.
+- **Violated invariant:** recurring repair jobs must bound their scan to eligible work and measure database cost as the source table grows.
+- **Correction:** #829 narrowed the reconciliation query to eligible intents and addressed the repeated-scan performance concern before merge.
+- **Status:** FIXED ON MAIN; production query cost still requires measured EXPLAIN/operational telemetry at realistic cardinality.
+- **Prevention:** B6/C2 + P1/P12; periodic database repair jobs require a bounded predicate and an explainable access path.
+
+## E-43 · GraphQL error builder must not receive a null message [VERIFIED]
+
+- **Observed defect (PR #819 review):** the shared problem-detail GraphQL resolver passed exception.getMessage() directly to GraphqlErrorBuilder.message. A null detail can cause the error resolver itself to fail, losing the canonical taxonomy.
+- **Violated invariant:** error translation must be total for every valid exception state; the error handler must not fail while handling an error.
+- **Correction/status:** a fallback message was requested and the review thread resolved on PR #819. The PR remains open in the measured snapshot; **not fixed on main yet**.
+- **Prevention:** B4/P3/P12; include null detail and malformed optional fields in exception-mapping tests.
+
+## E-44 · Validation field errors must be localized using the request locale [VERIFIED]
+
+- **Observed defect (PR #821 review):** VAL-001 fieldErrors[].message was constructed directly in English even when the request locale was Arabic.
+- **Violated invariant:** every user-facing part of a localized API error follows the resolved request locale.
+- **Correction/status:** #821 moved field-error rendering into message bundles and added Arabic/English assertions; its review thread is resolved, but the PR remains open.
+- **Prevention:** B4/P3; test the entire error payload under every supported locale, not only the top-level detail.
+
+## E-45 · Type-mismatch ProblemDetail must preserve rejected field/value/type [VERIFIED]
+
+- **Observed defect (PR #821 review):** the generic VAL-001 detail key rendered only "Validation failed" and discarded the field, rejected value and expected type from the detail field, even though fieldErrors carried part of the information.
+- **Violated invariant:** the canonical error contract preserves the diagnostic data promised to clients without exposing secrets.
+- **Correction/status:** #821 added a type-mismatch-specific detail message and tests against the real MessageSource; the review thread is resolved but the PR remains open.
+- **Prevention:** B4/P3; assert the rendered ProblemDetail and fieldErrors together using the actual message source.
+
+## E-46 · MessageFormat can turn fallback validation text into a runtime exception [VERIFIED]
+
+- **Observed defect (PR #821 review):** AbstractMessageSource applies MessageFormat when arguments are supplied. An unresolved fallback containing a rejected value such as a brace/format expression can be interpreted as a pattern and throw IllegalArgumentException, preventing the VAL-001 response.
+- **Violated invariant:** untrusted rejected input is data, never a message template; fallback rendering must be safe when a translation key is absent.
+- **Correction/status:** #821 changed the fallback lookup/rendering path and added coverage; review thread resolved but the PR remains open.
+- **Prevention:** B4/B3 + P3/P12; test missing translation keys with adversarial braces, apostrophes and format tokens.
+
+## E-47 · Spring Boot can retain an unresolved placeholder as literal text [VERIFIED]
+
+- **Observed defect (PR #822 review):** removing a default from the mail base URL did not guarantee startup failure under the pinned Spring Boot 4.1.2 placeholder resolver; an unresolved placeholder could remain as a literal String and produce invalid customer-facing links.
+- **Violated invariant:** deployable customer-facing origins are validated as real absolute URLs at startup; unresolved template syntax must never be served as a link.
+- **Correction/status:** #822 added explicit properties validation and real binding tests. Review thread resolved; PR remains open in the measured snapshot.
+- **Prevention:** B6/P1/P12; test actual Spring binding/startup failure, not only YAML text.
+
+## E-48 · Mail origin with query or fragment produces malformed recovery links [VERIFIED]
+
+- **Observed defect (PR #822 review):** mailBaseUrl accepted query/fragment components (including empty query/fragment delimiters), while reset/verification paths append URI paths after the origin.
+- **Violated invariant:** the configured application origin is a path-safe absolute base URI, without query or fragment.
+- **Correction/status:** #822 added constructor rejection for query and fragment; review thread resolved, with explicit empty-delimiter tests requested in the follow-up. PR remains open.
+- **Prevention:** B6/P1/P3; URI validation tests include empty query/fragment delimiters and the actual URL composition.
+
+## E-49 · Repair-plan summary and counts drifted from the individual gate records [VERIFIED]
+
+- **Observed defect (PR #823 review):** the fix-plan summary said owner-gate items were still awaiting documentation while lower sections already documented them; it also retained an old count (17) although the current set was 15 and included E1/E4.
+- **Violated invariant:** derived document summaries and counts must match their detailed authoritative rows.
+- **Correction/status:** PR #823 updated the summary and counts; its review thread is resolved, but the PR remains open.
+- **Prevention:** A6/P6; extend guards to every load-bearing count/summary or date it with a command that derives the value.
+
+## E-50 · Review-intake issue creation raced between event delivery and scheduled sweep [VERIFIED]
+
+- **Observed defect (PR #834 adversarial implementation review, 2026-11-13):** the intake workflow grouped concurrency by `github.event.pull_request.number`, `inputs.pr_number`, or `github.run_id`. A `issue_comment` event carries the PR number under `github.event.issue.number`, so each comment run received a unique group. It could race the scheduled all-open-PR sweep: both executions could observe no intake issue and create two issues for one source PR.
+- **Violated invariant:** there is exactly one active writer for the intake issue registry; every event and recovery sweep for a source PR must converge to the same issue identity.
+- **Root cause:** concurrency identity was derived from only one webhook event shape and used the run ID as a fallback, so logically identical source PR operations did not serialize.
+- **Correction:** PR #834 uses a repository-wide single-writer concurrency group with `cancel-in-progress: false`; the collector fetches a complete current snapshot, and the scheduled sweep recovers any pending event replaced by GitHub's concurrency queue. A unit test pins the single-writer workflow setting and issue-comment PR-number extraction.
+- **Status:** FIX IMPLEMENTED ON PR #834; CI verification pending. Do not mark fixed-main until the regression test passes on the final head and the change is merged.
+- **Prevention:** B2 + P4/P12; webhook and scheduled recovery paths share a single-writer key, and tests must model both event payloads.
+
+## E-51 · D11 accepted a declared workflow URL without proving the workflow run existed or passed [VERIFIED]
+
+- **Observed defect (PR #834 adversarial implementation review, 2026-11-13):** the first D11 validator accepted `status: passed` plus any URL beginning `https://github.com/`. It did not fetch the Actions run, check its actual conclusion, verify its repository, or bind its `head_sha` to the current PR head. A fabricated URL or a failed/stale run could therefore be recorded as fixed.
+- **Violated invariant:** a fixed disposition is accepted only when GitHub itself confirms that the linked workflow run completed successfully on the exact PR head and in this repository.
+- **Root cause:** the receipt's self-reported status and URL were treated as evidence rather than as identifiers to resolve against the authoritative GitHub Actions API.
+- **Correction:** PR #834 now parses only the canonical repository Actions-run URL, fetches that run through the authenticated GitHub API, and verifies `status=completed`, `conclusion=success`, and the exact current PR `head_sha`; the gate has read-only Actions permission. Unit tests cover malformed/cross-repository links, in-progress/failed runs, wrong heads and the success payload.
+- **Status:** FIX IMPLEMENTED ON PR #834; CI verification pending. Do not mark fixed-main until the validator tests pass and this commit is merged.
+- **Prevention:** D11 + P12; never trust a status label or URL in a receipt without resolving the authoritative check/run object and binding it to the exact head.
+
+## E-52 · Human-authored GitHub markers could control or hijack the review-intake collector [VERIFIED]
+
+- **Observed defect (PR #834 adversarial implementation review, 2026-11-13):** `existing_item_ids` accepted `defect-intake-item` markers from every issue comment, and summary selection accepted `defect-intake-sync-summary` from every author. A normal user could therefore post a marker lookalike that suppresses ingestion of a source revision or causes the collector to edit that human comment as its managed summary. The intake issue index also trusted a body marker without proving that the issue was created by the collector.
+- **Violated invariant:** only an automation-owned GitHub object may control automation state or be modified by the collector; human-authored content is evidence, never collector control state.
+- **Root cause:** marker syntax was treated as authority, with no ownership/actor check on the containing issue or comment.
+- **Correction:** PR #834 now accepts control markers only from `github-actions[bot]`; the issue index validates bot authorship, reserved title PR number, body marker and exact source-PR URL; missing or conflicting metadata on a bot-owned intake record fails closed. Tests cover spoofed user comments, fake intake issues and tampered bot records.
+- **Status:** FIX IMPLEMENTED ON PR #834; final CI verification pending. Do not mark fixed-main until tests pass on the final head and the change is merged.
+- **Prevention:** D12 + P15; identify the trusted owner of an automation marker before using it for deduplication, mutation or state transitions.

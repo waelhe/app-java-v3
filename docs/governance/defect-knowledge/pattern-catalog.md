@@ -6,7 +6,7 @@
 
 **Invariant protected:** the verification environment must exercise the exact dimension the change touches *as the deployment target experiences it*.
 
-**Demonstrating cases:** E-01 (fresh-DB CI blind to applied-migration checksum drift; production 502), E-02 (env var present in CI, absent on Railway → boot collapse), E-03 (SMTP unreachable only from the Railway node → aggregate DOWN), E-16 (provider quota walls invisible to build).
+**Demonstrating cases:** E-01 (fresh-DB CI blind to applied-migration checksum drift; production 502), E-02 (env var present in CI, absent on Railway → boot collapse), E-03 (SMTP unreachable only from the Railway node → aggregate DOWN), E-16 (provider quota walls invisible to build), E-47 (unresolved Spring placeholder retained as a literal), and E-48 (invalid mail origin URI accepted).
 
 **Same cause or similar symptoms?** One cause in four costumes: the check that gates the merge runs in an environment structurally different from production in precisely the failed dimension (database state, environment variables, network reachability, provider capacity). The reverts and outages are symptoms; the environment delta is the cause.
 
@@ -34,7 +34,7 @@
 
 **Invariant protected:** contract fidelity is measured at the shape/semantics level (argument containers, nullability, response wrapper), not at name level.
 
-**Demonstrating cases:** E-11 (Saleor roots with correct names but arguments outside the input object / wrong nullability), E-05 (OpenAPI-diff "compatible" while the wrapper change broke the frontend inbox), E-19 (cursor shape evolution needing a dedicated gate).
+**Demonstrating cases:** E-11 (Saleor roots with correct names but arguments outside the input object / wrong nullability), E-05 (OpenAPI-diff "compatible" while the wrapper change broke the frontend inbox), E-19 (cursor shape evolution needing a dedicated gate), E-39/E-40 (ledger reversal sign in net aggregation and response metadata), and E-43–E-46 (GraphQL/REST error mapping, locale and fallback rendering).
 
 **Same cause?** Yes: verification scope narrower than consumer-dependence scope. Names/diff-level pass; shapes fail downstream.
 
@@ -48,7 +48,7 @@
 
 **Invariant protected:** external effects and idempotency records survive partial failure; identity of an operation is stable regardless of state at retry time.
 
-**Demonstrating cases:** E-04 (retryable boundary joined `REQUIRED` carrier → rollback-only poisoning, dedup-without-settlement), E-08 (refund key derived from dispute state → double-payment window after rollback+webhook), E-07 (AFTER_COMMIT deferral applied globally then reverted — the inverse lesson: the pattern is conditional, not universal), E-06-adjacent (listener transaction semantics).
+**Demonstrating cases:** E-04 (retryable boundary joined `REQUIRED` carrier → rollback-only poisoning, dedup-without-settlement), E-08 (refund key derived from dispute state → double-payment window after rollback+webhook), E-07 (AFTER_COMMIT deferral applied globally then reverted — the inverse lesson: the pattern is conditional, not universal), E-06-adjacent (listener transaction semantics), and E-33–E-38 (posted-commission reversal, asynchronous event order, zero commission, historical backfill, unique-key aggregation and optimistic-version preservation), and E-50 (concurrent intake event/sweep issue creation).
 
 **Same cause?** One family, three mechanisms: (a) retryable work inside carrier transactions, (b) idempotency identity derived from mutable state, (c) publication timing chosen without read-path analysis. All are *transactional-boundary design* failures.
 
@@ -76,7 +76,7 @@
 
 **Invariant protected:** every load-bearing number in machine- or owner-facing documents is derived (guarded) or explicitly dated with a re-derivation command.
 
-**Demonstrating cases:** E-12 (guard-caught 183→184; PR-body 107/294/57 vs measured 163/238/57; campaign 98≠90, 57≠56), E-20 (false claim + dead config — narrative-code divergence), E-21 (guard message drifting from guard behavior), regression-list item "stale duplicate numbers surviving beside the guarded phrase".
+**Demonstrating cases:** E-12 (guard-caught 183→184; PR-body 107/294/57 vs measured 163/238/57; campaign 98≠90, 57≠56), E-20 (false claim + dead config — narrative-code divergence), E-21 (guard message drifting from guard behavior), E-49 (repair-plan summary/count drift), regression-list item "stale duplicate numbers surviving beside the guarded phrase".
 
 **Same cause?** Yes: truth maintained by hands instead of derivation. Different documents, one mechanism.
 
@@ -90,7 +90,7 @@
 
 **Invariant protected:** pushed state is atomic (compiles + passes its own tests); reported status binds to the exact pushed SHA.
 
-**Demonstrating cases:** E-10 (tests without implementation after session interruption — module-wide `testCompile` failure; plus a test that never ran), the standing owner protocol "execute on GitHub immediately" (existing precisely because sessions drop), E-20 (status claimed beyond evidence).
+**Demonstrating cases:** E-10 (tests without implementation after session interruption — module-wide `testCompile` failure; plus a test that never ran), E-41 (shared asynchronous event-test mock depended on call order), E-42 (scheduled reconciliation scanned the full payment-intent table), the standing owner protocol "execute on GitHub immediately" (existing precisely because sessions drop), E-20 (status claimed beyond evidence).
 
 **Same cause?** Yes: agent sessions are interruptible by nature; un-atomic pushes or unbound claims turn interruption into defect.
 
@@ -140,6 +140,81 @@
 **Systematic vs local prevention:** systematic from E-23's fix — `SourceFormatGuardTest` (D9) rejects packed package/import lines repo-wide at test time; the first twelve files were reformatted in the same commit and the thirteenth (`DeliveryModule.java`, caught by the guard's first CI run) in the follow-up.
 
 **Strongest prevention:** D9 plus the carry rule implicit in it: sources land in standard layout (package line alone, one import per line, declaration on its own lines) — the guard makes the convention mechanical, not aspirational.
+
+---
+
+
+## P11 · Lock-order inversion and external work inside a transaction
+
+**Invariant protected:** a transaction acquires shared locks in one global order, and database locks/connections are not held across slow network or provider calls.
+
+**Demonstrating cases:** E-24 (order/delivery cancellation and leg-attachment acquire the same rows in opposite orders, creating an ABBA deadlock); E-25 (OSRM route lookup runs while the order row is locked and a database transaction is open).
+
+**Same cause or different?** Related but distinct mechanisms within one transaction-scope family: lock-order inversion creates a deadlock cycle; outbound I/O inside a transaction extends lock and connection lifetime and amplifies contention. They require different corrective controls and therefore retain separate cases.
+
+**Frequency/severity:** two confirmed mechanisms in the delivery/order boundary; severity high for availability and latency under concurrent split/cancel activity.
+
+**Prevention status:** registered, not yet closed in the measured issue #749. The required control is one documented lock order plus a pre-transaction route lookup and real-PostgreSQL concurrency tests.
+
+**Strongest prevention:** B2 + A3: publish a lock-order table for every shared row and prove interleaved operations on PostgreSQL; assert the route port is called before transaction/lock acquisition.
+
+## P12 · Test evidence does not exercise the claimed invariant
+
+**Invariant protected:** a green test must execute the failure trigger and observable state transition described by its name and acceptance claim.
+
+**Demonstrating cases:** E-28 (purge version advancement was present, but the original test did not prove stale-write rejection on PostgreSQL; #764 added the real database proof); E-01/E-02/E-03 (CI's clean or differently configured environment did not exercise the deployed failure dimension); E-10 (test source existed but was not executed by the required pipeline), E-41/E-42 (test fixture determinism and recurring-query bounds).
+
+**Same cause?** Yes: the test's assertion surface or execution environment is weaker than the claim it is used to justify. It can pass while the invariant is still false.
+
+**Frequency/severity:** recurring across integration, concurrency, configuration and CI tests; severity follows the protected invariant and can be critical for money/security.
+
+**Prevention status:** partially systematic: exact test execution and CI sharding exist, but each new acceptance proof still needs a scenario-level adequacy check.
+
+**Strongest prevention:** before fixing, write the test against the unfixed behavior and prove it fails for the intended reason; use real PostgreSQL for database concurrency/constraint claims and verify the test is included in CI.
+
+## P13 · Review-gate protocol disagreement
+
+**Invariant protected:** every gate in a release path consumes the same definition of a valid review artifact and produces one coherent verdict.
+
+**Demonstrating cases:** E-26 (the CodeRabbit review poll accepted an empty-body approval while the exact processed-file coverage verifier rejected that same review; the PR could become stuck after review threads had been resolved).
+
+**Same cause?** Yes: two independently implemented gate steps disagree about the admissible evidence, so satisfying one gate cannot satisfy the composed release gate.
+
+**Frequency/severity:** one newly confirmed governance defect in the November 12 follow-up; severity high because it blocks or misreports release readiness.
+
+**Prevention status:** a documented workaround exists for the affected full review, but a structural unification is still open. This must not be called fixed until both gate stages share and test the same acceptance predicate.
+
+**Strongest prevention:** shared schema/parser or a single authoritative verdict artifact; contract tests must feed empty-body, stale-head, incomplete-file-list and duplicate-review examples through every consumer.
+
+## P14 · Automation toolchain drift
+
+**Invariant protected:** repository automation runs with the exact toolchain declared and pinned by the repository, not an ambient runner installation.
+
+**Demonstrating cases:** E-27 (OpenRewrite invoked system Maven 3.9.15 while the repository's Maven Enforcer required >=3.10; PR #813 moved the workflow to the Maven Wrapper); E-29 (the catalog job ran against Dependabot changes and forced a manual-only recovery path); E-30 (vendored skills existed without a reviewed pin/provenance registry).
+
+**Same cause or different?** The common failure is hidden automation inputs: executable version, event class or downloaded agent resource is not governed by the repository's declared source of truth.
+
+**Frequency/severity:** three verified automation/governance cases across CI and agent supply chain; severity moderate-high due to non-reproducible or unreviewable automation.
+
+**Prevention status:** partly systematic: #813 fixed the Maven wrapper path on main, #770 excluded Dependabot from the incompatible catalog audit, and #771 added skill pins. The gate itself must verify exact tool versions and input provenance.
+
+**Strongest prevention:** B6 plus D11: pin toolchain inputs, test automation branches including Dependabot and workflow-dispatch paths, and record the source SHA/version for downloaded tools and skills.
+
+---
+
+## P15 · Automation marker spoofing — content confused with control state
+
+**Invariant protected:** an automation workflow acts only on control records owned by its own trusted identity; user-authored text that resembles a marker cannot change ingestion, deduplication, or managed-comment selection.
+
+**Demonstrating case:** E-52 (a human-authored issue comment could copy an intake-item marker and suppress a source revision, or copy the synchronization marker and be selected for overwrite; a user-created issue could also claim the per-PR intake marker).
+
+**Same cause?** Yes: the collector treated marker syntax as authority without verifying the author/owner of the containing GitHub object.
+
+**Frequency/severity:** one confirmed governance defect in the new intake mechanism; severity high because review evidence could be silently dropped or human triage text overwritten.
+
+**Prevention status:** correction implemented in PR #834: only `github-actions[bot]` comments count as managed marker carriers; intake issues must be bot-authored and their marker, reserved title PR number and exact source PR link must agree. Missing/conflicting bot-owned metadata fails closed.
+
+**Strongest prevention:** D12 ownership validation plus adversarial tests for user-authored lookalike markers, spoofed intake issues, bot marker tampering and duplicate managed records. Treat marker strings as untrusted data until object identity and ownership are proven.
 
 ---
 

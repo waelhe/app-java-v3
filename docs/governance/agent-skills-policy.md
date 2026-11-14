@@ -108,3 +108,40 @@ byte-identical to `neondatabase/agent-skills@51c7d594`, 34 files).
   Errata are warnings for consumers, recorded here because vendored
   files stay byte-for-byte: fixing them belongs upstream, and a fresh
   upstream snapshot re-vendors through the reviewed-PR procedure.
+
+## 6. Saleor AI resources — discover, adapt, do not bulk-install
+
+The authoritative adoption record for the 2026-11-13 review is
+`docs/governance/defect-knowledge/saleor-ai-adoption-map.md`, with
+source commits, resource URLs, skill versions/digests and adaptation
+decisions in `saleor-ai-sources-2026-11-13.json`.
+
+- Start discovery at the official AI catalog / `llms.txt`; use the
+  Saleor Documentation MCP (`https://docs.saleor.io/mcp`) only for
+  read-only documentation search/retrieval. It does not connect to a
+  Saleor instance or execute GraphQL.
+- Evaluate the five published skills individually. `saleor-core`
+  remains the only vendored Saleor skill and is still pinned to
+  `saleor/agent-skills@fb1a57255f58950962f6e474ccba1cade40f5163`.
+  `saleor-app`, `saleor-storefront`, `saleor-configurator` and
+  `storefront-builder` are not installed: only their transferable
+  methods are expressed in repository-owned defect-knowledge rule packs.
+- Do not adopt Saleor App SDK/AppBridge/APL, App manifests, permission
+  names, Configurator CLI/YAML, storefront scaffolding, Saleor stock
+  fields, webhook timing constants, or other protocol-specific details
+  as app-java-v3 implementation rules.
+- A Saleor-specific contract fact remains governed by
+  `saleor-source-pins.json`, D-SALEOR-FULL-001 and
+  `saleor-contract-divergences.csv`. General engineering methods are
+  adapted only after being expressed as a local invariant and supported
+  by local cases/tests.
+- Do not execute `npx skills add/update` on this repository. The
+  Skills CLI's hash/lock/drift principles are reference only; existing
+  reviewed pin registry and the exact-byte Java guard remain the
+  enforcement mechanism.
+
+The internal `docs/governance/defect-knowledge/SKILL.md` is a
+repository-owned task router, not an external vendored skill. Its
+focused rule packs are documentation under the canonical defect-
+knowledge directory, so they do not alter the `.agents/skills`
+inventory or the external pin registry.
