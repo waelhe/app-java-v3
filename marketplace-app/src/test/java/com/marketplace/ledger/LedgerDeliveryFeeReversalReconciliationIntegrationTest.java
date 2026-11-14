@@ -146,10 +146,12 @@ class LedgerDeliveryFeeReversalReconciliationIntegrationTest {
 
         // Case 3 — the not-yet-refunded settlement: the fee debit exists but
         // no REFUND_DEBIT — the eligibility cut (status REFUNDED + the
-        // refund's own row) keeps the live settlement untouched.
+        // refund's own row) keeps the live settlement untouched. The legal
+        // settled status on payment_intents is SUCCEEDED (V27's closed set;
+        // COMPLETED is the payments table's own status, not the intents').
         UUID liveProvider = UUID.randomUUID();
         UUID liveIntent = UUID.randomUUID();
-        seedProviderWorld(liveProvider, consumerId, liveIntent, "COMPLETED");
+        seedProviderWorld(liveProvider, consumerId, liveIntent, "SUCCEEDED");
         insertEntry(liveProvider, liveIntent, "PAYMENT_CREDIT", PRICE_CENTS);
         insertEntry(liveProvider, feeSource(liveIntent), "DELIVERY_FEE_DEBIT", FEE_CENTS);
         seedBalance(liveProvider, PRICE_CENTS - FEE_CENTS);
