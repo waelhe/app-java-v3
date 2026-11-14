@@ -137,6 +137,49 @@ public class GlobalExceptionHandler {
         return leaf != null ? leaf : violation.getPropertyPath().toString();
     }
 
+    /**
+     * D4 (adversarial review 2026-11-10): a request parameter that fails its
+     * declared type binding — an unknown enum vocabulary value on a raw
+     * enum-bound {@code @RequestParam} (search's purpose/propertyType), or a
+     * non-numeric value on a numeric parameter — is a CLIENT-contract
+     * violation: the house VAL-001 400 with the rejected parameter named in
+     * the violations list, never the masked INT-001 500 the
+     * uncaught-exception net answered before this handler (the gap
+     * DiscoveryController's own comment documents — closed tree-wide here,
+     * both legs of the type gate now answer the one error pipeline).
+     *
+     * <p>i18n leg (CodeRabbit full-review round 2026-11-11): the detail —
+     * and the violations-list message — resolve through the bound
+     * {@link MessageSource} at the request locale via the dedicated
+     * {@code error.VAL-001.type-mismatch-detail} bundle key (the sibling
+     * of the existing {@code constraint-violation-detail} sub-key) with
+     * the rejected parameter, value, and declared type inserted as
+     * arguments, so the Arabic request sees the Arabic sentence while the
+     * detail keeps the rejected-value facts — instead of the generic
+     * {@code error.VAL-001.detail} "Validation failed" swallowing them.
+     * Without a bound source the exact English literal below is the floor,
+     * byte-identical to the previous behavior.</p>
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+            HttpServletRequest request) {
+        String expected = ex.getRequiredType() != null
+                ? ex.getRequiredType().getSimpleName() : "the declared type";
+        String englishFallback = "Invalid value '" + ex.getValue() + "' for parameter '" + ex.getName()
+                + "' — expected " + expected;
+        String detail = ProblemDetailRendering.resolve(messageSource,
+                ProblemDetailRendering.KEY_PREFIX + ApiErrorTaxonomy.VALIDATION.errorCode()
+                        + ".type-mismatch-detail",
+                englishFallback, ex.getName(), String.valueOf(ex.getValue()), expected);
+        // A null detail key passes the already-localized detail through — see
+        // ProblemDetailRendering.problem: one resolve, one text, both surfaces.
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, detail, request, null, null);
+        pd.setProperty("fieldErrors",
+                List.of(new ApiErrorPayload.FieldError(ex.getName(), detail)));
+        return pd;
+    }
+
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
         return problem(ApiErrorTaxonomy.CONFLICT, "Resource was modified by another transaction. Please retry.",

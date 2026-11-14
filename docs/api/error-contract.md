@@ -120,6 +120,28 @@ Example:
   side and the 405 automatic side).
 
 
+### Registered divergence — the framework-gate 400s (F-821-1, pre-existing)
+
+The VAL-001 tree-shaped contract covers the failure classes the house advice
+owns — the type mismatch on path/query variables
+(`MethodArgumentTypeMismatchException`) included since this PR. Three
+framework-rejected 400 classes still answer Boot's own automatic bare body
+(no `errorCode`, no `fieldErrors`), measured on main before this PR and
+unchanged by it:
+
+- `HttpMessageNotReadableException` (unparseable or enum-mismatched request
+  body),
+- `MissingPathVariableException`,
+- `HandlerMethodValidationException`.
+
+The same client mistake therefore answers two different 400 bodies depending
+on the rejection layer (the advice-owned tree versus the framework's bare
+problem body). **Registered, not fixed here**: this PR's declared scope is the
+type-mismatch path; closing the remaining three framework gates is a separate
+follow-up batch with its own contract tests — the disposition the 2026-11-14
+adversarial behavioral review recorded (F-821-1: explicitly out of this PR's
+merge conditions).
+
 ## REST (RFC 7807) vs GraphQL error envelope
 
 Marketplace intentionally uses **two different error envelopes** depending on protocol:
