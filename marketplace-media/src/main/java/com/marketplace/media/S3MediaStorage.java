@@ -10,6 +10,8 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -68,6 +70,14 @@ final class S3MediaStorage implements AutoCloseable {
     private final Duration presignTtl;
     private final SdkHttpClient httpClient;
     private final CircuitBreaker circuitBreaker;
+
+    /**
+     * F-833-1: the AWS S3 {@code DeleteObjects} service documentation's own
+     * per-request batch ceiling — "up to 1,000 keys per call" — the hard
+     * bound the pre-fix single request exceeded for subjects holding more
+     * than a thousand media objects (originals + thumbnails).
+     */
+    private static final int DELETE_OBJECTS_MAX_KEYS_PER_REQUEST = 1_000;
 
     /**
      * Production constructor — builds the presigner, the client and its JDK-based
@@ -208,32 +218,73 @@ final class S3MediaStorage implements AutoCloseable {
 
     /**
      * G3 (adversarial review 2026-11-10, owner-gate batch 6a — the erasure
-     * flow's storage leg): batch best-effort removal of KNOWN keys — the
+     * flow's storage leg) + F-833-1 (the 2026-11-14 adversarial behavioral
+     * review, P2): batch best-effort removal of KNOWN keys — the
      * account-erasure flow's media adapter holds the subject's exact
      * object keys (originals + thumbnails), so the official documented
      * batch API is the right channel: AWS S3 {@code DeleteObjects}
-     * (the multi-object delete — up to 1,000 keys per call, the service
-     * documentation's own batch shape) instead of one round trip per
-     * object. Same best-effort contract as {@link #deleteObject}:
+     * (the multi-object delete — <b>up to 1,000 keys per call</b>, the
+     * service documentation's own batch shape) instead of one round trip
+     * per object. A subject holding MORE than 1,000 keys is split into
+     * consecutive ≤1,000-key batches — the pre-fix single request
+     * exceeded the service's documented ceiling and was rejected
+     * WHOLE, so the tier-2 destruction never happened while the purge
+     * logged completion (the review's measured finding). Duplicate keys
+     * are deduped first (the service rejects a request holding the same
+     * key twice).
+     *
+     * <p>Best-effort per batch (the {@link #deleteObject} contract's own
+     * discipline): a batch's wire failure never aborts the remaining
+     * batches — every batch is attempted, and the FIRST failure is
+     * re-thrown once the loop ends so the caller's log line (the tier-2
+     * gap signal) still fires; the successfully deleted batches
+     * stand, and a re-run converges idempotently. A batch whose HTTP
+     * call succeeded but whose response carries per-key
+     * {@code errors()} entries (the service's own partial-failure
+     * surface) is surfaced the same way: the entry count and sample
+     * ride the thrown message, the successful keys stand.</p>
+     *
+     * <p>Same best-effort contract as {@link #deleteObject}:
      * storage-side failure is logged by the caller, never fatal — bucket
      * lifecycle rules own orphans. An empty/null input is a no-op (the
-     * subject held no media — the honest zero, never a wire call).
+     * subject held no media — the honest zero, never a wire call).</p>
      */
     void deleteObjects(java.util.Collection<String> objectKeys) {
         if (objectKeys == null || objectKeys.isEmpty()) {
             return;
         }
-        java.util.List<software.amazon.awssdk.services.s3.model.ObjectIdentifier> identifiers =
-                objectKeys.stream()
-                        .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
-                                .key(key)
-                                .build())
-                        .toList();
-        circuitBreaker.executeRunnable(() -> client.deleteObjects(
-                software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.builder()
-                        .bucket(bucket)
-                        .delete(d -> d.objects(identifiers))
-                        .build()));
+        java.util.List<String> distinctKeys = objectKeys.stream().distinct().toList();
+        RuntimeException firstFailure = null;
+        for (int start = 0; start < distinctKeys.size(); start += DELETE_OBJECTS_MAX_KEYS_PER_REQUEST) {
+            int end = Math.min(start + DELETE_OBJECTS_MAX_KEYS_PER_REQUEST, distinctKeys.size());
+            java.util.List<String> batchKeys = distinctKeys.subList(start, end);
+            java.util.List<software.amazon.awssdk.services.s3.model.ObjectIdentifier> identifiers =
+                    batchKeys.stream()
+                            .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
+                                    .key(key)
+                                    .build())
+                            .toList();
+            try {
+                DeleteObjectsResponse response = circuitBreaker.executeSupplier(() -> client.deleteObjects(
+                        DeleteObjectsRequest.builder()
+                                .bucket(bucket)
+                                .delete(d -> d.objects(identifiers))
+                                .build()));
+                if (response != null && !response.errors().isEmpty()) {
+                    throw new IllegalStateException("S3 reported " + response.errors().size()
+                            + " per-key delete failures (first: key='" + response.errors().get(0).key()
+                            + "', code='" + response.errors().get(0).code()
+                            + "', message='" + response.errors().get(0).message() + "')");
+                }
+            } catch (RuntimeException ex) {
+                if (firstFailure == null) {
+                    firstFailure = ex;
+                }
+            }
+        }
+        if (firstFailure != null) {
+            throw firstFailure;
+        }
     }
 
     /**
