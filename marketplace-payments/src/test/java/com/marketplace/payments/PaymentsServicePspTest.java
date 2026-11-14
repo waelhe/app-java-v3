@@ -388,6 +388,15 @@ class PaymentsServicePspTest {
         when(pspChannel.createRemoteRefund(eq("pi_remote_r3"), eq(1500L),
                 eq("marketplace-refund-" + payment.getId() + "-return-" + returnId + "-1500")))
                 .thenReturn(new PspChannel.RemoteRefund("re_r3", "succeeded", 2500L));
+        // CodeRabbit round 1 on #828: the RETURN scope now rides the journal
+        // (the executed-proof the re-completion reads BEFORE any cap) — the
+        // first submission freezes its record and the provider's answer is
+        // marked EXECUTED, so the mock carries the save/find round-trip the
+        // dispute-scoped tests already stub.
+        when(refundOperationJournal.findSubmitted(anyString())).thenReturn(null);
+        when(refundOperationJournal.ensureSubmitted(anyString(), any(), any(), anyLong()))
+                .thenAnswer(inv -> new PaymentRefundOperation(
+                        inv.getArgument(0), inv.getArgument(1), inv.getArgument(2), inv.getArgument(3)));
 
         Payment result = service(boundChannel)
                 .refundPayment(payment.getId(), 1500L,
