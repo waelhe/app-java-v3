@@ -321,3 +321,22 @@ cmd = "java -jar marketplace-app/target/*.jar --server.port=$PORT"
 3. **ثالثاً**: مناقشة تعديلات application-prod.yml كل واحد على حدة
 4. **رابعاً**: إنشاء railway.toml بشكل صحيح من البداية
 5. **خامساً**: نشر مرة واحدة — بناء صحيح لا 20 محاولة
+
+---
+
+## 7. المتطلب التشغيلي قبل أول نشر بعد دمج W2 (متغير رابط البريد)
+
+**المرجع:** PR #822 (`agent/fix-w2-identity-mail-base-url-prod-20261110`) — حاجز الفشل المبكر
+(D6: مفاتيح prod بلا قيم افتراضية) على أصل رابط البريل `marketplace.identity.mail-base-url`.
+
+- **المتغير:** `MARKETPLACE_IDENTITY_MAIL_BASE_URL` — مُعلن في `.railway/railway.ts` بقاعدة
+  `preserve()` (سطر 87 على فرع #822)، ويرتبط في `application-prod.yml` و`application-staging.yml`
+  بلا قيمة افتراضية: `${MARKETPLACE_IDENTITY_MAIL_BASE_URL}`.
+- **الشرط:** تعيين قيمة صالحة (أصل https كامل بلا userinfo/مسار/query — الحاجز يرفض غيره وينهار
+  الإقلاع عمداً) **على خدمتي Railway (الإنتاج والتجريبية) قبل أول نشر بعد الدمج** — الغلاف
+  `IdentityMailProperties` يفشل الإقلاع حتى التعيين (قاعدة INV-2: الإعدادات صريحة كاملة).
+- **التحقق:** `IdentityMailBaseUrlProdConfigTest` يثبت رفض null/فارغ/placeholder غير محلول/
+  userinfo/مسار/query في كل profile قابل للنشر؛ الفحص التشغيلي بعد التعيين: إقلاع الخدمة
+  ونجاح فحص الصحة.
+- **القيمة المرجعية للإنتاج:** أصل الواجهة العامة كما يحلّها المتصفح (مثال الشكل:
+  `https://<نطاق-الإنتاج>`) — يحدد المالك القيمة الفعلية لكل بيئة.
