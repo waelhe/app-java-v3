@@ -36,7 +36,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
+
+import java.util.concurrent.atomic.AtomicInteger;
 
 @ApplicationModuleTest
 @ActiveProfiles("test")
@@ -88,8 +92,14 @@ class LedgerModuleIntegrationTest {
     @MockitoBean
     LoanOwnerPort loanOwnerPort;
 
-    @Autowired
-    private LedgerService ledgerService;
+    /**
+     * F-832-1's failure-injection journey (CodeRabbit round-1 nitpick,
+     * adopted) needs a spy: the REAL service stays wired for every other
+     * test (a spy's un-stubbed methods call the real implementation), and
+     * the one test that needs it stubs the fee-reversal leg to fail once.
+     */
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    LedgerService ledgerService;
 
     /**
      * The repository the stats net window reads through — the round-6
@@ -565,6 +575,120 @@ class LedgerModuleIntegrationTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 UUID.nameUUIDFromBytes(("commission-" + paymentIntentId).getBytes()),
                                 LedgerEntryType.COMMISSION_DEBIT, frozenCommissionCents));
+    }
+
+    /**
+     * F-832-1 + CodeRabbit round-1 nitpick (adopted): the fee-reversal
+     * leg's failure-injection journey. The refund listener's transaction
+     * is ONE atomic unit — a failure at the THIRD mirror (the fee reversal)
+     * rolls back the goods debit and the commission reversal with it (the
+     * settlement's original balance survives untouched, no refund entry
+     * survives), and the replay recovers the whole journey exactly once
+     * (the balance reaches the honest zero, each of the six entries lands
+     * a single time). This pins the new financial leg's atomicity and
+     * recoverability — not a currently-known defect.
+     */
+    @Test
+    void f832_1_aFeeReversalFailureRollsBackTheWholeRefundLegAndTheReplayRecoversItExactlyOnce() {
+        UUID sellerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID ownerUserId = UUID.randomUUID();
+        long feeCents = 4000L;
+        long totalCents = 17400L;
+        long goodsCents = totalCents - feeCents;
+        long commissionCents = 1340L; // 0.10 of the goods base 13400
+
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(new PaymentIntentDetails(paymentIntentId, null, buyerId, null,
+                                "COMPLETED", "ORDER", totalCents, "SAR", orderId, null, null)),
+                        Optional.of(new PaymentIntentDetails(paymentIntentId, null, buyerId, null,
+                                "REFUNDED", "ORDER", totalCents, "SAR", orderId, null, null)));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(sellerId)).thenReturn(Optional.of(
+                new ProviderSummary(sellerId, "F-832-1 Failure Seller", "VERIFIED", ownerUserId)));
+
+        // the settlement lands the D4 split
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+        awaitBalance(sellerId, goodsCents - commissionCents);
+
+        // the injected failure: the FIRST fee-reversal call throws
+        AtomicInteger feeReversalAttempts = new AtomicInteger();
+        doAnswer(inv -> {
+            if (feeReversalAttempts.incrementAndGet() == 1) {
+                throw new IllegalStateException("injected: the fee-reversal leg fails once");
+            }
+            return inv.callRealMethod();
+        }).when(ledgerService).creditFromDeliveryFeeReversal(any(), any(), anyLong(), any());
+
+        // the failing refund: the whole listener transaction rolls back —
+        // the settlement's balance survives and NO refund entry survives
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitCondition("the injected fee-reversal failure fired", () -> feeReversalAttempts.get() >= 1);
+
+        long afterFailure = sarBalanceOf(sellerId);
+        assertThat(afterFailure)
+                .as("the rollback left the settlement's own balance intact — the three mirrors are one atomic unit")
+                .isEqualTo(goodsCents - commissionCents);
+        var statementAfterFailure = ledgerService.getStatementForOwner(sellerId, PageRequest.of(0, 20));
+        assertThat(statementAfterFailure.getContent())
+                .as("no refund entry survived the rollback (goods debit, commission reversal, fee reversal)")
+                .extracting(LedgerEntry::getEntryType)
+                .containsExactlyInAnyOrder(
+                        LedgerEntryType.PAYMENT_CREDIT, LedgerEntryType.COMMISSION_DEBIT,
+                        LedgerEntryType.DELIVERY_FEE_DEBIT);
+
+        // the replay (the registry's resubmission path): the journey recovers
+        // exactly once — the balance reaches the honest zero, each entry once
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitBalance(sellerId, 0L);
+        assertThat(feeReversalAttempts.get())
+                .as("the replayed fee reversal ran exactly twice: the failed attempt plus the recovery")
+                .isEqualTo(2);
+
+        var statement = ledgerService.getStatementForOwner(sellerId, PageRequest.of(0, 20));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(LedgerEntryType.PAYMENT_CREDIT, totalCents),
+                        org.assertj.core.groups.Tuple.tuple(LedgerEntryType.COMMISSION_DEBIT, commissionCents),
+                        org.assertj.core.groups.Tuple.tuple(LedgerEntryType.DELIVERY_FEE_DEBIT, feeCents),
+                        org.assertj.core.groups.Tuple.tuple(LedgerEntryType.REFUND_DEBIT, totalCents),
+                        org.assertj.core.groups.Tuple.tuple(LedgerEntryType.COMMISSION_REVERSAL_CREDIT, commissionCents),
+                        org.assertj.core.groups.Tuple.tuple(LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT, feeCents));
+        assertThat(statement.getContent())
+                .as("each of the six movements landed exactly once — the recovery is idempotent")
+                .hasSize(6);
+    }
+
+    private long sarBalanceOf(UUID providerId) {
+        return ledgerService.getBalances(providerId).stream()
+                .filter(b -> "SAR".equals(b.currency()))
+                .mapToLong(ProviderBalanceResponse::availableCents)
+                .findFirst().orElse(Long.MIN_VALUE);
+    }
+
+    private void awaitCondition(String what, java.util.function.BooleanSupplier condition) {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) {
+                return;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError("Condition not met within 30s: " + what);
     }
 
     /**
