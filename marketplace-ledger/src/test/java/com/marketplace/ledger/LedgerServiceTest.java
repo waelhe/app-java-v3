@@ -600,4 +600,129 @@ class LedgerServiceTest {
         verify(entryRepository, never()).save(any());
         verify(balanceRepository, never()).save(any());
     }
+
+    // ---- F-832-1 (the 2026-11-14 adversarial behavioral review, P1 — the
+    // ADR-0013 D4 fee's own mirror rule) ----
+
+    /**
+     * F-832-1: the delivery-fee reversal credit lands an entry and CREDITS
+     * the balance — the exact mirror image of the settlement's
+     * DELIVERY_FEE_DEBIT, on the same (provider, currency) balance the
+     * debit moved. The full journey: a settlement that left the seller at
+     * credit(17400) − commission(1340) − fee(4000) returns to ZERO once
+     * the refund's three mirrors run (goods debit, commission reversal,
+     * fee reversal) — the pre-fix journey ended at −4000.
+     */
+    @Test
+    void creditFromDeliveryFeeReversalCreatesEntryAndCreditsBalance() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId =
+                UUID.nameUUIDFromBytes(("delivery-fee-reversal-" + paymentIntentId.toString()).getBytes());
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.empty());
+        // the settled seller's balance: 17400 credited, 1340 commission, 4000 fee
+        // debited, then the refund's goods debit (17400) + commission reversal
+        // (1340) already applied — the fee reversal returns it to zero.
+        ProviderBalance existing = ProviderBalance.empty(providerId, SAR);
+        existing.credit(17400L);
+        existing.debit(1340L);
+        existing.debit(4000L);
+        existing.debit(17400L);
+        existing.credit(1340L);
+        when(balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, SAR)))
+                .thenReturn(Optional.of(existing));
+        when(balanceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ProviderBalance result = service.creditFromDeliveryFeeReversal(providerId, paymentIntentId, 4000L, SAR);
+
+        assertThat(result.getAvailableCents()).isZero(); // back to the pre-settlement zero
+        verify(entryRepository).save(any(LedgerEntry.class));
+        verify(balanceRepository).save(any(ProviderBalance.class));
+    }
+
+    /**
+     * F-832-1: the reversal's idempotent shape — the same replayed-listener
+     * no-op contract the commission reversal carries. The reversal key never
+     * collides with the fee debit's own "delivery-fee-&lt;intentId&gt;" key.
+     */
+    @Test
+    void creditFromDeliveryFeeReversalSkipsOnDuplicate() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId =
+                UUID.nameUUIDFromBytes(("delivery-fee-reversal-" + paymentIntentId.toString()).getBytes());
+        UUID feeDebitKey =
+                UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId.toString()).getBytes());
+        assertThat(expectedSourceId).isNotEqualTo(feeDebitKey);
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.of(mock(LedgerEntry.class)));
+        ProviderBalance balance = ProviderBalance.empty(providerId, SAR);
+        balance.credit(5000L);
+        when(balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, SAR)))
+                .thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.creditFromDeliveryFeeReversal(providerId, paymentIntentId, 4000L, SAR);
+
+        assertThat(result.getAvailableCents()).isEqualTo(5000L);
+        verify(entryRepository, never()).save(any());
+    }
+
+    /**
+     * F-832-1 + B2: a negative reversal amount fails fast with VALIDATION
+     * (400) — the shared precondition every ledger money path carries.
+     */
+    @Test
+    void creditFromDeliveryFeeReversalRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.creditFromDeliveryFeeReversal(providerId, paymentIntentId, -1L, SAR))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
+    /**
+     * F-832-1: postedDeliveryFeeCents reads the ledger's OWN
+     * DELIVERY_FEE_DEBIT row at the deterministic "delivery-fee-&lt;intentId&gt;"
+     * key — the postedCommissionCents discipline verbatim. A row of a
+     * DIFFERENT type at the same key is not the fee (the filter is the
+     * type, not just the key); an absent row answers empty (nothing
+     * posted, nothing to reverse).
+     */
+    @Test
+    void postedDeliveryFeeCentsReadsThePostedFeeDebitRowOnly() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID feeKey = UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId.toString()).getBytes());
+
+        LedgerEntry feeRow = mock(LedgerEntry.class);
+        when(feeRow.getEntryType()).thenReturn(LedgerEntryType.DELIVERY_FEE_DEBIT);
+        when(feeRow.getAmountCents()).thenReturn(4000L);
+        when(entryRepository.findBySourceId(feeKey)).thenReturn(Optional.of(feeRow));
+        assertThat(service.postedDeliveryFeeCents(paymentIntentId)).contains(4000L);
+
+        LedgerEntry foreignRow = mock(LedgerEntry.class);
+        when(foreignRow.getEntryType()).thenReturn(LedgerEntryType.COMMISSION_DEBIT);
+        when(foreignRow.getAmountCents()).thenReturn(1340L);
+        when(entryRepository.findBySourceId(feeKey)).thenReturn(Optional.of(foreignRow));
+        assertThat(service.postedDeliveryFeeCents(paymentIntentId)).isEmpty();
+
+        when(entryRepository.findBySourceId(feeKey)).thenReturn(Optional.empty());
+        assertThat(service.postedDeliveryFeeCents(paymentIntentId)).isEmpty();
+    }
 }

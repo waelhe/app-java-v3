@@ -305,6 +305,11 @@ class LedgerPaymentEventListenerTest {
         when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
         when(ledgerService.postedCommissionCents(paymentIntentId))
                 .thenReturn(Optional.of(1740L));
+        // F-832-1: this journey settled with NO delivery fee (a PICKUP
+        // order's zero fee posts no row) — the fee reversal is the
+        // documented zero no-op.
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId))
+                .thenReturn(Optional.empty());
 
         listener.onPaymentCompleted(event);
 
@@ -315,6 +320,50 @@ class LedgerPaymentEventListenerTest {
         // pre-settlement zero, not to a commission-sized negative).
         verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
                 1740L, "SAR");
+        // F-832-1: nothing posted, nothing to reverse — the 0L call is the
+        // documented no-op shape (never a skipped call: the leg is structural).
+        verify(ledgerService).creditFromDeliveryFeeReversal(sellerId, paymentIntentId,
+                0L, "SAR");
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+        verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
+    }
+
+    // ---- F-832-1 (the 2026-11-14 adversarial behavioral review, P1) ----
+
+    @Test
+    void f832_1_theOrderRefundReversesThePostedDeliveryFeeInTheSameMirrorTransaction() {
+        // The measured defect: a platform-delivery order settles as
+        // credit 17400 − commission 1340 (on the goods base) − fee 4000,
+        // and the full refund used to reverse ONLY the credit and the
+        // commission — leaving the seller's balance at −4000 (the buyer
+        // got his fee back while the seller kept paying for it). The
+        // refund's third mirror reverses the POSTED fee row's own amount,
+        // postedCommissionCents' discipline verbatim.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "REFUNDED",
+                "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId))
+                .thenReturn(Optional.of(1340L));
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId))
+                .thenReturn(Optional.of(4000L));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
+                1340L, "SAR");
+        // the third mirror: the posted DELIVERY_FEE_DEBIT row's own amount
+        // (4000), never a recomputation from live order facts — the journey
+        // returns the seller's balance to its pre-settlement zero.
+        verify(ledgerService).creditFromDeliveryFeeReversal(sellerId, paymentIntentId,
+                4000L, "SAR");
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
         verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
     }

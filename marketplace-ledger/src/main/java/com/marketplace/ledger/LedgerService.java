@@ -236,6 +236,73 @@ public class LedgerService {
     }
 
     /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the
+     * posted delivery fee the refund's mirror must reverse — read from
+     * the ledger's OWN DELIVERY_FEE_DEBIT row (the deterministic
+     * {@code delivery-fee-<intentId>} source key
+     * {@link #debitFromDeliveryFee} wrote), never recomputed from live
+     * order facts. {@link #postedCommissionCents}' own discipline
+     * verbatim: the posted ENTRY is the ledger's own truth (the ADR's
+     * D2 discipline — the posted value is the disclosure of record);
+     * the mirror reads it, and an intent whose fee was never posted
+     * (a PICKUP order's zero fee, or a pre-D4 settlement) answers
+     * empty — the caller's {@code orElse(0L)} makes the reversal the
+     * documented no-op it is (nothing posted, nothing to reverse).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> postedDeliveryFeeCents(UUID paymentIntentId) {
+        UUID sourceId = UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId.toString()).getBytes());
+        return entryRepository.findBySourceId(sourceId)
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.DELIVERY_FEE_DEBIT)
+                .map(LedgerEntry::getAmountCents);
+    }
+
+    /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1 — the
+     * ADR-0013 D4 mirror rule the settlement's own fee leg owes): the
+     * full refund's delivery-fee REVERSAL credit — the exact mirror
+     * image of {@link #debitFromDeliveryFee}, posted in the SAME refund
+     * transaction {@link #debitFromRefund} and
+     * {@link #creditFromCommissionReversal} run in, so a full refund of
+     * a platform-delivery order returns the seller's balance to its
+     * pre-settlement zero instead of a fee-sized negative (the buyer
+     * got his fee back; the seller must not keep paying for it).
+     *
+     * <p>The deterministic
+     * {@code nameUUIDFromBytes("delivery-fee-reversal-<intentId>")}
+     * source id never collides with the fee debit's own
+     * {@code "delivery-fee-<intentId>"} key and makes replayed
+     * listeners no-ops — {@link #creditFromCommissionReversal}'s own
+     * idempotent shape verbatim (the pre-check is the optimization, the
+     * V19 {@code source_id UNIQUE} backstop the guarantee — the #252
+     * concurrent-delivery contract rides here too). B2 amount guard:
+     * negative amounts are rejected with VALIDATION (400); zero amounts
+     * return the current balance without writing an entry.</p>
+     *
+     * <p><b>R9:</b> the reversal is credited in the payment's own
+     * currency — the same currency the settlement's fee debit moved —
+     * so the mirror lands on the same {@code (provider, currency)}
+     * balance.</p>
+     */
+    @Observed(name = "ledger.credit.delivery_fee_reversal")
+    public ProviderBalance creditFromDeliveryFeeReversal(UUID providerId, UUID paymentIntentId,
+                                                          long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceOf(providerId, normalized);
+        }
+        UUID sourceId = UUID.nameUUIDFromBytes(("delivery-fee-reversal-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceOf(providerId, normalized);
+        }
+        entryRepository.save(LedgerEntry.deliveryFeeReversalCredit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
+        balance.credit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
+    /**
      * L24 (feature-expansion roadmap §5): the full refund's debit — mirrors
      * the original PAYMENT_CREDIT on the provider's balance. Same idempotent
      * shape as the credit: the derived {@code refund-<intentId>} source id

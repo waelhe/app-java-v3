@@ -259,6 +259,22 @@ public class LedgerPaymentEventListener {
                     sellerId, intent.paymentIntentId(),
                     ledgerService.postedCommissionCents(intent.paymentIntentId()).orElse(0L),
                     intent.currency());
+            // F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the
+            // fee the settlement ACTUALLY debited is reversed by the SAME
+            // mirror rule — the posted DELIVERY_FEE_DEBIT row's own amount
+            // (postedDeliveryFeeCents, the postedCommissionCents discipline
+            // verbatim), never a recomputation from live order facts (the
+            // facts can move between settlement and refund; the posted row
+            // cannot). A PICKUP order's zero fee posts no row — orElse(0L)
+            // makes the reversal the documented no-op (nothing posted,
+            // nothing to reverse). Without this leg every full refund of a
+            // platform-delivery order left the seller's balance negative by
+            // exactly the fee: the buyer got his fee back while the seller
+            // kept paying for it.
+            ledgerService.creditFromDeliveryFeeReversal(
+                    sellerId, intent.paymentIntentId(),
+                    ledgerService.postedDeliveryFeeCents(intent.paymentIntentId()).orElse(0L),
+                    intent.currency());
             log.info("Ledger processed: debited {} {} from seller {} — the order refund "
                             + "mirrors its settlement credit (intent {})",
                     intent.amountCents(), intent.currency(), sellerId, intent.paymentIntentId());

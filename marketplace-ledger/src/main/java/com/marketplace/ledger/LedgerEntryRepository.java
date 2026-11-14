@@ -38,8 +38,9 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
     /**
      * R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's currency):
      * the provider's windowed net movement PER CURRENCY — credits (the payment
-     * credit AND the full refund's commission REVERSAL credit, A2 round 6)
-     * minus debits (commission, refund, ad bill — the L25 sign convention),
+     * credit AND the full refund's commission REVERSAL credit, A2 round 6;
+     * AND the delivery-fee REVERSAL credit, F-832-1) minus debits
+     * (commission, delivery fee, refund, ad bill — the L25 sign convention),
      * grouped by the entry's ISO 4217 currency (the plan's own wording:
      * aggregations group by the {@code (provider, currency)} pair). The
      * pre-fix single-currency sum mixed different currencies into one
@@ -55,6 +56,7 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
             SELECT e.currency AS currency,
                    COALESCE(SUM(CASE WHEN e.entryType = com.marketplace.ledger.LedgerEntryType.PAYMENT_CREDIT
                                         OR e.entryType = com.marketplace.ledger.LedgerEntryType.COMMISSION_REVERSAL_CREDIT
+                                        OR e.entryType = com.marketplace.ledger.LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT
                                      THEN e.amountCents ELSE -e.amountCents END), 0) AS netCents
             FROM LedgerEntry e
             WHERE e.providerId = :providerId

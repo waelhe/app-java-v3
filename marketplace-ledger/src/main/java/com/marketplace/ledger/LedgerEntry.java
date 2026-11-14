@@ -111,6 +111,18 @@ public class LedgerEntry extends BaseEntity {
                 amountCents, currency);
     }
 
+    /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the
+     * full refund's delivery-fee reversal credit — the mirror image of
+     * the settlement's DELIVERY_FEE_DEBIT, in the original currency.
+     * The disclosure shape is the commission reversal's own (the
+     * seller's statement reads the pair it reverses).
+     */
+    public static LedgerEntry deliveryFeeReversalCredit(UUID providerId, UUID sourceId, long amountCents, String currency) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT,
+                amountCents, currency);
+    }
+
     @Override public UUID getId(){return id;}
     public UUID getProviderId(){return providerId;}
     public UUID getSourceId(){return sourceId;}

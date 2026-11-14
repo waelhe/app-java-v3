@@ -633,6 +633,82 @@ class LedgerModuleIntegrationTest {
                                 LedgerEntryType.DELIVERY_FEE_DEBIT, feeCents));
     }
 
+    /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the full
+     * platform-delivery journey returns the seller's balance to ZERO — the
+     * settlement lands the D4 split (credit 17400, commission 1340 on the
+     * goods base, fee 4000), and the full refund's THREE mirrors (goods
+     * debit, commission reversal, FEE reversal) unwind all of them. The
+     * pre-fix journey ended at −4000: the buyer got his fee back while the
+     * seller kept paying for it (the review's measured corruption).
+     */
+    @Test
+    void f832_1_platformDeliveryOrderRefundReturnsTheSellerToZero() {
+        UUID sellerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID ownerUserId = UUID.randomUUID();
+        long feeCents = 4000L;
+        long totalCents = 17400L;
+        long goodsCents = totalCents - feeCents;
+        long commissionCents = 1340L; // 0.10 of the goods base 13400
+
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(new PaymentIntentDetails(paymentIntentId, null, buyerId, null,
+                                "COMPLETED", "ORDER", totalCents, "SAR", orderId, null, null)),
+                        Optional.of(new PaymentIntentDetails(paymentIntentId, null, buyerId, null,
+                                "REFUNDED", "ORDER", totalCents, "SAR", orderId, null, null)));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(currentUserProvider.getCurrentUserId(any())).thenReturn(ownerUserId);
+        when(providerLookupPort.findByUserId(sellerId)).thenReturn(Optional.of(
+                new ProviderSummary(sellerId, "F-832-1 Seller", "VERIFIED", ownerUserId)));
+
+        // the settlement: the D4 split lands (goods net of fee and commission)
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED")));
+        awaitBalance(sellerId, goodsCents - commissionCents);
+
+        // the full refund: the three mirrors unwind the split to ZERO
+        transactions.executeWithoutResult(tx ->
+                events.publishEvent(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")));
+        awaitBalance(sellerId, 0L);
+
+        Page<LedgerEntry> statement = ledgerService.getStatementForOwner(sellerId, PageRequest.of(0, 10));
+        assertThat(statement.getContent())
+                .extracting(LedgerEntry::getSourceId, LedgerEntry::getEntryType, LedgerEntry::getAmountCents)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(paymentIntentId, LedgerEntryType.PAYMENT_CREDIT, totalCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_DEBIT, commissionCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.DELIVERY_FEE_DEBIT, feeCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("refund-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.REFUND_DEBIT, totalCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("commission-reversal-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.COMMISSION_REVERSAL_CREDIT, commissionCents),
+                        org.assertj.core.groups.Tuple.tuple(
+                                UUID.nameUUIDFromBytes(("delivery-fee-reversal-" + paymentIntentId).getBytes()),
+                                LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT, feeCents));
+
+        // the net window over the WHOLE refunded journey is the honest zero —
+        // the round-6 proof's twin, now carrying the fee leg too.
+        var net = ledgerEntryRepository.sumNetCentsByCurrencyForProviderBetween(
+                sellerId, Instant.now().minusSeconds(3600), Instant.now().plusSeconds(3600));
+        assertThat(net).as("the net window answers one currency row").hasSize(1);
+        assertThat(net.get(0)[0]).as("the net window's currency is the settlement's own").isEqualTo("SAR");
+        assertThat(((Number) net.get(0)[1]).longValue())
+                .as("the net window over a fully refunded platform-delivery settlement "
+                        + "(goods + commission + fee all unwound) is the honest zero — not minus the fee")
+                .isZero();
+    }
+
     private void awaitBalance(UUID providerId, long expectedCents) {
         long deadline = System.nanoTime() + 30_000_000_000L;
         long last = Long.MIN_VALUE;
