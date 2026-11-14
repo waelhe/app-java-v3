@@ -77,6 +77,14 @@ export default defineRailway(() => {
       MAIL_USERNAME: preserve(),
       MANAGEMENT_SERVER_PORT: preserve(),
       MARKETPLACE_CATALOG_VIEWS_IP_HASH_KEY: preserve(),
+      // W2 (adversarial behavioral review 2026-11-10): identity's client
+      // origin for account mail deep links. Required by the prod profile's
+      // no-default binding (marketplace.identity.mail-base-url) and the D10
+      // placeholder-target matrix. preserve() keeps an existing value and
+      // never creates one: set the variable's value on the service BEFORE
+      // the next deploy — until then the app fails fast at placeholder
+      // resolution instead of mailing localhost links.
+      MARKETPLACE_IDENTITY_MAIL_BASE_URL: preserve(),
       MARKETPLACE_MESSAGING_LEADS_IP_HASH_KEY: preserve(),
       MARKETPLACE_PAYMENTS_WEBHOOK_SHARED_SECRET: preserve(),
       MARKETPLACE_PRICING_CURRENCY_EXCHANGE_RATES_AED: preserve(),
