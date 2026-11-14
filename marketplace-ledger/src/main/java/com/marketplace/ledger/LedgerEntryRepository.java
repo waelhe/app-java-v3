@@ -193,10 +193,14 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
     @Modifying
     @Query(value = """
             WITH per_intent AS (
-                -- the commission sweep's own eligibility cut (reviewed
-                -- rounds 1-9): only REFUNDED intents can hold a deserving
-                -- refund; the cut spares the derivation work over the rest
-                -- of the table without excluding a single deserving row.
+                -- the commission-sweep eligibility cut (reviewed rounds
+                -- 1-9): only REFUNDED intents can hold a deserving refund;
+                -- the cut spares the derivation work over the rest of the
+                -- table without excluding a single deserving row. NOTE: no
+                -- apostrophes inside these SQL comments — Spring Data
+                -- ValueExpressionQueryRewriter does not skip SQL comments
+                -- and treats the quote as opening an unterminated range
+                -- (the measured Container Scan boot failure).
                 SELECT pi.id AS intent_id,
                        (substr(md5('delivery-fee-' || pi.id::text), 1, 12) || '3'
                            || substr(md5('delivery-fee-' || pi.id::text), 14, 3)
