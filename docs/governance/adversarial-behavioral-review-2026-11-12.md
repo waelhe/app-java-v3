@@ -18,7 +18,7 @@
 | البعد | القيمة المقيسة | أمر الاشتقاق |
 |---|---|---|
 | رأس main عند البدء | `7e136440` (رأس مسح 2026-11-10) ← بعد دمج #813 هذه الجولة: `445f421d` | `git ls-remote origin main` |
-| فحوص رأس main `7e136440` عند بدء الجولة | 28 فحصًا: 21 success / 2 skipped / **5 failure** (4× «Probe public production endpoints» + «OpenRewrite recipe discovery») | أمر قابل للتشغيل يجمع النتائج بمفتاح conclusion: `gh api repos/waelhe/app-java-v3/commits/7e136440f9a834f123538e76a539acebefb7b76f/check-runs --paginate --jq '.check_runs[].conclusion' | sort | uniq -c` |
+| فحوص رأس main `7e136440` عند بدء الجولة | 28 فحصًا: 21 success / 2 skipped / **5 failure** (4× «Probe public production endpoints» + «OpenRewrite recipe discovery») | أمر قابل للتشغيل يجمع النتائج بمفتاح conclusion (الأنابيب مهروبة للخلية): `gh api repos/waelhe/app-java-v3/commits/7e136440f9a834f123538e76a539acebefb7b76f/check-runs --paginate --jq '.check_runs[].conclusion' \| sort \| uniq -c` |
 | سبب فشل OpenRewrite (مُشخّص من سجل الوظيفة) | `RequireMavenVersion failed — Detected Maven Version: 3.9.15 is not in the allowed range [3.10,)` ← BUILD FAILURE exit 1 (job 130517291682) | تنزيل سجل الوظيفة: `GET /actions/jobs/130517291682/logs` |
 | الفحوص الستة الإلزامية للدمج (ruleset 22305466) | Build & Test (JDK 25) + Full Integration Test (JDK 25) + CodeQL Analyze + Container Image Scan + CodeRabbit + CodeRabbit Gate — **squash حصرًا، دفع مباشر ممنوع، خطية تاريخ مطلوبة** | `GET /repos/waelhe/app-java-v3/rulesets/22305466` |
 | حالة الدفعات المفتوحة | #816: كل الخيوط محلولة (20/20)، آخر مراجعة على الرأس COMMENTED؛ #819: APPROVED على الرأس + CodeRabbit check-run success؛ #820/#823/#824: لا مراجعة على الرأس الحالي | GraphQL `reviewThreads` + `GET /pulls/{n}/reviews` |
