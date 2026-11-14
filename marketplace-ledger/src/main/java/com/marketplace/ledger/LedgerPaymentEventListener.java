@@ -123,11 +123,27 @@ public class LedgerPaymentEventListener {
             java.util.UUID sellerId = facts.sellerId();
             long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
             long goodsCents = intent.amountCents() - feeCents;
+            // CodeRabbit round 2 (major — data integrity): the fee debit
+            // rides the FIRST delivery alone. The redelivery of a
+            // settlement recorded BEFORE this change (its PAYMENT_CREDIT
+            // row already landed; the credit and the commission legs skip
+            // idempotently on their keys) must never produce a NEW
+            // financial effect — the fee key's absence alone cannot
+            // distinguish "first delivery of a new settlement" (no fee key
+            // yet — the debit belongs) from "redelivery of a pre-change
+            // settlement" (no fee key ever — its books keep their legacy
+            // shape: commission on the full amount, no fee leg; a
+            // retroactive debit would corrupt the balance by exactly the
+            // fee). The durable signal is the credit row written by THIS
+            // run: its absence before the write is what a first delivery
+            // is (the refund branch's own paymentCreditPosted guard,
+            // one delivery of the same seam).
+            boolean firstDelivery = !ledgerService.paymentCreditPosted(intent.paymentIntentId());
             ledgerService.creditFromPayment(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
             long commissionCents = commissionCents(goodsCents, intent);
             ledgerService.debitFromCommission(sellerId, intent.paymentIntentId(), commissionCents, intent.currency());
-            if (feeCents > 0) {
+            if (feeCents > 0 && firstDelivery) {
                 // The fee's own disclosed debit — the commission debit's
                 // disclosure discipline (D2: the seller's statement reads
                 // it): the platform keeps the fee to fund the carrier.
@@ -137,7 +153,10 @@ public class LedgerPaymentEventListener {
                             + "goods base {} — the order settlement (intent {}, fee {} {} kept by the platform{})",
                     intent.amountCents(), intent.currency(), sellerId, commissionCents,
                     intent.currency(), goodsCents, intent.paymentIntentId(), feeCents, intent.currency(),
-                    feeCents > 0 ? " (ADR-0013 D4)" : "");
+                    feeCents > 0
+                            ? firstDelivery ? " (ADR-0013 D4)"
+                            : " (skipped — redelivery of a pre-change settlement)"
+                            : "");
             return;
         }
         // Stage 8 (ADR-0004): the LOAN settlement — the owner's fee credit

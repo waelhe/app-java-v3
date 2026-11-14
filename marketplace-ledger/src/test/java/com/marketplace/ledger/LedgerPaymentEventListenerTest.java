@@ -259,6 +259,45 @@ class LedgerPaymentEventListenerTest {
     }
 
     @Test
+    void cr2_theRedeliveryOfAPreChangeSettlementNeverDebitsTheFee() {
+        // CodeRabbit round 2 (major — data integrity): a COMPLETED
+        // redelivery for a settlement recorded BEFORE this change (its
+        // PAYMENT_CREDIT row already landed — the credit and commission
+        // legs skip idempotently on their keys) must never produce a NEW
+        // financial effect: the fee key's absence alone cannot license the
+        // fee debit, or the balance would drop by exactly the fee on a
+        // redelivery (17400 settled pre-change at 15660 net → 11660). The
+        // first-delivery signal (the credit row absent BEFORE this run's
+        // write) is what licenses the fee leg.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long totalCents = 17400L;
+        long feeCents = 4000L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // the PRE-CHANGE settlement's durable signal: the credit row exists
+        // (this delivery is a redelivery, not the first).
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+
+        listener.onPaymentCompleted(event);
+
+        // the idempotent legs still run (their keys make them no-ops)...
+        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, totalCents, "SAR");
+        verify(ledgerService).debitFromCommission(org.mockito.ArgumentMatchers.eq(sellerId),
+                org.mockito.ArgumentMatchers.eq(paymentIntentId), anyLong(),
+                org.mockito.ArgumentMatchers.eq("SAR"));
+        // ...but the fee leg NEVER runs — a redelivery must not move money.
+        verify(ledgerService, org.mockito.Mockito.never())
+                .debitFromDeliveryFee(any(), any(), anyLong(), any());
+    }
+
+    @Test
     void a1_pickupOrderSettlementStaysTheFullAmountShape() {
         // The PICKUP twin: no fee exists (the V224 placement law — no
         // destination and no fee), the full amount IS the goods base, and
