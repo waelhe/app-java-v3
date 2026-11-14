@@ -3,6 +3,7 @@ package com.marketplace.ledger;
 import com.marketplace.shared.api.DeliveryCompletedEvent;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import io.micrometer.observation.annotation.Observed;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Locale;
@@ -14,8 +15,35 @@ public class LedgerJournalService {
     private static final String SRC="DELIVERY", CLEARING="PSP_CLEARING",
             ADVANCES="DELIVERY_CUSTOMER_ADVANCES", REVENUE="DELIVERY_REVENUE",
             REFUNDS="DELIVERY_REFUNDS", COURIER_PAYABLE="DELIVERY_COURIER_PAYABLE";
+
+    /**
+     * A3 (adversarial review 2026-11-10, owner-gate batch 6a — the documented
+     * recommendation): the refund-delta critical section's transaction-scoped
+     * advisory lock, ONE key per delivery batch — the
+     * {@code LOCK_ACTIVE_ADMIN_INVARIANT} shape (UserService, enforced through
+     * #818) with the per-batch derivation this read-modify-write needs.
+     * PostgreSQL official docs, §13.3.5 Advisory Locks: «pg_advisory_xact_lock
+     * works the same as pg_advisory_lock, except the lock is automatically
+     * released at the end of the current transaction» — a transaction-scoped
+     * lock has NO forgotten-unlock path by construction. The lock serializes
+     * the WHOLE critical section (the {@code findTopBy…(cumulative DESC)} read,
+     * the delta computation, and the insert) that the pre-fix shape left
+     * racing: two concurrent webhook snapshots (cumulative 300 then 700) both
+     * read {@code previous = 0} and over-posted to PSP_CLEARING (1000 posted
+     * for an actual 700 — the ledger's own finding A3). The scope qualifier
+     * keeps distinct batches independent — only the same batch's refunds
+     * serialize.
+     */
+    private static final String REFUND_DELTA_LOCK_SQL_PREFIX =
+            "SELECT pg_advisory_xact_lock(hashtextextended('marketplace.delivery-refund-delta:' || '";
+
     private final LedgerJournalPostingRepository postings;
-    public LedgerJournalService(LedgerJournalPostingRepository postings) { this.postings=postings; }
+    private final JdbcTemplate jdbcTemplate;
+
+    public LedgerJournalService(LedgerJournalPostingRepository postings, JdbcTemplate jdbcTemplate) {
+        this.postings = postings;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     @Observed(name="ledger.delivery.payment.capture")
     public void capture(PaymentIntentDetails payment) {
@@ -67,6 +95,14 @@ public class LedgerJournalService {
         if (cumulative<=0) return;
         if (cumulative>payment.amountCents()) throw new IllegalStateException("Refund exceeds captured amount");
         validateMoney(payment.amountCents(),payment.currency());
+        // A3: the advisory lock precedes the read — the whole critical section
+        // (capture replay, latest-cumulative read, delta computation, insert)
+        // runs inside the transaction bounded by the lock. The id is
+        // java.util.UUID: its toString is strictly [0-9a-f-] — the
+        // concatenation is structurally injection-safe, and the SAME
+        // derivation shape guards the last-admin invariant (UserService).
+        jdbcTemplate.execute(
+                REFUND_DELTA_LOCK_SQL_PREFIX + payment.deliveryRequestId() + "', 0))");
         capture(payment);
         long previous=postings.findTopBySourceTypeAndSourceIdAndCumulativeRefundMinorIsNotNullOrderByCumulativeRefundMinorDesc(
                 SRC,payment.deliveryRequestId()).map(LedgerJournalPosting::getCumulativeRefundMinor).orElse(0L);
