@@ -62,9 +62,10 @@ public class PaymentsController {
     @PostMapping("/intents/{id}/process")
     @Operation(summary = "Process a payment intent",
             description = "Drives the intent through the bound payment channel — with a real PSP "
-                    + "this is the remote charge step (clientSecret in the answer); without "
-                    + "one, the local-only path: the intent still advances to PROCESSING and a "
-                    + "Payment row is written, with no remote charge. Ownership-verified "
+                    + "this is the remote charge step (clientSecret in the answer). While no "
+                    + "provider is bound the capability is OFF, not broken: the request answers "
+                    + "503 SU-001 BEFORE any local write (no PROCESSING flip, no Payment row, "
+                    + "no remote charge — the W3 fifth provider gate). Ownership-verified "
                     + "against the caller.")
     public ResponseEntity<PaymentIntentResponse> processIntent(@PathVariable UUID id, Authentication authentication) {
         return ResponseEntity.ok(paymentIntentMapper.toResponse(paymentsService.processIntent(id, authentication)));

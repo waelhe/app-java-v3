@@ -2,6 +2,7 @@ package com.marketplace.payments;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 
 import java.util.Map;
 import java.util.UUID;
@@ -21,9 +22,14 @@ import java.util.concurrent.ConcurrentHashMap;
  *       cumulative remote actual the local books must reflect (roadmap L19
  *       acceptance 3) — the one state this fake keeps;</li>
  *   <li>{@code createRemoteRefund} answers {@code succeeded} with the
- *       cumulative actual (requested amount when partial, the full charge
- *       when null) — journeys assert the ledger's REFUND_DEBIT and REFUNDED
- *       terminal state, which the SYNCED branch applies from this number;</li>
+ *       CUMULATIVE total refunded on the underlying charge after this refund
+ *       (the {@code RemoteRefund} contract's own "cumulative remote total"):
+ *       each new idempotency key atomically adds its delta to the running
+ *       per-intent total, and the resulting cumulative answer is memoized per
+ *       idempotency key so a replayed request replays the SAME total instead
+ *       of double-refunding — journeys assert the ledger's REFUND_DEBIT and
+ *       REFUNDED terminal state, which the SYNCED branch applies from this
+ *       number;</li>
  *   <li>{@code verifyWebhook} is unsupported: the journeys drive the
  *       administrative confirm leg directly and never verify a provider
  *       signature (the webhook-resilience suites own their own channel).</li>
@@ -32,13 +38,23 @@ import java.util.concurrent.ConcurrentHashMap;
 @TestConfiguration
 public class BoundFakePspChannelConfig {
 
+    /**
+     * {@code @Primary} settles the bean election when a test context ALSO
+     * binds a real channel (Stripe credentials set): the journeys' bound
+     * fake must win over the network-touching candidate, or the Spring
+     * context itself fails to start on bean ambiguity — the fake is the
+     * declared winner either way.
+     */
     @Bean
+    @Primary
     PspChannel boundFakePspChannel() {
         return new BoundFakePspChannel();
     }
 
     static final class BoundFakePspChannel implements PspChannel {
         private final Map<String, Long> chargedAmountsByPspIntentId = new ConcurrentHashMap<>();
+        private final Map<String, Long> refundedTotalsByPspIntentId = new ConcurrentHashMap<>();
+        private final Map<String, Long> refundResultsByIdempotencyKey = new ConcurrentHashMap<>();
 
         @Override
         public RemoteIntent createRemoteIntent(UUID marketplaceIntentId, long amountCents,
@@ -51,9 +67,21 @@ public class BoundFakePspChannelConfig {
         @Override
         public RemoteRefund createRemoteRefund(String pspIntentId, Long amountCents,
                                                 String idempotencyKey) {
-            long amount = amountCents != null ? amountCents
-                    : chargedAmountsByPspIntentId.getOrDefault(pspIntentId, 0L);
-            return new RemoteRefund("re_fake_" + pspIntentId, "succeeded", amount);
+            // The RemoteRefund contract carries the CUMULATIVE total refunded
+            // on the underlying charge after this refund — the remote actual
+            // the local books must reflect. A replayed idempotency key
+            // memoizes its recorded cumulative answer (computeIfAbsent is the
+            // atomic-per-key gate): a retry never adds its delta twice. A
+            // null amount refunds the REMAINING balance, so the cumulative
+            // total lands on the whole charge (never charge-on-top-of-partials).
+            long cumulative = refundResultsByIdempotencyKey.computeIfAbsent(idempotencyKey, key -> {
+                long charge = chargedAmountsByPspIntentId.getOrDefault(pspIntentId, 0L);
+                if (amountCents == null) {
+                    return refundedTotalsByPspIntentId.merge(pspIntentId, charge, Math::max);
+                }
+                return refundedTotalsByPspIntentId.merge(pspIntentId, amountCents, Long::sum);
+            });
+            return new RemoteRefund("re_fake_" + pspIntentId, "succeeded", cumulative);
         }
 
         @Override

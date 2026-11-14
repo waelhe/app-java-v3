@@ -595,10 +595,17 @@ resilience4j:
         # expected failures neither count as failures nor successes for
         # the breaker, and the retry instance below leaves them un-retried
         # — an identical lookup miss can never succeed on a second attempt.
+        # W3 (CodeRabbit round on #827, 2026-11-14): requireChannel()'s 503
+        # SU-001 joins the same honest-state list — the capability is OFF,
+        # not broken (the aiChat OFF-state precedent's own rule), a channel
+        # that is not bound cannot become bound between two attempts, and
+        # the shared breaker must keep measuring only the bound channel's
+        # real health (refund/confirm/autoRefund ride this same instance).
         ignore-exceptions:
           - com.marketplace.shared.api.ResourceNotFoundException
           - org.springframework.security.access.AccessDeniedException
           - com.marketplace.shared.api.ConflictException
+          - com.marketplace.shared.api.ServiceUnavailableException
       # D.4 (compliance plan wave D — channel resilience): the three channels
       # that cross the process boundary beyond the PSP. mailSend guards the
       # SMTP crossing (EmailService.send — the async AFTER_COMMIT mail leg);
@@ -634,10 +641,15 @@ resilience4j:
         # breaker's ignore list above: the expected caller-controlled
         # failures never trigger a retry (an identical miss re-fails
         # identically — the attempt would only burn the shared budget).
+        # W3 (CodeRabbit round on #827, 2026-11-14): requireChannel()'s 503
+        # SU-001 is the same honest-state class — an unbound channel stays
+        # unbound between attempts, so the retry would only add ~3s of
+        # backoff before the identical 503 on the consumer money path.
         ignore-exceptions:
           - com.marketplace.shared.api.ResourceNotFoundException
           - org.springframework.security.access.AccessDeniedException
           - com.marketplace.shared.api.ConflictException
+          - com.marketplace.shared.api.ServiceUnavailableException
         # Review round 2 on #741's part 4 (2026-10-29): the dispute
         # refund's books-sync WAIT deliberately rides ConflictException
         # (non-retryable) — the gate fires only on the synchronous
