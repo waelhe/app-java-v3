@@ -4,6 +4,7 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.OrderSellerPort;
+import com.marketplace.shared.api.OrderSettlementFacts;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
@@ -106,15 +107,56 @@ public class LedgerPaymentEventListener {
         // the OrderSellerPort seam — the ledger never imports the orders
         // module (the BookingParticipantProvider twin verbatim).
         if (intent.isOrderOrigin()) {
-            java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
+            // A1 (owner-gate batch 6a — the ADR-0013 D4 execution): the
+            // settlement reads the order's fulfillment FACTS beside the
+            // seller (the widened OrderSellerPort seam — the
+            // PaymentIntentDetails widening precedent: one carrier, one
+            // hop). The platform-delivery fee the checkout froze inside
+            // the total is the PLATFORM's own charge (the platform is
+            // the merchant of record, D1): the seller's allocation is
+            // the goods (+tax) value net of the fee, and the commission
+            // computes on the goods base — «رسم واحد لمالك واحد». The
+            // pre-fix branch credited the seller the FULL amount
+            // including the fee and computed the commission on it (the
+            // ledger's own finding A1).
+            OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
+            java.util.UUID sellerId = facts.sellerId();
+            long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
+            long goodsCents = intent.amountCents() - feeCents;
+            // CodeRabbit round 2 (major — data integrity): the fee debit
+            // rides the FIRST delivery alone. The redelivery of a
+            // settlement recorded BEFORE this change (its PAYMENT_CREDIT
+            // row already landed; the credit and the commission legs skip
+            // idempotently on their keys) must never produce a NEW
+            // financial effect — the fee key's absence alone cannot
+            // distinguish "first delivery of a new settlement" (no fee key
+            // yet — the debit belongs) from "redelivery of a pre-change
+            // settlement" (no fee key ever — its books keep their legacy
+            // shape: commission on the full amount, no fee leg; a
+            // retroactive debit would corrupt the balance by exactly the
+            // fee). The durable signal is the credit row written by THIS
+            // run: its absence before the write is what a first delivery
+            // is (the refund branch's own paymentCreditPosted guard,
+            // one delivery of the same seam).
+            boolean firstDelivery = !ledgerService.paymentCreditPosted(intent.paymentIntentId());
             ledgerService.creditFromPayment(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
-            long commissionCents = commissionCents(intent.amountCents(), intent);
+            long commissionCents = commissionCents(goodsCents, intent);
             ledgerService.debitFromCommission(sellerId, intent.paymentIntentId(), commissionCents, intent.currency());
-            log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission — "
-                            + "the order settlement (intent {})",
+            if (feeCents > 0 && firstDelivery) {
+                // The fee's own disclosed debit — the commission debit's
+                // disclosure discipline (D2: the seller's statement reads
+                // it): the platform keeps the fee to fund the carrier.
+                ledgerService.debitFromDeliveryFee(sellerId, intent.paymentIntentId(), feeCents, intent.currency());
+            }
+            log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission on the "
+                            + "goods base {} — the order settlement (intent {}, fee {} {} kept by the platform{})",
                     intent.amountCents(), intent.currency(), sellerId, commissionCents,
-                    intent.currency(), intent.paymentIntentId());
+                    intent.currency(), goodsCents, intent.paymentIntentId(), feeCents, intent.currency(),
+                    feeCents > 0
+                            ? firstDelivery ? " (ADR-0013 D4)"
+                            : " (skipped — redelivery of a pre-change settlement)"
+                            : "");
             return;
         }
         // Stage 8 (ADR-0004): the LOAN settlement — the owner's fee credit
@@ -235,6 +277,22 @@ public class LedgerPaymentEventListener {
             ledgerService.creditFromCommissionReversal(
                     sellerId, intent.paymentIntentId(),
                     ledgerService.postedCommissionCents(intent.paymentIntentId()).orElse(0L),
+                    intent.currency());
+            // F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the
+            // fee the settlement ACTUALLY debited is reversed by the SAME
+            // mirror rule — the posted DELIVERY_FEE_DEBIT row's own amount
+            // (postedDeliveryFeeCents, the postedCommissionCents discipline
+            // verbatim), never a recomputation from live order facts (the
+            // facts can move between settlement and refund; the posted row
+            // cannot). A PICKUP order's zero fee posts no row — orElse(0L)
+            // makes the reversal the documented no-op (nothing posted,
+            // nothing to reverse). Without this leg every full refund of a
+            // platform-delivery order left the seller's balance negative by
+            // exactly the fee: the buyer got his fee back while the seller
+            // kept paying for it.
+            ledgerService.creditFromDeliveryFeeReversal(
+                    sellerId, intent.paymentIntentId(),
+                    ledgerService.postedDeliveryFeeCents(intent.paymentIntentId()).orElse(0L),
                     intent.currency());
             log.info("Ledger processed: debited {} {} from seller {} — the order refund "
                             + "mirrors its settlement credit (intent {})",

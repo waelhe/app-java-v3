@@ -28,5 +28,44 @@ public enum LedgerEntryType {
      * V103/V104 + V290/V291 house shape: DROP/ADD NOT VALID, then the
      * VALIDATE under its own SHARE UPDATE EXCLUSIVE scan).
      */
-    COMMISSION_REVERSAL_CREDIT
+    COMMISSION_REVERSAL_CREDIT,
+    /**
+     * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * ADR-0013 D4 execution): the platform-delivery fee debited from the
+     * seller's balance at the ORDER settlement — the fee the checkout
+     * froze inside the order total and the ONE intent collected. Per
+     * D1/D4 the platform is the merchant of record and the fee is the
+     * platform's own charge funding the carrier: the seller's allocation
+     * is the goods (+tax) value NET of the fee, and the commission
+     * computes on the goods base («رسم واحد لمالك واحد» — the pre-fix
+     * settlement inflated the seller's owed balance by the fee and
+     * computed the commission on it: the ledger's own finding A1). The
+     * disclosure discipline is the commission debit's own (D2: the
+     * ledger's debit entries are the per-transaction disclosure of
+     * record — the seller's statement reads them). The database's
+     * closed set widens with this member through the V299/V300 pair
+     * (the same V103/V104 + V290/V291 house shape: DROP/ADD NOT VALID,
+     * then the VALIDATE under its own SHARE UPDATE EXCLUSIVE scan).
+     */
+    DELIVERY_FEE_DEBIT,
+    /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1 — the
+     * ADR-0013 D4 mirror rule the settlement's own fee leg owes): the
+     * full refund's delivery-fee REVERSAL credit — the mirror image of
+     * the settlement's DELIVERY_FEE_DEBIT, posted in the SAME refund
+     * transaction {@code debitFromRefund} and the commission-reversal
+     * mirror run in. The pre-fix refund reversed the goods credit and
+     * the commission debit but NOT the fee debit, so every full refund
+     * of a platform-delivery order left the seller's balance negative by
+     * exactly the fee — the buyer got his fee back while the seller
+     * kept paying for it (the review's measured −4000-on-a-1000-fee
+     * journey). The mirror reads the posted DELIVERY_FEE_DEBIT row's
+     * own amount ({@code postedDeliveryFeeCents}) — never a
+     * recomputation from live order facts — {@code postedCommissionCents}
+     * own discipline verbatim. The database's closed set widens with
+     * this member through the V301/V302 pair (the sibling pairs' own
+     * house shape: DROP/ADD NOT VALID, then the VALIDATE under its own
+     * SHARE UPDATE EXCLUSIVE scan).
+     */
+    DELIVERY_FEE_REVERSAL_CREDIT
 }

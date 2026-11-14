@@ -3,6 +3,7 @@ package com.marketplace.ledger;
 import com.marketplace.shared.api.DeliveryCompletedEvent;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import io.micrometer.observation.annotation.Observed;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Locale;
@@ -15,7 +16,11 @@ public class LedgerJournalService {
             ADVANCES="DELIVERY_CUSTOMER_ADVANCES", REVENUE="DELIVERY_REVENUE",
             REFUNDS="DELIVERY_REFUNDS", COURIER_PAYABLE="DELIVERY_COURIER_PAYABLE";
     private final LedgerJournalPostingRepository postings;
-    public LedgerJournalService(LedgerJournalPostingRepository postings) { this.postings=postings; }
+    private final JdbcTemplate jdbcTemplate;
+    public LedgerJournalService(LedgerJournalPostingRepository postings, JdbcTemplate jdbcTemplate) {
+        this.postings = postings;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     @Observed(name="ledger.delivery.payment.capture")
     public void capture(PaymentIntentDetails payment) {
@@ -56,6 +61,58 @@ public class LedgerJournalService {
                     REVENUE,COURIER_PAYABLE,event.courierCompensationMinor(),event.currency(),
                     null,event.courierUserId(),"Courier compensation earned on delivery completion");
         }
+    }
+
+    /**
+     * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the ADR-0013
+     * D4 execution, the documented recommendation's carrier half): the
+     * ORDER-leg courier compensation — the pair the order-leg completion
+     * posts in this DEDICATED journal. The pre-fix shape routed every
+     * completion into {@link #recognize}, whose first guard throws on the
+     * order-leg's by-design {@code paymentIntentId = null} — so the
+     * publication failed FOREVER on every order-leg completion (the S12
+     * lesson: a legal event with no legal consumer), and the courier's
+     * compensation was never booked anywhere.
+     *
+     * <p>The posting: PSP_CLEARING → DELIVERY_COURIER_PAYABLE for the
+     * event's {@code courierCompensationMinor} with the courier's identity
+     * as the recipient — the collected money (the order's charge, already
+     * in clearing through the ORDER intent the caller resolved as the
+     * OFFICIAL payment reference — the recommendation's event binding)
+     * funds the courier's payable. The recognize flow stays untouched for
+     * DIRECT deliveries (their own capture → advances → revenue chain);
+     * the order-leg's chain lives in the generic provider ledger (the
+     * D4 split: the seller is credited the goods value NET of the fee, the
+     * platform keeps the fee, this pair books what the fee funds).</p>
+     */
+    @Observed(name="ledger.delivery.carrier.compensate")
+    public void compensateCarrier(DeliveryCompletedEvent event, UUID officialPaymentIntentId) {
+        if (event.deliveryRequestId()==null || officialPaymentIntentId==null) {
+            throw new IllegalArgumentException("Delivery/payment ids are required");
+        }
+        if (event.courierCompensationMinor()<0
+                || (event.courierCompensationMinor()>0
+                    && event.courierCompensationMinor()>=event.amountMinor())) {
+            // The recognize twin's own guard shape: negative compensation is
+            // a defect (never a no-op), and a compensation must stay below
+            // the fare it rides.
+            throw new IllegalArgumentException("Courier compensation must be nonnegative and below the fare");
+        }
+        if (event.courierCompensationMinor()>0 && event.courierUserId()==null) {
+            throw new IllegalArgumentException("Courier identity is required for a courier payable");
+        }
+        if (event.courierCompensationMinor()<=0) {
+            // The fromCheckout construction guarantees a positive compensation
+            // (the fare-covers-compensation placement guard), but a degenerate
+            // zero is the honest no-op the recognize flow itself carries for
+            // its courier-payable child.
+            return;
+        }
+        validateMoney(event.courierCompensationMinor(), event.currency());
+        addIfAbsent(event.deliveryRequestId(), officialPaymentIntentId, "CARRIER_COMPENSATION",
+                CLEARING, COURIER_PAYABLE, event.courierCompensationMinor(), event.currency(), null,
+                event.courierUserId(),
+                "Order-leg courier compensation funded by the collected delivery fee");
     }
 
     @Observed(name="ledger.delivery.payment.refund")

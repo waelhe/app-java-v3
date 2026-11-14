@@ -31,4 +31,23 @@ public interface PaymentIntentLookupPort {
      * never an exception (the FeatureGatePort's absent-row law).
      */
     boolean isOrderPayableSettled(UUID orderId);
+
+    /**
+     * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * documented recommendation's event binding): the ORDER's official
+     * payment intent — the one intent {@code OrderPaymentPort} created
+     * (or idempotently returned) for the order's frozen payable. The
+     * order-leg delivery completions carry {@code paymentIntentId = null}
+     * by design (their money rides the ORDER's intent, not a
+     * delivery-owned one), and the ledger's delivery journal binds its
+     * postings to the OFFICIAL intent through this read («ربط
+     * DeliveryCompletedEvent بمعرّف نية الدفع الرسمي» — the
+     * recommendation's own wording).
+     *
+     * @param orderId the order whose intent is resolved
+     * @return the order's intent details; empty when the order carries no
+     *         intent (the honest miss — the caller's own fail-closed
+     *         semantics apply)
+     */
+    Optional<PaymentIntentDetails> findCurrentByOrderId(UUID orderId);
 }
