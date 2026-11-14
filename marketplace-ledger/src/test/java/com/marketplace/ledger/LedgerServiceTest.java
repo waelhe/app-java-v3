@@ -204,6 +204,66 @@ class LedgerServiceTest {
         verify(balanceRepository).save(any(ProviderBalance.class));
     }
 
+    // ---- CodeRabbit round 3 (the 2026-11-14T21:06Z full review) ----
+
+    /**
+     * Round 3: the credit posting's own outcome — THIS execution created
+     * the PAYMENT_CREDIT row (the settlement leg's atomic first-delivery
+     * signal: the commission and fee debits ride this result, closing the
+     * read-then-decide window the pre-read `paymentCreditPosted` carried).
+     */
+    @Test
+    void creditFromPaymentPostingAnswersCreatedTrueOnTheFirstWrite() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        when(entryRepository.findBySourceId(paymentIntentId)).thenReturn(Optional.empty());
+        when(balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, SAR)))
+                .thenReturn(Optional.empty());
+        ProviderBalance saved = ProviderBalance.empty(providerId, SAR);
+        saved.credit(5000L);
+        when(balanceRepository.save(any())).thenReturn(saved);
+
+        LedgerService.PaymentCreditPosting posting =
+                service.creditFromPaymentPosting(providerId, paymentIntentId, 5000L, SAR);
+
+        assertThat(posting.createdThisRun()).isTrue();
+        assertThat(posting.balance().availableCents()).isEqualTo(5000L);
+        verify(entryRepository).save(any(LedgerEntry.class));
+    }
+
+    /**
+     * Round 3: the redelivery twin — the row already exists, so THIS
+     * execution created nothing: createdThisRun=false, no entry write, and
+     * the listener's whole debit leg stays home.
+     */
+    @Test
+    void creditFromPaymentPostingAnswersCreatedFalseOnTheExistingRow() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        when(entryRepository.findBySourceId(paymentIntentId))
+                .thenReturn(Optional.of(mock(LedgerEntry.class)));
+        ProviderBalance existing = ProviderBalance.empty(providerId, SAR);
+        existing.credit(5000L);
+        when(balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, SAR)))
+                .thenReturn(Optional.of(existing));
+
+        LedgerService.PaymentCreditPosting posting =
+                service.creditFromPaymentPosting(providerId, paymentIntentId, 5000L, SAR);
+
+        assertThat(posting.createdThisRun()).isFalse();
+        assertThat(posting.balance().availableCents()).isEqualTo(5000L);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
+    }
+
     /**
      * R9 — the review document's own scenario, at the service layer: two
      * payments of DIFFERENT currencies credit two SEPARATE balances. The

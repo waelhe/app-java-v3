@@ -119,6 +119,51 @@ class LedgerDeliveryFeeReversalReconciliationIntegrationTest {
         assertThat(balanceOf(providerId)).isZero();
     }
 
+    /**
+     * CodeRabbit round 3 (the 2026-11-14T21:06Z review's trivial finding,
+     * adopted): the sweep's deserving case proven on an <b>ORDER-origin</b>
+     * intent — the origin the DELIVERY_FEE_DEBIT leg actually publishes from
+     * (the listener's ORDER branch alone). The pre-fix seeding built every
+     * intent through the BOOKING chain, so a query wrongly scoped to
+     * BOOKING would still have passed both guards; this case pins the
+     * sweep's eligibility to the product's real fee producer: an
+     * ORDER-origin intent settled (credit + fee debit) and refunded
+     * (refund debit) by the pre-mirror code converges to the honest zero
+     * with the version bump witnessed.
+     */
+    @Test
+    void theSweep_convergesAnOrderOriginStraggler_theRealFeeProducer() {
+        UUID consumerId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        UUID intentId = UUID.randomUUID();
+
+        seedOrderWorld(providerId, consumerId, intentId, "REFUNDED");
+        insertEntry(providerId, intentId, "PAYMENT_CREDIT", PRICE_CENTS);
+        insertEntry(providerId, feeSource(intentId), "DELIVERY_FEE_DEBIT", FEE_CENTS);
+        insertEntry(providerId, refundSource(intentId), "REFUND_DEBIT", PRICE_CENTS);
+        seedBalance(providerId, PRICE_CENTS - FEE_CENTS - PRICE_CENTS); // minus the fee
+
+        long versionBefore = balanceVersionOf(providerId);
+
+        int converged = reconciliation.reconcileNow();
+        assertThat(converged)
+                .as("the ORDER-origin straggler converges exactly like its BOOKING twin")
+                .isEqualTo(1);
+        assertThat(countEntries(feeReversalSource(intentId), "DELIVERY_FEE_REVERSAL_CREDIT"))
+                .as("the ORDER-origin straggler gains its mirror row — the posted fee's own amount")
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT amount_cents FROM ledger_entries WHERE source_id = ?",
+                Long.class, feeReversalSource(intentId)))
+                .isEqualTo(FEE_CENTS);
+        assertThat(balanceOf(providerId))
+                .as("the ORDER-origin straggler's balance returns to the honest zero")
+                .isEqualTo(0L);
+        assertThat(balanceVersionOf(providerId))
+                .as("the optimistic version moved with the money")
+                .isEqualTo(versionBefore + 1);
+    }
+
     @Test
     void theSweep_leavesTheNonDeservingStatesAlone() {
         UUID consumerId = UUID.randomUUID();
@@ -231,6 +276,39 @@ class LedgerDeliveryFeeReversalReconciliationIntegrationTest {
                     currency, status, refunded_amount_cents)
                 VALUES (?, ?, ?, 'BOOKING', ?, 'SAR', ?, 0)
                 """, intentId, bookingId, consumerId, PRICE_CENTS, intentStatus);
+    }
+
+    /**
+     * The ORDER-origin twin of the seeding convention: the users pair, the
+     * orders row the V215 origin-pairing CHECK demands (origin='ORDER' ⇒
+     * order_id NOT NULL and every other origin column NULL), and the intent
+     * — the origin the DELIVERY_FEE_DEBIT leg actually publishes from.
+     */
+    private void seedOrderWorld(UUID providerId, UUID consumerId, UUID intentId, String intentStatus) {
+        UUID orderId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'PROVIDER')
+                ON CONFLICT (id) DO NOTHING
+                """, providerId, "f832-sweep-order-provider-" + providerId,
+                "f832-sweep-order-provider-" + providerId + "@example.com",
+                "F-832 Sweep Order Provider");
+        jdbcTemplate.update("""
+                INSERT INTO users (id, subject, email, display_name, role)
+                VALUES (?, ?, ?, ?, 'CONSUMER')
+                ON CONFLICT (id) DO NOTHING
+                """, consumerId, "f832-sweep-order-consumer-" + consumerId,
+                "f832-sweep-order-consumer-" + consumerId + "@example.com",
+                "F-832 Sweep Order Consumer");
+        jdbcTemplate.update("""
+                INSERT INTO orders (id, consumer_id, status, placed_at, total_amount_minor, currency)
+                VALUES (?, ?, 'CANCELLED', now(), ?, 'SAR')
+                """, orderId, consumerId, PRICE_CENTS);
+        jdbcTemplate.update("""
+                INSERT INTO payment_intents (id, booking_id, consumer_id, origin, order_id, amount_cents,
+                    currency, status, refunded_amount_cents)
+                VALUES (?, NULL, ?, 'ORDER', ?, ?, 'SAR', ?, 0)
+                """, intentId, consumerId, orderId, PRICE_CENTS, intentStatus);
     }
 
     private void insertEntry(UUID providerId, UUID sourceId, String entryType, long amountCents) {

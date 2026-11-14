@@ -41,6 +41,19 @@ class LedgerPaymentEventListenerTest {
             ledgerService, paymentIntentLookupPort, bookingParticipantProvider, orderSellerPort,
             loanOwnerPort, COMMISSION_RATE);
 
+    // CodeRabbit round 3: the settlement legs now ride the credit posting's
+    // own outcome — the default first-delivery answer for every settlement
+    // test (the redelivery test re-stubs it to false).
+    {
+        when(ledgerService.creditFromPaymentPosting(any(), any(), anyLong(), any()))
+                .thenReturn(new LedgerService.PaymentCreditPosting(null, true));
+    }
+
+    private void firstDelivery(boolean created) {
+        when(ledgerService.creditFromPaymentPosting(any(), any(), anyLong(), any()))
+                .thenReturn(new LedgerService.PaymentCreditPosting(null, created));
+    }
+
     @Test
     void ignoresNonCompletedEvents() {
         var event = new PaymentStateChangedEvent(UUID.randomUUID(), "PENDING");
@@ -116,7 +129,7 @@ class LedgerPaymentEventListenerTest {
 
         // R9: the booking's currency rides EVERY money call — the pre-fix
         // listener was measured to ignore the field it already had.
-        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents, "USD");
+        verify(ledgerService).creditFromPaymentPosting(providerId, paymentIntentId, priceCents, "USD");
         verify(ledgerService).debitFromCommission(providerId, paymentIntentId,
                 BigDecimal.valueOf(priceCents)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
@@ -158,7 +171,7 @@ class LedgerPaymentEventListenerTest {
 
         assertThrows(RuntimeException.class, () -> listener.onPaymentCompleted(event));
 
-        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents, "USD");
+        verify(ledgerService).creditFromPaymentPosting(providerId, paymentIntentId, priceCents, "USD");
         verify(ledgerService).debitFromCommission(eq(providerId), eq(paymentIntentId), anyLong(), eq("USD"));
     }
 
@@ -207,7 +220,7 @@ class LedgerPaymentEventListenerTest {
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, 17400L, "SAR");
         verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
                 BigDecimal.valueOf(17400L)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
@@ -246,7 +259,7 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         // The credit keeps the collected amount (the payment's own entry).
-        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, totalCents, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
         // The commission computes on the GOODS base — never on the fee.
         verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
                 BigDecimal.valueOf(goodsCents)
@@ -260,15 +273,14 @@ class LedgerPaymentEventListenerTest {
 
     @Test
     void cr2_theRedeliveryOfAPreChangeSettlementNeverDebitsTheFee() {
-        // CodeRabbit round 2 (major — data integrity): a COMPLETED
-        // redelivery for a settlement recorded BEFORE this change (its
-        // PAYMENT_CREDIT row already landed — the credit and commission
-        // legs skip idempotently on their keys) must never produce a NEW
-        // financial effect: the fee key's absence alone cannot license the
-        // fee debit, or the balance would drop by exactly the fee on a
-        // redelivery (17400 settled pre-change at 15660 net → 11660). The
-        // first-delivery signal (the credit row absent BEFORE this run's
-        // write) is what licenses the fee leg.
+        // CodeRabbit round 2 (major — data integrity) + round 3 (the atomic
+        // binding): a COMPLETED redelivery for a settlement recorded BEFORE
+        // this change (its PAYMENT_CREDIT row already landed) must never
+        // produce a NEW financial effect: the credit write's own outcome —
+        // createdThisRun=false — skips the WHOLE debit leg (commission and
+        // fee alike; the keys' idempotency stays the second line of
+        // defense), or the balance would drop by exactly the fee on a
+        // redelivery (17400 settled pre-change at 15660 net → 11660).
         UUID paymentIntentId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         UUID buyerId = UUID.randomUUID();
@@ -281,18 +293,19 @@ class LedgerPaymentEventListenerTest {
         when(orderSellerPort.settlementFactsOf(orderId))
                 .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
-        // the PRE-CHANGE settlement's durable signal: the credit row exists
-        // (this delivery is a redelivery, not the first).
-        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        // the PRE-CHANGE settlement's durable signal: THIS execution did
+        // not create the credit row (the write's own outcome — a
+        // redelivery, not the first delivery).
+        firstDelivery(false);
 
         listener.onPaymentCompleted(event);
 
-        // the idempotent legs still run (their keys make them no-ops)...
-        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, totalCents, "SAR");
-        verify(ledgerService).debitFromCommission(org.mockito.ArgumentMatchers.eq(sellerId),
-                org.mockito.ArgumentMatchers.eq(paymentIntentId), anyLong(),
-                org.mockito.ArgumentMatchers.eq("SAR"));
-        // ...but the fee leg NEVER runs — a redelivery must not move money.
+        // the credit leg still runs (its key makes it a no-op)...
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
+        // ...but the WHOLE debit leg never runs on a redelivery — neither
+        // the commission nor the fee moves money a second time.
+        verify(ledgerService, org.mockito.Mockito.never())
+                .debitFromCommission(any(), any(), anyLong(), any());
         verify(ledgerService, org.mockito.Mockito.never())
                 .debitFromDeliveryFee(any(), any(), anyLong(), any());
     }
@@ -316,7 +329,7 @@ class LedgerPaymentEventListenerTest {
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, totalCents, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
         verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
                 BigDecimal.valueOf(totalCents)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
@@ -425,7 +438,7 @@ class LedgerPaymentEventListenerTest {
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(ownerId, paymentIntentId, 9000L, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(ownerId, paymentIntentId, 9000L, "SAR");
         verify(ledgerService).debitFromCommission(ownerId, paymentIntentId,
                 BigDecimal.valueOf(9000L)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
@@ -489,7 +502,7 @@ class LedgerPaymentEventListenerTest {
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, 20000L, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, 20000L, "SAR");
         verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
                 BigDecimal.valueOf(20000L)
                         .multiply(frozenRate)

@@ -46,20 +46,56 @@ public class LedgerService {
     @Observed(name = "ledger.credit.payment")
     public ProviderBalanceResponse creditFromPayment(UUID providerId, UUID paymentIntentId,
                                                      long amountCents, String currency) {
+        // CodeRabbit round 3 (2026-11-14T21:06Z review): the thin public
+        // contract stays for the callers that only need the balance (the
+        // controller's endpoint and the AD-origin settlement); the
+        // settlement legs ride {@link #creditFromPaymentPosting} so their
+        // debit decisions bind to the credit write's own outcome.
+        return creditFromPaymentPosting(providerId, paymentIntentId, amountCents, currency).balance();
+    }
+
+    /**
+     * CodeRabbit round 3 (the 2026-11-14T21:06Z full review): the credit
+     * write's own outcome — {@code createdThisRun} is TRUE only when THIS
+     * execution inserted the PAYMENT_CREDIT row (the atomic first-delivery
+     * signal). The pre-fix settlement read {@code paymentCreditPosted}
+     * BEFORE the write — a read-then-decide window the review closed: the
+     * commission and fee debits now ride the write's own result, and the
+     * idempotency guards stay exactly as they were (the deterministic
+     * intent-id source key, the V19 UNIQUE backstop).
+     *
+     * <p>The twin {@code @Observed} name is deliberate: the same business
+     * command observed on both entry points (the delegate keeps the
+     * controller/AD path observed; this entry serves the settlement
+     * listener) — the internal delegation bypasses the aspect, so exactly
+     * one observation fires per call path.</p>
+     */
+    @Observed(name = "ledger.credit.payment")
+    public PaymentCreditPosting creditFromPaymentPosting(UUID providerId, UUID paymentIntentId,
+                                                          long amountCents, String currency) {
         String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
         requireNonNegativeAmount(amountCents);
         if (amountCents == 0) {
-            return ProviderBalanceResponse.from(
-                    balanceOf(providerId, normalized));
+            return new PaymentCreditPosting(
+                    ProviderBalanceResponse.from(balanceOf(providerId, normalized)), false);
         }
         if (entryRepository.findBySourceId(paymentIntentId).isPresent()) {
-            return ProviderBalanceResponse.from(
-                    balanceOf(providerId, normalized));
+            return new PaymentCreditPosting(
+                    ProviderBalanceResponse.from(balanceOf(providerId, normalized)), false);
         }
         entryRepository.save(LedgerEntry.paymentCredit(providerId, paymentIntentId, amountCents, normalized));
         ProviderBalance balance = balanceOf(providerId, normalized);
         balance.credit(amountCents);
-        return ProviderBalanceResponse.from(balanceRepository.save(balance));
+        return new PaymentCreditPosting(
+                ProviderBalanceResponse.from(balanceRepository.save(balance)), true);
+    }
+
+    /**
+     * CodeRabbit round 3: the credit posting's own result — the touched
+     * balance beside whether THIS execution created the PAYMENT_CREDIT row
+     * (the settlement leg's atomic decision signal).
+     */
+    public record PaymentCreditPosting(ProviderBalanceResponse balance, boolean createdThisRun) {
     }
 
     /**
