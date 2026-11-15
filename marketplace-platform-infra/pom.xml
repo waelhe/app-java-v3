@@ -101,6 +101,12 @@
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-events-api</artifactId>
         </dependency>
+        <!-- EventPublicationRegistry and TargetEventPublication are declared by
+             the official events-core artifact; events-api alone is insufficient. -->
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-events-core</artifactId>
+        </dependency>
         <!-- EventPublicationRegistry and TargetEventPublication live in the
              official events-core artifact; events-api intentionally contains
              only the API surface needed by event publishers/listeners. -->
