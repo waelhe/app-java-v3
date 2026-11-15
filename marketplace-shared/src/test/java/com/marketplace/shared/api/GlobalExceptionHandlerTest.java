@@ -373,7 +373,9 @@ class GlobalExceptionHandlerTest {
         org.springframework.validation.method.ParameterValidationResult result =
                 org.mockito.Mockito.mock(org.springframework.validation.method.ParameterValidationResult.class);
         org.mockito.Mockito.when(result.getMethodParameter()).thenReturn(parameter);
-        java.util.List<? extends org.springframework.context.MessageSourceResolvable> errors =
+        // Framework 7 flattened the 6.1 wildcard: getResolvableErrors()
+        // answers List<MessageSourceResolvable> directly.
+        java.util.List<org.springframework.context.MessageSourceResolvable> errors =
                 java.util.List.of(new org.springframework.validation.FieldError(
                         "cmd", "email", "must be a well-formed email address"));
         org.mockito.Mockito.when(result.getResolvableErrors()).thenReturn(errors);
