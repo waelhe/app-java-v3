@@ -38,9 +38,10 @@ concurrency:
 
 env:
   RAILWAY_API: https://backboard.railway.com/graphql/v2
-  RAILWAY_PROJECT_ID: a218e156-0aa1-487a-855d-3f798856d5ef
-  RAILWAY_ENVIRONMENT_ID: 60fb0197-fc76-4e72-b18d-dca7532e343d
-  RAILWAY_SERVICE_APP: 3efcf70c-56d5-4d87-ada5-6bba32022229
+  # Live production target verified in Railway on 2026-11-15.
+  RAILWAY_PROJECT_ID: c8985750-82a2-42eb-8431-ee0f49352818
+  RAILWAY_ENVIRONMENT_ID: c324c1a0-e4db-4a9a-8dc0-30ca1f3935d0
+  RAILWAY_SERVICE_APP: 43b1b64b-9087-45d4-88ca-358a40c5a583
 
 jobs:
   deploy:
