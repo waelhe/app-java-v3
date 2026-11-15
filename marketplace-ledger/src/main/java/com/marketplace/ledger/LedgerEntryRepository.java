@@ -97,6 +97,70 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
      * @return the number of missing reversal entries this run created (zero
      *         once the world has converged — the sweep's own idle signal)
      */
+    @Modifying
+    @Query(value = """
+            WITH per_intent AS (
+                -- CodeRabbit round 9: the eligibility cut — only REFUNDED
+                -- intents can hold a deserving refund (the refund debit lands
+                -- in the very payments transaction that flips the status, so
+                -- every intent still needing a reversal is REFUNDED; the cut
+                -- spares the derivation work over the rest of the table
+                -- without excluding a single deserving row).
+                SELECT pi.id AS intent_id,
+                       (substr(md5('commission-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('commission-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('commission-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('commission-' || pi.id::text), 18, 3)
+                           || substr(md5('commission-' || pi.id::text), 21, 12))::uuid AS commission_source,
+                       (substr(md5('refund-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('refund-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('refund-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('refund-' || pi.id::text), 18, 3)
+                           || substr(md5('refund-' || pi.id::text), 21, 12))::uuid AS refund_source,
+                       (substr(md5('commission-reversal-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('commission-reversal-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('commission-reversal-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('commission-reversal-' || pi.id::text), 18, 3)
+                           || substr(md5('commission-reversal-' || pi.id::text), 21, 12))::uuid AS reversal_source
+                FROM payment_intents pi
+                WHERE pi.status = 'REFUNDED'
+            ),
+            missing AS (
+                SELECT cd.provider_id, cd.currency, cd.amount_cents, ps.reversal_source
+                FROM per_intent ps
+                JOIN ledger_entries cd ON cd.source_id = ps.commission_source
+                                       AND cd.entry_type = 'COMMISSION_DEBIT'
+                JOIN ledger_entries rd ON rd.source_id = ps.refund_source
+                                       AND rd.entry_type = 'REFUND_DEBIT'
+                LEFT JOIN ledger_entries rv ON rv.source_id = ps.reversal_source
+                WHERE rv.id IS NULL
+            ),
+            inserted AS (
+                INSERT INTO ledger_entries (id, provider_id, source_id, entry_type, amount_cents,
+                                            currency, created_at, updated_at)
+                SELECT gen_random_uuid(), m.provider_id, m.reversal_source,
+                       'COMMISSION_REVERSAL_CREDIT', m.amount_cents, m.currency, now(), now()
+                FROM missing m
+                ON CONFLICT (source_id) DO NOTHING
+                RETURNING provider_id, currency, amount_cents
+            ),
+            inserted_by_balance AS (
+                SELECT i.provider_id, i.currency, SUM(i.amount_cents) AS amount_cents
+                FROM inserted i
+                GROUP BY i.provider_id, i.currency
+            )
+            INSERT INTO provider_balances (provider_id, currency, available_cents, created_at, updated_at,
+                                           version)
+            SELECT b.provider_id, b.currency, b.amount_cents, now(), now(),
+                   0
+            FROM inserted_by_balance b
+            ON CONFLICT (provider_id, currency)
+                DO UPDATE SET available_cents = provider_balances.available_cents + EXCLUDED.available_cents,
+                              version = provider_balances.version + 1,
+                              updated_at = now()
+            """, nativeQuery = true)
+    int reconcileMissingCommissionReversals();
+
     /**
      * CodeRabbit round 6 (2026-11-15T10:47Z): the sweep is now the audited
      * JPA writer {@link LedgerService#creditFromDeliveryFeeReversal} applied
