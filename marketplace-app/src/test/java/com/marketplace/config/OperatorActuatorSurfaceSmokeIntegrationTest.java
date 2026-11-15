@@ -98,7 +98,7 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         for (String id : new String[] {
                 "auditevents", "beans", "caches", "conditions", "configprops",
                 "env", "flyway", "loggers", "mappings", "modulith",
-                "scheduledtasks", "threaddump"}) {
+                "scheduledtasks", "threaddump", "eventpublications"}) {
             mockMvc.perform(get("/actuator/" + id))
                     .andExpect(status().isUnauthorized());
         }
@@ -208,6 +208,23 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         mockMvc.perform(get("/actuator/flyway").with(operatorJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.contexts").isMap());
+    }
+
+    @Test
+    void eventPublicationDiagnosticsAreReadOnlyAndOperatorProtected() throws Exception {
+        mockMvc.perform(get("/actuator/eventpublications"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/actuator/eventpublications").with(jwt()))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/actuator/eventpublications").with(operatorJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.staleThresholdSeconds").value(21600))
+                .andExpect(jsonPath("$.count").isNumber())
+                .andExpect(jsonPath("$.publications").isArray())
+                .andExpect(jsonPath("$.publications[*].event").doesNotExist())
+                .andExpect(jsonPath("$.publications[*].payload").doesNotExist());
     }
 
     @Test

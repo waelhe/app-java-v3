@@ -493,7 +493,7 @@ management:
         #   sessions/quartz/liquibase/integrationgraph — no such technology in
         #                    this application (stateless JWT chain, Flyway not
         #                    Liquibase, no Quartz, no spring-integration).
-        include: auditevents,beans,caches,conditions,configprops,env,flyway,health,info,loggers,mappings,metrics,prometheus,modulith,scheduledtasks,threaddump
+        include: auditevents,beans,caches,conditions,configprops,env,eventpublications,flyway,health,info,loggers,mappings,metrics,prometheus,modulith,scheduledtasks,threaddump
   endpoint:
     conditions:
       enabled: true
