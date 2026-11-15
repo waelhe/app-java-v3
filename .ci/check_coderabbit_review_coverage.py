@@ -208,36 +208,45 @@ def latest_review(reviews, sha, login):
     return max(candidates, key=lambda item: item.get("submitted_at") or "") if candidates else None
 
 
+DECLARATION_HEADER = re.compile(r"Files selected for processing:\s*\d+", re.I)
+
+
+def declares_processed_files(body):
+    """Whether a review body opens a processed-file declaration section."""
+    return DECLARATION_HEADER.search(body or "") is not None
+
+
 def declaring_review(reviews, sha, login, states):
     """Newest review on this head that declares its processed-file list.
 
-    CodeRabbit's ``request_changes_workflow`` posts the substantive review
-    (state COMMENTED or CHANGES_REQUESTED, body carrying
-    ``Files selected for processing: N``) and then, once the findings are
-    resolved, a SECOND empty-bodied APPROVED review. Taking the
-    chronologically newest review as the coverage evidence therefore reads an
-    empty body and fails with "CodeRabbit omitted its explicit processed-file
-    list" even though the head is fully declared — measured live on PR #819
-    and PR #820 (2026-11-12): the only review on each head is
-    ``APPROVED`` with an empty body, while the declaration sits on the paired
-    substantive review.
+    CodeRabbit's ``request_changes_workflow`` posts its substantive review
+    (state COMMENTED, body carrying ``Files selected for processing: N``) and
+    then, once the findings are resolved, a SECOND empty-bodied APPROVED
+    review. Taking the chronologically newest review as the coverage evidence
+    therefore reads an empty body and fails with "CodeRabbit omitted its
+    explicit processed-file list" even though the head is fully declared —
+    measured live on PR #819 and PR #820 (2026-11-12): the only review on each
+    head is ``APPROVED`` with an empty body, while the declaration sits on the
+    paired substantive review.
 
     Coverage evidence is the declaration, not the chronology: the verdict
-    state still belongs to the newest review (the gate workflow enforces it),
-    and every candidate here must already carry a good state on this exact
-    head. Returns ``(review, selected_paths)`` or ``(None, None)``; the
-    caller fails closed on ``None``.
+    state still belongs to the newest review (the gate workflow enforces it,
+    and a CHANGES_REQUESTED review is never a good state here), and every
+    candidate accepted by this function must already carry one of ``states``
+    on this exact head. A body WITHOUT a declaration header is not evidence
+    and is skipped; a body WITH the header that fails to parse is a malformed
+    declaration and raises — it must never be papered over by falling back to
+    an older review. Returns ``(review, selected_paths)`` or
+    ``(None, None)``; the caller fails closed on ``None``.
     """
     candidates = [item for item in reviews
                   if (item.get("user") or {}).get("login") == login
                   and item.get("commit_id") == sha
-                  and item.get("state") in states]
+                  and item.get("state") in states
+                  and declares_processed_files(item.get("body", ""))]
     for item in sorted(candidates, key=lambda review: review.get("submitted_at") or "",
                        reverse=True):
-        try:
-            return item, processed_files(item.get("body", ""))
-        except GateError:
-            continue
+        return item, processed_files(item.get("body", ""))
     return None, None
 
 

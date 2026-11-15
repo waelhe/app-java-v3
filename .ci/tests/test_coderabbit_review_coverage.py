@@ -668,5 +668,116 @@ class RunPathTests(ManifestTests):
             self.run_gate(client)
 
 
+    def test_declaration_on_another_head_is_not_evidence(self):
+        small = ["src/A.java", "src/B.java"]
+        stale = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-OLD",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [stale], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(gate.GateError, "no CodeRabbit review on current candidate head"):
+            self.run_gate(client)
+
+    def test_changes_requested_declaration_is_not_coverage_evidence(self):
+        small = ["src/A.java", "src/B.java"]
+        blocking = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "CHANGES_REQUESTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [blocking], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(gate.GateError, "declares its processed-file list"):
+            self.run_gate(client)
+
+    def test_malformed_declaration_never_falls_back_to_an_older_review(self):
+        small = ["src/A.java", "src/B.java"]
+        older = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        # same head and an acceptable state, but the declared count disagrees
+        # with the listed paths: this must raise instead of silently reusing
+        # the older (complete) declaration.
+        malformed = {
+            "id": 10, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:05:00Z",
+            "body": shard_review_body(small).replace("processing: 2", "processing: 3"),
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [older, malformed], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(gate.GateError, "declared 3 files but listed 2"):
+            self.run_gate(client)
+
+    def test_newest_declaration_wins_over_an_older_declaration(self):
+        small = ["src/A.java", "src/B.java"]
+        older = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        # the newest declaration covers only one path: if the older (complete)
+        # declaration were used, the gate would wrongly pass.
+        newest = {
+            "id": 10, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:05:00Z",
+            "body": shard_review_body(small[:1]),
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [older, newest], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        # an incomplete newest declaration routes the verdict to the manifest
+        # path, which fails closed here: the older complete declaration was
+        # never consulted.
+        with self.assertRaisesRegex(gate.GateError, "manifest path is not a file"):
+            self.run_gate(client)
+
+
 if __name__ == "__main__":
     unittest.main()
