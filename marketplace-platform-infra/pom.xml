@@ -107,13 +107,6 @@
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-events-core</artifactId>
         </dependency>
-        <!-- EventPublicationRegistry and TargetEventPublication live in the
-             official events-core artifact; events-api intentionally contains
-             only the API surface needed by event publishers/listeners. -->
-        <dependency>
-            <groupId>org.springframework.modulith</groupId>
-            <artifactId>spring-modulith-events-core</artifactId>
-        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
