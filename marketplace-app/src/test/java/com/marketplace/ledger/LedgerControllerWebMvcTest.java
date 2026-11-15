@@ -33,6 +33,12 @@ class LedgerControllerWebMvcTest {
     @MockitoBean
     private LedgerService ledgerService;
 
+    // Round 5: the controller's guard dependency (the settlement listener)
+    // is not part of the WebMvc slice — the mock keeps the slice's context
+    // bootable; the guard's own contract tests live beside the listener.
+    @MockitoBean
+    private LedgerPaymentEventListener settlementListener;
+
     @TestConfiguration
     @EnableMethodSecurity
     static class MethodSecurityConfig {

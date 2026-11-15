@@ -20,9 +20,12 @@ import java.util.UUID;
 public class LedgerController {
 
     private final LedgerService ledgerService;
+    private final LedgerPaymentEventListener settlementListener;
 
-    public LedgerController(LedgerService ledgerService) {
+    public LedgerController(LedgerService ledgerService,
+                            LedgerPaymentEventListener settlementListener) {
         this.ledgerService = ledgerService;
+        this.settlementListener = settlementListener;
     }
 
     @PostMapping("/admin/ledger/providers/{providerId}/credit")
@@ -33,7 +36,16 @@ public class LedgerController {
                     + "entry). Amounts are non-negative cents; zero is a no-op. R9: the "
                     + "credit carries its ISO 4217 currency and moves the (provider, "
                     + "currency) balance of that currency — blank keeps the house default "
-                    + "SAR, exactly the runtime path's own fallback.")
+                    + "SAR, exactly the runtime path's own fallback. Settlement-owned "
+                    + "origins (ORDER/BOOKING/LOAN): the settlement event remains the "
+                    + "debtor — a manual credit here does NOT consume the commission or "
+                    + "delivery-fee legs; when the settlement event lands it still posts "
+                    + "any due-but-unposted commission (and the fee rides that decision). "
+                    + "The one REFUSED state (round 5, 2026-11-15T08:27Z): a credit for a "
+                    + "zero-commission fee-bearing order intent answers 400 VAL-001 — that "
+                    + "state is row-identical to a legacy zero-commission settlement's "
+                    + "redelivery and the settlement must stay the fee's only writer (never "
+                    + "a retroactive fee); credit after the settlement event lands instead.")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProviderBalanceResponse> creditProvider(@PathVariable UUID providerId,
                                                           @RequestParam UUID paymentIntentId,
@@ -41,6 +53,10 @@ public class LedgerController {
                                                           @Parameter(description = "ISO 4217 currency of the credited amount "
                                                                   + "(blank = the house default SAR)")
                                                           @RequestParam(required = false) String currency) {
+        // CodeRabbit round 5: the ambiguous manual-credit state is refused
+        // BEFORE any write (the listener's own settlement math decides the
+        // ambiguity — the guard javadoc carries the full law).
+        settlementListener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
         return ResponseEntity.ok(ledgerService.creditFromPayment(
                 providerId, paymentIntentId, amountCents, currency));
     }
