@@ -466,6 +466,15 @@ public class LedgerPaymentEventListener {
                 .filter(PaymentIntentDetails::isOrderOrigin)
                 .filter(intent -> intent.orderId() != null)
                 .ifPresent(intent -> {
+                    // Round 6 (2026-11-15T10:47Z): the refusal guards the
+                    // CREATION of the ambiguous state only — a replay after
+                    // the settlement landed (its PAYMENT_CREDIT row exists,
+                    // the existing verification mechanism) is the endpoint's
+                    // documented idempotent no-op answering the balance
+                    // without a second entry, and must pass through.
+                    if (ledgerService.paymentCreditPosted(paymentIntentId)) {
+                        return;
+                    }
                     OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
                     long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
                     long goodsCents = intent.amountCents() - feeCents;

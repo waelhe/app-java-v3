@@ -97,100 +97,20 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
      * @return the number of missing reversal entries this run created (zero
      *         once the world has converged — the sweep's own idle signal)
      */
-    @Modifying
-    @Query(value = """
-            WITH per_intent AS (
-                -- CodeRabbit round 9: the eligibility cut — only REFUNDED
-                -- intents can hold a deserving refund (the refund debit lands
-                -- in the very payments transaction that flips the status, so
-                -- every intent still needing a reversal is REFUNDED; the cut
-                -- spares the derivation work over the rest of the table
-                -- without excluding a single deserving row).
-                SELECT pi.id AS intent_id,
-                       (substr(md5('commission-' || pi.id::text), 1, 12) || '3'
-                           || substr(md5('commission-' || pi.id::text), 14, 3)
-                           || substr('89ab', ((('x' || substr(md5('commission-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
-                           || substr(md5('commission-' || pi.id::text), 18, 3)
-                           || substr(md5('commission-' || pi.id::text), 21, 12))::uuid AS commission_source,
-                       (substr(md5('refund-' || pi.id::text), 1, 12) || '3'
-                           || substr(md5('refund-' || pi.id::text), 14, 3)
-                           || substr('89ab', ((('x' || substr(md5('refund-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
-                           || substr(md5('refund-' || pi.id::text), 18, 3)
-                           || substr(md5('refund-' || pi.id::text), 21, 12))::uuid AS refund_source,
-                       (substr(md5('commission-reversal-' || pi.id::text), 1, 12) || '3'
-                           || substr(md5('commission-reversal-' || pi.id::text), 14, 3)
-                           || substr('89ab', ((('x' || substr(md5('commission-reversal-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
-                           || substr(md5('commission-reversal-' || pi.id::text), 18, 3)
-                           || substr(md5('commission-reversal-' || pi.id::text), 21, 12))::uuid AS reversal_source
-                FROM payment_intents pi
-                WHERE pi.status = 'REFUNDED'
-            ),
-            missing AS (
-                SELECT cd.provider_id, cd.currency, cd.amount_cents, ps.reversal_source
-                FROM per_intent ps
-                JOIN ledger_entries cd ON cd.source_id = ps.commission_source
-                                       AND cd.entry_type = 'COMMISSION_DEBIT'
-                JOIN ledger_entries rd ON rd.source_id = ps.refund_source
-                                       AND rd.entry_type = 'REFUND_DEBIT'
-                LEFT JOIN ledger_entries rv ON rv.source_id = ps.reversal_source
-                WHERE rv.id IS NULL
-            ),
-            inserted AS (
-                INSERT INTO ledger_entries (id, provider_id, source_id, entry_type, amount_cents,
-                                            currency, created_at, updated_at)
-                SELECT gen_random_uuid(), m.provider_id, m.reversal_source,
-                       'COMMISSION_REVERSAL_CREDIT', m.amount_cents, m.currency, now(), now()
-                FROM missing m
-                ON CONFLICT (source_id) DO NOTHING
-                RETURNING provider_id, currency, amount_cents
-            ),
-            inserted_by_balance AS (
-                SELECT i.provider_id, i.currency, SUM(i.amount_cents) AS amount_cents
-                FROM inserted i
-                GROUP BY i.provider_id, i.currency
-            )
-            INSERT INTO provider_balances (provider_id, currency, available_cents, created_at, updated_at,
-                                           version)
-            SELECT b.provider_id, b.currency, b.amount_cents, now(), now(),
-                   0
-            FROM inserted_by_balance b
-            ON CONFLICT (provider_id, currency)
-                DO UPDATE SET available_cents = provider_balances.available_cents + EXCLUDED.available_cents,
-                              version = provider_balances.version + 1,
-                              updated_at = now()
-            """, nativeQuery = true)
-    int reconcileMissingCommissionReversals();
-
     /**
-     * F-832-1 + CodeRabbit round 2 (the fee mirror's own deploy-overlap
-     * closure): the fee twin of {@link #reconcileMissingCommissionReversals}
-     * — the SAME one-statement convergence shape, verbatim semantics, on the
-     * fee pair's own deterministic keys ({@code delivery-fee-<intentId>} /
-     * {@code delivery-fee-reversal-<intentId>}, the V82-validated md5 nibble
-     * surgery the runtime's {@code nameUUIDFromBytes} reconstructs): every
-     * REFUNDED intent holding the settlement's DELIVERY_FEE_DEBIT and the
-     * refund's REFUND_DEBIT but not the pair's mirror gains the missing
-     * DELIVERY_FEE_REVERSAL_CREDIT — the POSTED fee row's own amount,
-     * currency and provider (the postedCommissionCents discipline: never a
-     * recomputation from live order facts), the per-balance-key aggregation
-     * so one provider moves once by the summed reversals, the UPSERT limited
-     * by RETURNING to rows this run actually inserted and the version bump
-     * the round-9 stale-save interleave demanded.
-     *
-     * <p>Why the twin: Railway keeps the PREVIOUS deployment serving while
-     * the new one boots — during that window the OLD deployment's refund
-     * listener (pre-F-832-1) still writes the refund leg without the fee
-     * mirror and its publications COMPLETE, so the registry never replays
-     * them. No one-time migration exists for the fee pair (the feature
-     * ships with this branch — every historical row the OLD code wrote is
-     * exactly the pre-mirror shape this sweep converges), so this runtime
-     * pass is the fee mirror's whole convergence story: hourly, idempotent,
-     * silent once converged (zero = the sweep's own idle signal).</p>
-     *
-     * @return the number of missing fee-reversal entries this run created
-     *         (zero once the world has converged)
+     * CodeRabbit round 6 (2026-11-15T10:47Z): the sweep is now the audited
+     * JPA writer {@link LedgerService#creditFromDeliveryFeeReversal} applied
+     * per discovered row — the previous one-statement native INSERT bypassed
+     * the Envers audit trail (ledger_entries_aud / provider_balances_aud
+     * stayed empty for the reconciliation movements), the review finding.
+     * This query is the DISCOVERY leg, read-only: the same eligibility cut
+     * (a REFUNDED intent holding the settlement DELIVERY_FEE_DEBIT and the
+     * refund REFUND_DEBIT but not the reversal mirror), with the source
+     * derivations kept byte-identical to {@code UUID.nameUUIDFromBytes}
+     * (the md5 / version-3 / variant construction LedgerService itself
+     * uses) so rows the native shape may have written in earlier deploys
+     * are recognized by the same deterministic keys.
      */
-    @Modifying
     @Query(value = """
             WITH per_intent AS (
                 -- the commission-sweep eligibility cut (reviewed rounds
@@ -221,7 +141,7 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
                 WHERE pi.status = 'REFUNDED'
             ),
             missing AS (
-                SELECT fd.provider_id, fd.currency, fd.amount_cents, ps.reversal_source
+                SELECT ps.intent_id AS payment_intent_id, fd.provider_id, fd.currency, fd.amount_cents
                 FROM per_intent ps
                 JOIN ledger_entries fd ON fd.source_id = ps.fee_source
                                        AND fd.entry_type = 'DELIVERY_FEE_DEBIT'
@@ -229,30 +149,23 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
                                        AND rd.entry_type = 'REFUND_DEBIT'
                 LEFT JOIN ledger_entries rv ON rv.source_id = ps.reversal_source
                 WHERE rv.id IS NULL
-            ),
-            inserted AS (
-                INSERT INTO ledger_entries (id, provider_id, source_id, entry_type, amount_cents,
-                                            currency, created_at, updated_at)
-                SELECT gen_random_uuid(), m.provider_id, m.reversal_source,
-                       'DELIVERY_FEE_REVERSAL_CREDIT', m.amount_cents, m.currency, now(), now()
-                FROM missing m
-                ON CONFLICT (source_id) DO NOTHING
-                RETURNING provider_id, currency, amount_cents
-            ),
-            inserted_by_balance AS (
-                SELECT i.provider_id, i.currency, SUM(i.amount_cents) AS amount_cents
-                FROM inserted i
-                GROUP BY i.provider_id, i.currency
             )
-            INSERT INTO provider_balances (provider_id, currency, available_cents, created_at, updated_at,
-                                           version)
-            SELECT b.provider_id, b.currency, b.amount_cents, now(), now(),
-                   0
-            FROM inserted_by_balance b
-            ON CONFLICT (provider_id, currency)
-                DO UPDATE SET available_cents = provider_balances.available_cents + EXCLUDED.available_cents,
-                              version = provider_balances.version + 1,
-                              updated_at = now()
+            SELECT m.payment_intent_id AS "paymentIntentId", m.provider_id AS "providerId",
+                   m.currency, m.amount_cents AS "amountCents"
+            FROM missing m
             """, nativeQuery = true)
-    int reconcileMissingDeliveryFeeReversals();
+    List<MissingDeliveryFeeReversal> findMissingDeliveryFeeReversals();
+
+    /**
+     * The sweep discovery projection — one row per intent whose fee mirror
+     * is still missing: the intent (the reversal key), the provider and
+     * currency (the balance to credit), and the posted fee amount (the
+     * reversal value).
+     */
+    interface MissingDeliveryFeeReversal {
+        java.util.UUID getPaymentIntentId();
+        java.util.UUID getProviderId();
+        String getCurrency();
+        long getAmountCents();
+    }
 }

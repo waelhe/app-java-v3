@@ -26,8 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  * boots is converged here, at minus the fee — the same exposure shape the
  * commission sweep exists for (the A2 round-8 closure), mirrored.</p>
  *
- * <p><b>The mechanism.</b> The same idempotent one-statement convergence
- * {@code LedgerEntryRepository#reconcileMissingDeliveryFeeReversals} carries:
+ * <p><b>The mechanism.</b> The discovery leg
+ * ({@code LedgerEntryRepository#findMissingDeliveryFeeReversals} — the
+ * same eligibility cut, read-only) feeding the audited JPA writer
+ * {@link LedgerService#creditFromDeliveryFeeReversal} per row:
  * every REFUNDED intent holding the settlement's DELIVERY_FEE_DEBIT and the
  * refund's REFUND_DEBIT but not the pair's mirror gains the missing reversal
  * row — the POSTED fee row's own amount/currency/provider, the deterministic
@@ -47,9 +49,12 @@ public class DeliveryFeeReversalReconciliation {
     private static final Logger log = LoggerFactory.getLogger(DeliveryFeeReversalReconciliation.class);
 
     private final LedgerEntryRepository entryRepository;
+    private final LedgerService ledgerService;
 
-    public DeliveryFeeReversalReconciliation(LedgerEntryRepository entryRepository) {
+    public DeliveryFeeReversalReconciliation(LedgerEntryRepository entryRepository,
+                                             LedgerService ledgerService) {
         this.entryRepository = entryRepository;
+        this.ledgerService = ledgerService;
     }
 
     /**
@@ -74,10 +79,25 @@ public class DeliveryFeeReversalReconciliation {
      */
     @Transactional
     public int reconcileNow() {
-        int converged = entryRepository.reconcileMissingDeliveryFeeReversals();
+        // CodeRabbit round 6 (2026-11-15T10:47Z): the write leg is the
+        // audited JPA writer per discovered row — Envers records the entry
+        // and the balance movement exactly as the runtime refund path's own
+        // writes (the native one-statement INSERT bypassed the _aud trail).
+        // The deterministic delivery-fee-reversal-<intentId> key makes a
+        // concurrent runtime write a no-op here, and a replay of this sweep
+        // discovers nothing (the discovery leg reads the same keys).
+        int converged = 0;
+        for (LedgerEntryRepository.MissingDeliveryFeeReversal row
+                : entryRepository.findMissingDeliveryFeeReversals()) {
+            ledgerService.creditFromDeliveryFeeReversal(
+                    row.getProviderId(), row.getPaymentIntentId(),
+                    row.getAmountCents(), row.getCurrency());
+            converged++;
+        }
         if (converged > 0) {
             log.info("Delivery-fee-reversal reconciliation converged {} missing mirror row(s) — the "
-                            + "deploy-overlap stragglers the pre-mirror refund listener left behind",
+                            + "deploy-overlap stragglers the pre-mirror refund listener left behind "
+                            + "(written through the audited JPA path — Envers carries the trail)",
                     converged);
         }
         return converged;

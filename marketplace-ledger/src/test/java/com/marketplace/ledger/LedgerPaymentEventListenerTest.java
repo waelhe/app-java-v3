@@ -861,6 +861,30 @@ class LedgerPaymentEventListenerTest {
     }
 
     @Test
+    void cr6_theGuardPassesTheSettledReplay_EvenOnTheZeroCommissionFeeBearingIntent() {
+        // Round 6 (2026-11-15T10:47Z): a credit request repeated AFTER the
+        // settlement completed (its PAYMENT_CREDIT row exists — the existing
+        // verification mechanism) is the endpoint's documented idempotent
+        // replay answering the balance without a second entry, so it passes
+        // even on the zero-commission fee-bearing intent the guard would
+        // otherwise refuse: the refusal guards the CREATION of the ambiguous
+        // state only.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null, "COMPLETED",
+                "ORDER", 17400L, "SAR", orderId, null, BigDecimal.ZERO, null, 0L);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(UUID.randomUUID(), 4000L, true));
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+
+        listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
+        // no throw — the settled replay passes; the service's own key
+        // idempotency (findBySourceId no-op) answers the balance without a
+        // new credit write.
+    }
+
+    @Test
     void cr5_theGuardIgnoresNonOrderTargets() {
         // A booking intent's manual credit never touches the fee ambiguity
         // (no fee exists there) — the guard is a no-op for every non-ORDER
