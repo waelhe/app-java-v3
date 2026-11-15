@@ -2,7 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.api.UserSummary;
-import com.marketplace.shared.email.EmailService;
+import com.marketplace.shared.email.EmailSender;
 import com.marketplace.shared.email.EmailSendException;
 import org.junit.jupiter.api.Test;
 
@@ -36,7 +36,7 @@ class EmailNotificationServiceTest {
 
     @Test
     void sendEmailDelegatesToEmailService() {
-        EmailService emailService = mock(EmailService.class);
+        EmailSender emailService = mock(EmailSender.class);
         UserLookupPort userLookupPort = mockUserLookup();
         EmailNotificationService service = new EmailNotificationService(Optional.of(emailService), userLookupPort);
 

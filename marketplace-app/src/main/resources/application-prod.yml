@@ -1,4 +1,8 @@
 spring:
+  autoconfigure:
+    # Production email uses Resend HTTPS; SMTP is intentionally disabled.
+    exclude:
+      - org.springframework.boot.mail.autoconfigure.MailSenderAutoConfiguration
   ai:
     chat:
       client:
@@ -79,33 +83,6 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
-
-  mail:
-    host: ${MAIL_HOST}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
-    properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
-      # CodeRabbit agent findings (2026-10-26T11:43 export), row 38: the
-      # protected transport is EXPLICIT here as well — the base profile's
-      # mandatory keys (application.yml, row 20/CWE-319 closure) reach the
-      # production context through map-merge inheritance, but the production
-      # profile now states its own posture in its own file: STARTTLS alone
-      # is OPPORTUNISTIC (Jakarta Mail's documented default —
-      # starttls.required defaults to false), so an active attacker
-      # impersonating an endpoint without STARTTLS could harvest the SMTP
-      # credentials and the security emails' contents (including usable
-      # password-reset tokens). MANDATORY: no TLS, no authentication, no
-      # delivery — and the server identity is verified against the
-      # certificate (checkserveridentity), so a mismatched host fails
-      # closed instead of silently proceeding.
-      mail.smtp.starttls.required: true
-      mail.smtp.ssl.checkserveridentity: true
-      mail.smtp.connectiontimeout: 5000
-      mail.smtp.timeout: 3000
-      mail.smtp.writetimeout: 5000
 
   security:
     oauth2:
@@ -243,6 +220,9 @@ marketplace:
   # user.name@hostname and the provider rejecting every submission at the
   # MAIL FROM stage (550 Invalid `from` field — measured by raw-SMTP replay).
   mail:
+    provider: resend
+    resend:
+      api-key: ${RESEND_API_KEY}
     from: ${MAIL_FROM}
   security:
     jwt:

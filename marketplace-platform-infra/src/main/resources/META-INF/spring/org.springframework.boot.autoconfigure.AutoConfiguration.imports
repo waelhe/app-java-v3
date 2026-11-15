@@ -1,1 +1,2 @@
 com.marketplace.shared.email.EmailServiceAutoConfiguration
+com.marketplace.shared.email.ResendEmailSenderAutoConfiguration

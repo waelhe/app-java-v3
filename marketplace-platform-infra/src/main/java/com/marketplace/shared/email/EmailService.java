@@ -63,7 +63,7 @@ import java.util.Map;
  * serving. No fallback method — the house rule (the payments precedent):
  * honest degradation, never a silent one.
  */
-public class EmailService {
+public class EmailService implements EmailSender {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
@@ -86,6 +86,7 @@ public class EmailService {
      * @param template Thymeleaf template path (e.g., "email/welcome")
      * @param variables template model variables
      */
+    @Override
     @Retry(name = "mailSend")
     @CircuitBreaker(name = "mailSend")
     @ConcurrencyLimit(3)

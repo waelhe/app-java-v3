@@ -1,7 +1,7 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.UserLookupPort;
-import com.marketplace.shared.email.EmailService;
+import com.marketplace.shared.email.EmailSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -31,10 +31,10 @@ public class EmailNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailNotificationService.class);
 
-    private final Optional<EmailService> emailService;
+    private final Optional<EmailSender> emailService;
     private final UserLookupPort userLookupPort;
 
-    public EmailNotificationService(Optional<EmailService> emailService,
+    public EmailNotificationService(Optional<EmailSender> emailService,
                                      UserLookupPort userLookupPort) {
         this.emailService = emailService;
         this.userLookupPort = userLookupPort;

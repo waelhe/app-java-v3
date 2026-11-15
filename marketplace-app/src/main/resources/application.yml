@@ -965,6 +965,7 @@ marketplace:
   # staging still fail fast without the real identity (Boot's documented
   # precedence: profile-specific files win for the keys they carry).
   mail:
+    provider: ${MARKETPLACE_MAIL_PROVIDER:smtp}
     from: ${MAIL_FROM:Marketplace <no-reply@marketplace.local>}
   # L33 (realestate systems plan): the classifieds lifecycle policy. 90
   # days is the global classifieds convention range (Dubizzle ~60, market

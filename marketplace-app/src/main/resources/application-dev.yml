@@ -80,6 +80,7 @@ marketplace:
   # default (GreenMail/MailHog accept any sender) so the dev loop boots
   # unchanged, overridable through MAIL_FROM to preview the real identity.
   mail:
+    provider: smtp
     from: ${MAIL_FROM:Marketplace Dev <dev@marketplace.local>}
   security:
     jwt:
