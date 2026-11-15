@@ -46,7 +46,7 @@ public class EmailServiceAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(EmailSender.class)
-    EmailSender emailService(JavaMailSender mailSender, TemplateEngine templateEngine,
+    EmailService emailService(JavaMailSender mailSender, TemplateEngine templateEngine,
             MailChannelProperties mailProperties) {
         return new EmailService(mailSender, templateEngine, mailProperties);
     }
