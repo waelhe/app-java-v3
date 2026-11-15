@@ -120,34 +120,39 @@ Example:
   side and the 405 automatic side).
 
 
-### Registered divergence — the framework-gate 400s (F-821-1, pre-existing)
+### The framework-gate 400s — closed on this branch (F-821-1)
 
 The VAL-001 tree-shaped contract covers the failure classes the house advice
 owns — the type mismatch on path/query variables
 (`MethodArgumentTypeMismatchException`) included since this PR. Three
-framework-rejected 400 classes still answer Boot's own automatic bare body
-(no `errorCode`, no `fieldErrors`), measured on main before this PR and
-unchanged by it:
+framework-rejected 400 classes were registered here as a divergence
+(measured on main before this PR: they answered Boot's own automatic bare
+body — no `errorCode`, no `fieldErrors`), and are **closed on this branch**
+(the registered separate-batch disposition was revised when the 2026-11-15
+empty-approval measurement trapped the branch: closing the family in one
+place is the stronger disposition, and the review had recorded both shapes
+as acceptable):
 
 - `HttpMessageNotReadableException` (unparseable or enum-mismatched request
-  body),
-- `MissingPathVariableException` — **in its 400 member only**: the framework
+  body) — the house VAL-001 tree with a FIXED detail (the parser's own
+  message carries input fragments and the leakage policy never surfaces
+  them) and an explicitly empty `fieldErrors` list (no field is
+  addressable when the body itself did not parse).
+- `MissingPathVariableException` — **its 400 member only**: the framework
   answers 400 solely when `missingAfterConversion=true` (the path variable
   resolved but its conversion to the declared type came out `null`); a
   `@PathVariable` name that does not match the template's own variable is a
-  **server-side misconfiguration** the framework reports as 500 — a client
-  error contract must not absorb it (the class is named here for the
-  missing-after-conversion member alone, per the Spring Framework 7.0.10
-  source),
-- `HandlerMethodValidationException`.
+  **server-side misconfiguration** that answers the house masked INT-001 500
+  (the generic net's own body), never a client 400 — a client error
+  contract must not absorb it (per the Spring Framework 7.0.10 source).
+- `HandlerMethodValidationException` — the same house VAL-001 tree the two
+  existing validation legs answer, with the parameter's own name as the
+  `fieldErrors[].field` (the plain-name shape — one violations list for
+  every 400 on every leg).
 
-The same client mistake therefore answers two different 400 bodies depending
-on the rejection layer (the advice-owned tree versus the framework's bare
-problem body). **Registered, not fixed here**: this PR's declared scope is the
-type-mismatch path; closing the remaining three framework gates is a separate
-follow-up batch with its own contract tests — the disposition the 2026-11-14
-adversarial behavioral review recorded (F-821-1: explicitly out of this PR's
-merge conditions).
+The same client mistake therefore answers ONE 400 body on every rejection
+layer (the advice-owned tree), pinned by the contract tests in
+`GlobalExceptionHandlerTest` (`f821_1_*`).
 
 ## REST (RFC 7807) vs GraphQL error envelope
 

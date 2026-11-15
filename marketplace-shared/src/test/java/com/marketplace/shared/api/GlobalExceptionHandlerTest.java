@@ -303,6 +303,92 @@ class GlobalExceptionHandlerTest {
      * ordering this composition is measured on.
      */
 
+    @Test
+    void f821_1_unreadableBodyAnswersTheHouseValTreeNeverTheBareAutomaticBody() {
+        // F-821-1's first gate: malformed/untypeable JSON answers the house
+        // VAL-001 tree — errorCode/category present, a FIXED detail (the
+        // parser's own message carries input fragments and must never leak),
+        // and an explicitly empty fieldErrors list (no field is addressable
+        // when the body itself did not parse).
+        var ex = new org.springframework.http.converter.HttpMessageNotReadableException(
+                "Malformed JSON payload", (org.springframework.http.HttpInputMessage) null);
+        HttpServletRequest request = new StubHttpServletRequest("/api/listings");
+
+        var response = handler.handleUnreadableBody(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        assertThat(response.getDetail()).isEqualTo("The request body could not be parsed for the expected shape.");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(List.of());
+    }
+
+    @Test
+    void f821_1_missingPathVariable400MemberAnswersTheHouseValTree() throws NoSuchMethodException {
+        // F-821-1's second gate, the 400 member ONLY: the variable resolved
+        // but its conversion came out null (missingAfterConversion=true) —
+        // a client-contract violation with the variable named in
+        // fieldErrors, never the bare automatic body.
+        MethodParameter parameter = new MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        var ex = new org.springframework.web.bind.MissingPathVariableException("status", parameter, true);
+        HttpServletRequest request = new StubHttpServletRequest("/api/orders/42/items");
+
+        var response = handler.handleMissingPathVariable(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("status", "Invalid value for path parameter 'status'.")));
+    }
+
+    @Test
+    void f821_1_missingPathVariableMisconfigurationMemberAnswersTheMasked500() throws NoSuchMethodException {
+        // The registered split's other member: a @PathVariable name absent
+        // from the template is a SERVER misconfiguration — the client
+        // contract must not absorb it. The answer is the house masked
+        // INT-001 500 (the generic net's own body), never a 400.
+        MethodParameter parameter = new MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        var ex = new org.springframework.web.bind.MissingPathVariableException("wrongName", parameter, false);
+        HttpServletRequest request = new StubHttpServletRequest("/api/orders/42/items");
+
+        var response = handler.handleMissingPathVariable(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("INT-001");
+        assertThat(response.getDetail()).isEqualTo("An unexpected error occurred");
+        assertThat(response.getProperties()).doesNotContainKey("fieldErrors");
+    }
+
+    @Test
+    void f821_1_methodValidationAnswersTheHouseValTreeWithParameterFieldErrors() throws NoSuchMethodException {
+        // F-821-1's third gate: the @Validated method surface answers the
+        // SAME tree the two existing validation legs answer — the
+        // parameter's own name as the field (the plain-name shape), the
+        // constraint's already-localized message as the entry.
+        MethodParameter parameter = new MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        org.springframework.validation.method.ParameterValidationResult result =
+                org.mockito.Mockito.mock(org.springframework.validation.method.ParameterValidationResult.class);
+        org.mockito.Mockito.when(result.getMethodParameter()).thenReturn(parameter);
+        org.mockito.Mockito.when(result.getResolvableErrors()).thenReturn(
+                java.util.List.of(new org.springframework.validation.FieldError(
+                        "cmd", "email", "must be a well-formed email address")));
+        var ex = new org.springframework.validation.method.HandlerMethodValidationException(
+                java.util.List.of(result));
+        HttpServletRequest request = new StubHttpServletRequest("/api/users");
+
+        var response = handler.handleMethodValidation(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("email", "must be a well-formed email address")));
+    }
+
     static class TestController {
         public void submit(String email) {
         }
