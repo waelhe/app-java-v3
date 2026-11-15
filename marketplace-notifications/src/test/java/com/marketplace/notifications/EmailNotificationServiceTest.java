@@ -35,7 +35,7 @@ class EmailNotificationServiceTest {
     }
 
     @Test
-    void sendEmailDelegatesToEmailService() {
+    void sendEmailDelegatesToEmailSender() {
         EmailSender emailService = mock(EmailSender.class);
         UserLookupPort userLookupPort = mockUserLookup();
         EmailNotificationService service = new EmailNotificationService(Optional.of(emailService), userLookupPort);
@@ -46,7 +46,7 @@ class EmailNotificationServiceTest {
     }
 
     @Test
-    void sendEmailNoOpWhenEmailServiceNotPresent() {
+    void sendEmailNoOpWhenEmailSenderNotPresent() {
         UserLookupPort userLookupPort = mockUserLookup();
         EmailNotificationService service = new EmailNotificationService(Optional.empty(), userLookupPort);
 
@@ -57,7 +57,7 @@ class EmailNotificationServiceTest {
 
     @Test
     void sendEmailNoOpWhenUserNotFound() {
-        EmailService emailService = mock(EmailService.class);
+        EmailSender emailService = mock(EmailSender.class);
         UserLookupPort userLookupPort = mock(UserLookupPort.class);
         when(userLookupPort.findById(USER_ID)).thenReturn(Optional.empty());
         EmailNotificationService service = new EmailNotificationService(Optional.of(emailService), userLookupPort);
@@ -69,7 +69,7 @@ class EmailNotificationServiceTest {
 
     @Test
     void sendEmailPropagatesExceptionOnFailure() {
-        EmailService emailService = mock(EmailService.class);
+        EmailSender emailService = mock(EmailSender.class);
         doThrow(new EmailSendException("SMTP error", new RuntimeException()))
                 .when(emailService).send(anyString(), anyString(), anyString(), anyMap());
         UserLookupPort userLookupPort = mockUserLookup();
