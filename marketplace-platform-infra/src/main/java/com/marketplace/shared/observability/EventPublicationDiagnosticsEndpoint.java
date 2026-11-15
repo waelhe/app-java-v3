@@ -50,7 +50,7 @@ public class EventPublicationDiagnosticsEndpoint {
                 publication.getIdentifier(),
                 publication.getEvent().getClass().getName(),
                 publication.getTargetIdentifier().toString(),
-                publication.getStatus().name(),
+                publication.getStatus() == null ? "LEGACY_UNCLASSIFIED" : publication.getStatus().name(),
                 publishedAt,
                 ageSeconds,
                 publication.getCompletionAttempts(),
