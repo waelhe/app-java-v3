@@ -376,7 +376,7 @@ class GlobalExceptionHandlerTest {
         org.mockito.Mockito.when(result.getResolvableErrors()).thenReturn(
                 java.util.List.of(new org.springframework.validation.FieldError(
                         "cmd", "email", "must be a well-formed email address")));
-        var ex = new org.springframework.validation.method.HandlerMethodValidationException(
+        var ex = new org.springframework.web.method.annotation.HandlerMethodValidationException(
                 java.util.List.of(result));
         HttpServletRequest request = new StubHttpServletRequest("/api/users");
 
