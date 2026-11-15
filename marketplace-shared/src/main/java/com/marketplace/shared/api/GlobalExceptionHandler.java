@@ -266,7 +266,10 @@ public class GlobalExceptionHandler {
         List<ApiErrorPayload.FieldError> fieldErrors = new java.util.ArrayList<>();
         for (ParameterValidationResult result : ex.getValueResults()) {
             String parameter = result.getMethodParameter().getParameterName();
-            for (ParameterValidationResult.ValidationResult error : result.getResolvableErrors()) {
+            // Framework 7 dropped the 6.1 nested ValidationResult type —
+            // the resolvable errors ARE the message-source-resolvable
+            // carriers (getDefaultMessage on the interface itself).
+            for (org.springframework.context.MessageSourceResolvable error : result.getResolvableErrors()) {
                 fieldErrors.add(new ApiErrorPayload.FieldError(parameter, error.getDefaultMessage()));
             }
         }
