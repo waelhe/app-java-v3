@@ -181,9 +181,7 @@ class StripePspChannelTest {
         Mockito.when(existing.getStatus()).thenReturn("succeeded");
         Mockito.when(existing.getCharge()).thenReturn("ch_x");
         RefundCollection collection = Mockito.mock(RefundCollection.class);
-        Mockito.when(collection.autoPagingIterable(org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any()))
-                .thenReturn(java.util.List.of(existing));
+        Mockito.when(collection.autoPagingIterable()).thenReturn(java.util.List.of(existing));
         // the cumulative answer: a charge extracted through the official
         // event deserialization (no network)
         String chargeEvent = "{\"id\":\"evt_chx\",\"object\":\"event\",\"type\":\"charge.refunded\","
@@ -223,9 +221,7 @@ class StripePspChannelTest {
         // the first submission: the reconcile finds nothing under the
         // operation's key, and the create path answers with the new refund.
         RefundCollection empty = Mockito.mock(RefundCollection.class);
-        Mockito.when(empty.autoPagingIterable(org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any()))
-                .thenReturn(java.util.List.of());
+        Mockito.when(empty.autoPagingIterable()).thenReturn(java.util.List.of());
         com.stripe.model.Refund created = Mockito.mock(com.stripe.model.Refund.class);
         Mockito.when(created.getId()).thenReturn("re_new");
         Mockito.when(created.getStatus()).thenReturn("succeeded");
@@ -282,9 +278,7 @@ class StripePspChannelTest {
         Mockito.when(live.getStatus()).thenReturn("succeeded");
         Mockito.when(live.getCharge()).thenReturn("ch_z");
         RefundCollection collection = Mockito.mock(RefundCollection.class);
-        Mockito.when(collection.autoPagingIterable(org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any()))
-                .thenReturn(java.util.List.of(dead, live));
+        Mockito.when(collection.autoPagingIterable()).thenReturn(java.util.List.of(dead, live));
         String chargeEvent = "{\"id\":\"evt_chz\",\"object\":\"event\",\"type\":\"charge.refunded\","
                 + "\"livemode\":false,\"api_version\":\"2026-01-01\","
                 + "\"data\":{\"object\":{\"id\":\"ch_z\",\"object\":\"charge\","
@@ -327,9 +321,7 @@ class StripePspChannelTest {
         Mockito.when(dead.getId()).thenReturn("re_dead4");
         Mockito.when(dead.getStatus()).thenReturn("canceled");
         RefundCollection collection = Mockito.mock(RefundCollection.class);
-        Mockito.when(collection.autoPagingIterable(org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any()))
-                .thenReturn(java.util.List.of(dead));
+        Mockito.when(collection.autoPagingIterable()).thenReturn(java.util.List.of(dead));
         com.stripe.model.Refund created = Mockito.mock(com.stripe.model.Refund.class);
         Mockito.when(created.getId()).thenReturn("re_fresh");
         Mockito.when(created.getStatus()).thenReturn("succeeded");

@@ -434,10 +434,11 @@ class PaymentsServicePspTest {
         // record are never settled
         verify(refundOperationJournal).markExecuted(eq(keyA), eq("re_a"));
         verify(refundOperationJournal, never()).markExecuted(eq(keyC), anyString());
-        // E joins the reads (A, C, D, E) and the settles (A, E); E's stale
-        // snapshot saved nothing (exactly A's and D's two full-sync saves)
+        // E joins the reads (A, C, D, E) and the settles (A, E); the four
+        // books-sync saves are exactly A, B, C and D's — E's stale snapshot
+        // saved nothing (the out-of-order guard skipped it)
         verify(refundOperationJournal, times(4)).findSubmitted(anyString());
-        verify(intentRepository, times(2)).save(any());
+        verify(intentRepository, times(4)).save(any());
     }
 
     /**
