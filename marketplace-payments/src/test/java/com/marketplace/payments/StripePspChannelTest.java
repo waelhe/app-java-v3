@@ -147,7 +147,12 @@ class StripePspChannelTest {
         assertThat(verified.eventType()).isEqualTo("charge.refunded");
         assertThat(verified.pspIntentId()).isEqualTo("pi_remote_r9");
         assertThat(verified.refund().refundedAmountCents()).isEqualTo(2000L);
+        // the pending refund is filtered (not execution evidence); the
+        // dashboard refund IS carried with a null key — the snapshot stays a
+        // faithful representation of the provider's completed refunds, and
+        // the service's settle skips keyless entries
         assertThat(verified.refund().executedRefunds()).containsExactly(
-                new PspChannel.ExecutedRefund("re_r9", "marketplace-refund-p1-return-r1-2000"));
+                new PspChannel.ExecutedRefund("re_r9", "marketplace-refund-p1-return-r1-2000"),
+                new PspChannel.ExecutedRefund("re_dash", null));
     }
 }
