@@ -214,6 +214,26 @@ class StripePspChannel implements PspChannel {
             // channel they arrive on.
             throw new AccessDeniedException("Stripe webhook signature verification failed: " + e.getMessage());
         }
+        // CodeRabbit round 6: refund.* events carry the Refund object itself
+        // — the identity vehicle for a refund that SUCCEEDED asynchronously
+        // after its pending creation (charge.refunded may have already fired
+        // on the pending state, or the refunds list it carried predates the
+        // success). The books stay with charge.refunded's cumulative sync;
+        // this path settles the identity only. Whether refund.updated is
+        // DELIVERED depends on the webhook endpoint's event subscription
+        // (an owner dashboard setting) — the code handles the event when it
+        // arrives and assumes nothing about the subscription.
+        if ("refund.updated".equals(event.getType()) || "refund.created".equals(event.getType())) {
+            com.stripe.model.Refund refund = extractRefund(event);
+            if (refund != null) {
+                return new VerifiedWebhook(event.getId(), event.getType(), null,
+                        refund.getPaymentIntent(),
+                        new RefundSnapshot(0L, "succeeded".equals(refund.getStatus())
+                                ? List.of(toExecutedRefund(refund)) : List.of()));
+            }
+            log.debug("Stripe refund event {} carried no refund object", event.getId());
+            return new VerifiedWebhook(event.getId(), event.getType(), null, null, null);
+        }
         PaymentIntent data = extractPaymentIntent(event);
         if (data == null) {
             // charge.refunded events carry a Charge, not a PaymentIntent (L19):
@@ -249,6 +269,23 @@ class StripePspChannel implements PspChannel {
         }
         UUID marketplaceIntentId = metadataIntentId(data.getMetadata());
         return new VerifiedWebhook(event.getId(), event.getType(), marketplaceIntentId, data.getId(), null);
+    }
+
+    /** Same official extraction pattern for Refund-carrying events (round 6). */
+    private com.stripe.model.Refund extractRefund(Event event) {
+        var deserializer = event.getDataObjectDeserializer();
+        var safe = deserializer.getObject();
+        if (safe.isPresent() && safe.get() instanceof com.stripe.model.Refund refund) {
+            return refund;
+        }
+        try {
+            if (deserializer.deserializeUnsafe() instanceof com.stripe.model.Refund refund) {
+                return refund;
+            }
+        } catch (EventDataObjectDeserializationException e) {
+            log.warn("Stripe event {} data could not be deserialized: {}", event.getId(), e.getMessage());
+        }
+        return null;
     }
 
     /**

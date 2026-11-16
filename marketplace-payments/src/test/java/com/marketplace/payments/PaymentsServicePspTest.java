@@ -408,6 +408,47 @@ class PaymentsServicePspTest {
         verify(refundOperationJournal, times(3)).findSubmitted(anyString());
     }
 
+    /**
+     * CodeRabbit round 6: a refund created PENDING succeeds asynchronously —
+     * the refund.updated event (carrying the Refund object with the operation
+     * key) settles the SUBMITTED operation. The books are NOT touched on this
+     * path (charge.refunded owns the cumulative sync), and the operation then
+     * answers the re-completion through its EXECUTED record.
+     */
+    @Test
+    void handleStripeWebhook_refundUpdated_settlesTheAsynchronousSuccess() {
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_ru1")).thenReturn(Optional.empty());
+        when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
+        UUID intentId = intent.getId();
+        intent.markProcessing();
+        intent.markSucceeded();
+        Payment payment = Payment.create(intentId, 5000L);
+        payment.markCompleted("ch_ru");
+        String key = "marketplace-refund-" + payment.getId() + "-return-rU-2000";
+        PaymentRefundOperation frozen = new PaymentRefundOperation(key, payment.getId(), 2000L, 0L);
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+        when(pspChannel.verifyWebhook("payloadU", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_ru1", "refund.updated",
+                        intentId, "pi_remote_ru", new PspChannel.RefundSnapshot(0L,
+                        java.util.List.of(new PspChannel.ExecutedRefund("re_late", key)))));
+        when(refundOperationJournal.findSubmitted(key)).thenReturn(frozen);
+
+        boolean created = service(boundChannel).handleStripeWebhook("payloadU", "t=1,v1=sig");
+
+        assertTrue(created);
+        // the identity settle ran — the journal's EXECUTED delegation
+        verify(refundOperationJournal).markExecuted(eq(key), eq("re_late"));
+        // the books are NOT touched by the refund event: charge.refunded owns
+        // the cumulative sync, and nothing was saved or published here
+        verify(intentRepository, never()).save(any());
+        assertEquals(PaymentStatus.COMPLETED, payment.getStatus());
+        assertEquals(0L, payment.getRefundedAmountCents());
+    }
+
     /** Same snapshot redelivered under a new event id: no-op, no state-machine violation. */
     @Test
     void handleStripeWebhook_chargeRefunded_alreadySynced_isANoOp() {

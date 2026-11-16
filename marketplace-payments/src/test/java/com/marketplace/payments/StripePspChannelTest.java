@@ -426,4 +426,39 @@ class StripePspChannelTest {
                     new PspChannel.ExecutedRefund("re_r10", "marketplace-refund-p10-return-r10-1500"));
         }
     }
+
+    @Test
+    void verifyWebhook_carriesTheRefundEventsIdentity() throws Exception {
+        // CodeRabbit round 6: refund.updated carries the Refund object itself
+        // — the identity vehicle for a refund that succeeded asynchronously.
+        // A succeeded refund with the operation key carries its identity; a
+        // pending one carries none (not execution evidence).
+        String payload = "{\"id\":\"evt_ru\",\"object\":\"event\",\"type\":\"refund.updated\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{\"id\":\"re_late\",\"object\":\"refund\","
+                + "\"status\":\"succeeded\",\"payment_intent\":\"pi_late\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":"
+                + "\"marketplace-refund-pL-return-rL-2000\"}}}";
+        String signature = Webhook.Signature.generateSignatureHeader(payload, SECRET);
+
+        PspChannel.VerifiedWebhook verified = channel.verifyWebhook(payload, signature);
+
+        org.assertj.core.api.Assertions.assertThat(verified.eventType()).isEqualTo("refund.updated");
+        org.assertj.core.api.Assertions.assertThat(verified.pspIntentId()).isEqualTo("pi_late");
+        org.assertj.core.api.Assertions.assertThat(verified.refund().executedRefunds()).containsExactly(
+                new PspChannel.ExecutedRefund("re_late", "marketplace-refund-pL-return-rL-2000"));
+
+        String pending = "{\"id\":\"evt_rp\",\"object\":\"event\",\"type\":\"refund.created\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{\"id\":\"re_pend\",\"object\":\"refund\","
+                + "\"status\":\"pending\",\"payment_intent\":\"pi_late\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":"
+                + "\"marketplace-refund-pL-return-rL-2000\"}}}";
+        String pendingSignature = Webhook.Signature.generateSignatureHeader(pending, SECRET);
+
+        PspChannel.VerifiedWebhook pendingVerified = channel.verifyWebhook(pending, pendingSignature);
+
+        org.assertj.core.api.Assertions.assertThat(pendingVerified.eventType()).isEqualTo("refund.created");
+        org.assertj.core.api.Assertions.assertThat(pendingVerified.refund().executedRefunds()).isEmpty();
+    }
 }

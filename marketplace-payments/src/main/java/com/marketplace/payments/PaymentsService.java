@@ -320,6 +320,22 @@ public class PaymentsService implements PaymentsSpi {
                     log.warn("Webhook {} missing paymentIntentId — nothing to resolve", eventType);
                 }
             }
+            case "refund.created", "refund.updated" -> {
+                // CodeRabbit round 6: the IDENTITY vehicle for a refund that
+                // SUCCEEDED asynchronously after its pending creation — the
+                // Refund object itself carries the operation key. Books stay
+                // with charge.refunded's cumulative sync; this path settles
+                // the matched SUBMITTED operation only. A pending refund's
+                // snapshot carries no identities (not execution evidence).
+                if (refund != null && paymentIntentId != null && !refund.executedRefunds().isEmpty()) {
+                    log.info("Webhook dispatch: {} for intent {} carrying {} executed refund identity/identities",
+                            eventType, paymentIntentId, refund.executedRefunds().size());
+                    settleRefundOperations(paymentIntentId, refund.executedRefunds());
+                } else {
+                    log.debug("Webhook {} without an executed refund identity or resolvable intent: "
+                            + "nothing to settle", eventType);
+                }
+            }
             case "charge.refunded" -> {
                 // L19 — the async safety net: refunds completed at the provider
                 // (including dashboard-created ones) sync the local books to
@@ -1255,6 +1271,36 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     /**
+     * The identity settle shared by both webhook vehicles (CodeRabbit round 6):
+     * charge.refunded's snapshot and the refund.* events' Refund object. Each
+     * executed refund carrying an operation key settles the matching SUBMITTED
+     * journal record — identity-matched (the key) and payment-matched, never
+     * by the books' cumulative arithmetic. Keyless refunds (the dashboard)
+     * and foreign payments are skipped.
+     */
+    void settleRefundOperations(UUID paymentIntentId, List<PspChannel.ExecutedRefund> executedRefunds) {
+        Payment payment = paymentRepository.findByPaymentIntentId(paymentIntentId).orElse(null);
+        if (payment == null) {
+            log.warn("executed refund identities for intent {} without a local payment row — nothing to settle",
+                    paymentIntentId);
+            return;
+        }
+        for (PspChannel.ExecutedRefund executed : executedRefunds == null
+                ? List.<PspChannel.ExecutedRefund>of() : executedRefunds) {
+            if (executed.operationKey() == null) {
+                continue; // a refund created outside this service's contract
+            }
+            PaymentRefundOperation operation = refundOperationJournal.findSubmitted(executed.operationKey());
+            if (operation != null && payment.getId().equals(operation.getPaymentId())) {
+                refundOperationJournal.markExecuted(executed.operationKey(), executed.refundId());
+                log.info("Webhook settled refund operation {} as EXECUTED (remote refund {}) — "
+                                + "identity-matched through the refund's provider metadata",
+                        executed.operationKey(), executed.refundId());
+            }
+        }
+    }
+
+    /**
      * L19 — webhook-side refund sync ({@code charge.refunded}): sets the local
      * books to the remote cumulative actual. Idempotent: a redelivery that
      * carries no new state is a debug no-op instead of a state-machine
@@ -1298,18 +1344,7 @@ public class PaymentsService implements PaymentsSpi {
         // stale cumulative snapshot still carries REAL refund identities, and
         // the journal's EXECUTED record is a fact about the provider, not
         // about the local books' ordering.
-        for (PspChannel.ExecutedRefund executed : executedRefunds == null ? List.<PspChannel.ExecutedRefund>of() : executedRefunds) {
-            if (executed.operationKey() == null) {
-                continue; // a refund created outside this service's contract
-            }
-            PaymentRefundOperation operation = refundOperationJournal.findSubmitted(executed.operationKey());
-            if (operation != null && payment.getId().equals(operation.getPaymentId())) {
-                refundOperationJournal.markExecuted(executed.operationKey(), executed.refundId());
-                log.info("charge.refunded settled refund operation {} as EXECUTED (remote refund {}) — "
-                                + "identity-matched through the refund's provider metadata",
-                        executed.operationKey(), executed.refundId());
-            }
-        }
+        settleRefundOperations(paymentIntentId, executedRefunds);
         // CodeRabbit #249 round 1: Stripe does not guarantee webhook delivery
         // order (official docs), and amount_refunded only grows — a snapshot
         // BELOW the synced local totals is a stale, out-of-order event and is
