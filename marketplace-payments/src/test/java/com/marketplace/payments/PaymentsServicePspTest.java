@@ -402,13 +402,42 @@ class PaymentsServicePspTest {
         // call site — no markExecuted delegation for it
         verify(refundOperationJournal, never()).markExecuted(eq(keyD), anyString());
 
+        // Case E (CodeRabbit round 8): a STALE cumulative snapshot (1000
+        // below the books' 1500) still carries a LIVE SUBMITTED identity —
+        // the settle accepts the identity (the refund's completion is a fact
+        // about the provider) while the out-of-order guard keeps the books
+        // at their synced 1500: nothing saved, nothing published
+        PaymentIntent intentE = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 5000L, null, null, null);
+        intentE.markProcessing();
+        intentE.markSucceeded();
+        Payment paymentE = Payment.create(intentE.getId(), 5000L);
+        paymentE.markCompleted("ch_s5");
+        paymentE.markPartiallyRefunded(1500L);
+        String keyE = "marketplace-refund-" + paymentE.getId() + "-return-rE-1000";
+        PaymentRefundOperation frozenE = new PaymentRefundOperation(keyE, paymentE.getId(), 1000L, 500L);
+        when(intentRepository.findById(intentE.getId())).thenReturn(Optional.of(intentE));
+        when(paymentRepository.findByPaymentIntentId(intentE.getId())).thenReturn(Optional.of(paymentE));
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_s5")).thenReturn(Optional.empty());
+        when(pspChannel.verifyWebhook("payloadE", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_s5", "charge.refunded",
+                        intentE.getId(), "pi_remote_s5", new PspChannel.RefundSnapshot(1000L,
+                        java.util.List.of(new PspChannel.ExecutedRefund("re_e", keyE)))));
+        when(refundOperationJournal.findSubmitted(keyE)).thenReturn(frozenE);
+        assertTrue(service(boundChannel).handleStripeWebhook("payloadE", "t=1,v1=sig"));
+        verify(refundOperationJournal).markExecuted(eq(keyE), eq("re_e"));
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, paymentE.getStatus());
+        assertEquals(1500L, paymentE.getRefundedAmountCents());
+
         // the settle contract: A delegates to the journal (the
         // identity-matched, payment-matched SUBMITTED operation); B never
         // looks the journal up; C's foreign operation and D's already-EXECUTED
         // record are never settled
         verify(refundOperationJournal).markExecuted(eq(keyA), eq("re_a"));
         verify(refundOperationJournal, never()).markExecuted(eq(keyC), anyString());
-        verify(refundOperationJournal, times(3)).findSubmitted(anyString());
+        // E joins the reads (A, C, D, E) and the settles (A, E); E's stale
+        // snapshot saved nothing (exactly A's and D's two full-sync saves)
+        verify(refundOperationJournal, times(4)).findSubmitted(anyString());
+        verify(intentRepository, times(2)).save(any());
     }
 
     /**

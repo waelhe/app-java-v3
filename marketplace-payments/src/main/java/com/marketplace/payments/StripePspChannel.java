@@ -154,8 +154,12 @@ class StripePspChannel implements PspChannel {
             RefundCollection refunds = com.stripe.model.Refund.list(
                     RefundListParams.builder().setPaymentIntent(pspIntentId).setLimit(100L).build(),
                     RequestOptions.builder().setApiKey(apiKey).build());
-            for (com.stripe.model.Refund refund : refunds.autoPagingIterable(java.util.Map.of(),
-                    RequestOptions.builder().setApiKey(apiKey).build())) {
+            // CodeRabbit round 8: the no-arg auto-pagination keeps the ORIGINAL
+            // list request's params (payment_intent, limit) and options on
+            // every subsequent page fetch — an explicit params map would
+            // RESET them and fetch unfiltered pages. The collection came from
+            // the API response, so its response getter is attached.
+            for (com.stripe.model.Refund refund : refunds.autoPagingIterable()) {
                 if (!operationKey.equals(refund.getMetadata() == null
                         ? null : refund.getMetadata().get(OPERATION_KEY_METADATA))) {
                     continue;
@@ -371,10 +375,11 @@ class StripePspChannel implements PspChannel {
         if (embeddedComplete) {
             return new RefundIdentities(cumulative, mapExecutedRefunds(refunds.getData()));
         }
-        // the retrieved, multi-page collection: the documented auto-pagination
+        // the retrieved, multi-page collection: the documented no-arg
+        // auto-pagination keeps the retrieval's original params and options
+        // (CodeRabbit round 8) — the collection carries its response getter
         List<PspChannel.ExecutedRefund> executed = new ArrayList<>();
-        for (com.stripe.model.Refund refund : refunds.autoPagingIterable(java.util.Map.of(),
-                RequestOptions.builder().setApiKey(apiKey).build())) {
+        for (com.stripe.model.Refund refund : refunds.autoPagingIterable()) {
             if ("succeeded".equals(refund.getStatus())) {
                 executed.add(toExecutedRefund(refund));
             }
