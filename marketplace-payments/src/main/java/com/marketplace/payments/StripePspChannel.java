@@ -5,8 +5,10 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Charge;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
+import com.stripe.model.RefundCollection;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
+import com.stripe.param.ChargeRetrieveParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
 import io.micrometer.observation.annotation.Observed;
@@ -15,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -160,10 +163,16 @@ class StripePspChannel implements PspChannel {
             Charge charge = extractCharge(event);
             if (charge != null) {
                 Long cumulative = charge.getAmountRefunded();
+                // The identities are resolved only for a USABLE event (one
+                // carrying the payment_intent the dispatch resolves); an
+                // unusable one never reads its snapshot, so no retrieval
+                // fires for it.
+                RefundSnapshot snapshot = charge.getPaymentIntent() == null
+                        ? new RefundSnapshot(cumulative == null ? 0L : cumulative)
+                        : new RefundSnapshot(cumulative == null ? 0L : cumulative,
+                                executedRefunds(charge));
                 return new VerifiedWebhook(event.getId(), event.getType(), null,
-                        charge.getPaymentIntent(),
-                        new RefundSnapshot(cumulative == null ? 0L : cumulative,
-                                executedRefunds(charge)));
+                        charge.getPaymentIntent(), snapshot);
             }
             // Events we did not subscribe to (or unknown objects) —
             // acknowledged and ignored by returning a no-op record; dispatch
@@ -218,20 +227,75 @@ class StripePspChannel implements PspChannel {
      * The charge's completed refunds (CodeRabbit round 2 on #828): each
      * succeeded refund entry with the operation key this service stamped as
      * its metadata. Refunds without the key (created directly at the
-     * provider) carry a null key and stay books-sync only. The refunds
-     * collection is expandable and absent from un-expanded payloads — null
-     * means "not carried", an empty list means "none completed".
+     * provider) carry a null key and stay books-sync only.
+     *
+     * <p>CodeRabbit round 3: the refunds collection is an expandable list and
+     * a charge.refunded payload may omit it — answering an EMPTY list there
+     * would let the books sync to the cumulative without the identity settle,
+     * recreating the very stuck window this closes. On omission (or a
+     * truncated embedded page) the charge is re-retrieved with the documented
+     * expand mechanism (ChargeRetrieveParams.addExpand("refunds")) and the
+     * retrieved collection rides the documented auto-pagination with explicit
+     * request options. A webhook-deserialized collection is iterated from its
+     * embedded data only — it carries no response getter, and its
+     * auto-pagination would throw (measured in the 33.4.2 sources:
+     * StripeCollection.autoPagingIterable dereferences the transient
+     * responseGetter only API responses attach).</p>
      */
     private List<PspChannel.ExecutedRefund> executedRefunds(Charge charge) {
-        if (charge.getRefunds() == null || charge.getRefunds().getData() == null) {
+        RefundCollection refunds = charge.getRefunds();
+        boolean embeddedComplete = refunds != null && refunds.getData() != null
+                && !Boolean.TRUE.equals(refunds.getHasMore());
+        if (!embeddedComplete && charge.getId() != null) {
+            refunds = retrieveExpandedRefunds(charge.getId());
+            embeddedComplete = refunds != null && refunds.getData() != null
+                    && !Boolean.TRUE.equals(refunds.getHasMore());
+        }
+        if (refunds == null || refunds.getData() == null) {
             return List.of();
         }
-        return charge.getRefunds().getData().stream()
+        if (embeddedComplete) {
+            return mapExecutedRefunds(refunds.getData());
+        }
+        // the retrieved, multi-page collection: the documented auto-pagination
+        List<PspChannel.ExecutedRefund> executed = new ArrayList<>();
+        for (com.stripe.model.Refund refund : refunds.autoPagingIterable(java.util.Map.of(),
+                RequestOptions.builder().setApiKey(apiKey).build())) {
+            if ("succeeded".equals(refund.getStatus())) {
+                executed.add(toExecutedRefund(refund));
+            }
+        }
+        return List.copyOf(executed);
+    }
+
+    private List<PspChannel.ExecutedRefund> mapExecutedRefunds(List<com.stripe.model.Refund> refunds) {
+        return refunds.stream()
                 .filter(refund -> "succeeded".equals(refund.getStatus()))
-                .map(refund -> new PspChannel.ExecutedRefund(refund.getId(),
-                        refund.getMetadata() == null ? null
-                                : refund.getMetadata().get(OPERATION_KEY_METADATA)))
+                .map(StripePspChannel::toExecutedRefund)
                 .toList();
+    }
+
+    private static PspChannel.ExecutedRefund toExecutedRefund(com.stripe.model.Refund refund) {
+        return new PspChannel.ExecutedRefund(refund.getId(),
+                refund.getMetadata() == null ? null
+                        : refund.getMetadata().get(OPERATION_KEY_METADATA));
+    }
+
+    /**
+     * The documented expansion retrieval for a charge whose webhook payload
+     * omitted the refunds collection — the same API surface
+     * {@code createRemoteRefund} already uses for the cumulative read.
+     */
+    private RefundCollection retrieveExpandedRefunds(String chargeId) {
+        try {
+            Charge retrieved = Charge.retrieve(chargeId,
+                    ChargeRetrieveParams.builder().addExpand("refunds").build(),
+                    RequestOptions.builder().setApiKey(apiKey).build());
+            return retrieved.getRefunds();
+        } catch (StripeException e) {
+            throw new PspChannelException("Stripe charge retrieval for the refund identities failed (charge "
+                    + chargeId + "): " + e.getMessage(), e);
+        }
     }
 
     private UUID metadataIntentId(Map<String, String> metadata) {

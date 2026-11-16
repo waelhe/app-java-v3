@@ -1,12 +1,20 @@
 package com.marketplace.payments;
 
+import com.stripe.model.Charge;
+import com.stripe.model.Event;
+import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
+import com.stripe.param.ChargeRetrieveParams;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mockStatic;
 
 import org.springframework.security.access.AccessDeniedException;
 
@@ -154,5 +162,51 @@ class StripePspChannelTest {
         assertThat(verified.refund().executedRefunds()).containsExactly(
                 new PspChannel.ExecutedRefund("re_r9", "marketplace-refund-p1-return-r1-2000"),
                 new PspChannel.ExecutedRefund("re_dash", null));
+    }
+
+    @Test
+    void verifyWebhook_retrievesTheRefundIdentitiesWhenThePayloadOmitsThem() throws Exception {
+        // CodeRabbit round 3: a charge.refunded payload may omit the
+        // expandable refunds collection — answering an empty list there
+        // would sync the books to the cumulative WITHOUT the identity settle,
+        // recreating the stuck window. On omission the charge is re-retrieved
+        // with the documented expand mechanism; the retrieval's answer is
+        // built through the same official event deserialization production
+        // uses (no network anywhere — the static retrieve is mocked with the
+        // SDK's real crypto verifying the surrounding webhook).
+        String retrievalPayload = "{\"id\":\"evt_retr\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{"
+                + "\"id\":\"ch_10\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_r10\",\"amount_refunded\":1500,"
+                + "\"refunds\":{\"object\":\"list\",\"data\":["
+                + "{\"id\":\"re_r10\",\"object\":\"refund\",\"status\":\"succeeded\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":"
+                + "\"marketplace-refund-p10-return-r10-1500\"}}"
+                + "]}}}}";
+        Event retrievalEvent = Webhook.constructEvent(retrievalPayload,
+                Webhook.Signature.generateSignatureHeader(retrievalPayload, SECRET), SECRET);
+        Charge retrievedCharge = (Charge) retrievalEvent.getDataObjectDeserializer().getObject().orElseThrow();
+
+        String payload = "{\"id\":\"evt_2004\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{"
+                + "\"id\":\"ch_10\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_r10\",\"amount_refunded\":1500}}}";
+        String signature = Webhook.Signature.generateSignatureHeader(payload, SECRET);
+
+        try (MockedStatic<Charge> chargeMock = mockStatic(Charge.class)) {
+            chargeMock.when(() -> Charge.retrieve(eq("ch_10"), any(ChargeRetrieveParams.class),
+                            any(RequestOptions.class)))
+                    .thenReturn(retrievedCharge);
+
+            PspChannel.VerifiedWebhook verified = channel.verifyWebhook(payload, signature);
+
+            assertThat(verified.eventType()).isEqualTo("charge.refunded");
+            assertThat(verified.pspIntentId()).isEqualTo("pi_r10");
+            assertThat(verified.refund().refundedAmountCents()).isEqualTo(1500L);
+            assertThat(verified.refund().executedRefunds()).containsExactly(
+                    new PspChannel.ExecutedRefund("re_r10", "marketplace-refund-p10-return-r10-1500"));
+        }
     }
 }
