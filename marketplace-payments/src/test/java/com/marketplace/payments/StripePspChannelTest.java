@@ -186,7 +186,17 @@ class StripePspChannelTest {
                 + "]}}}}";
         Event retrievalEvent = Webhook.constructEvent(retrievalPayload,
                 Webhook.Signature.generateSignatureHeader(retrievalPayload, SECRET), SECRET);
-        Charge retrievedCharge = (Charge) retrievalEvent.getDataObjectDeserializer().getObject().orElseThrow();
+        // the channel's own tolerant extraction pattern: the safe
+        // deserialization refuses on an API-version mismatch, the documented
+        // fallback is deserializeUnsafe()
+        Charge retrievedCharge;
+        var deserializer = retrievalEvent.getDataObjectDeserializer();
+        if (deserializer.getObject().isPresent()
+                && deserializer.getObject().get() instanceof Charge charge) {
+            retrievedCharge = charge;
+        } else {
+            retrievedCharge = (Charge) deserializer.deserializeUnsafe();
+        }
 
         String payload = "{\"id\":\"evt_2004\",\"object\":\"event\",\"type\":\"charge.refunded\","
                 + "\"livemode\":false,\"api_version\":\"2026-01-01\","
