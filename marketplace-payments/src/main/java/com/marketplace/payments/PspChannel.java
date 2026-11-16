@@ -81,8 +81,33 @@ public interface PspChannel {
      * provider's own payload — the async safety net that syncs local state
      * for refunds completed outside this service (including the Stripe
      * dashboard).
+     *
+     * <p><b>CodeRabbit round 2 on #828 (the refund-specific execution
+     * evidence):</b> the snapshot also carries the charge's refund entries
+     * that completed at the provider. A refund this service created carries
+     * the refund operation's idempotency key as its provider metadata (see
+     * {@code StripePspChannel.OPERATION_KEY_METADATA}), so the webhook — the
+     * only witness of the provider's own refund record — can settle the
+     * matching journal operation by IDENTITY, never by the books'
+     * cumulative arithmetic (an independent refund advances the cumulative
+     * just as well while this operation never sent). Refunds created outside
+     * this service (the dashboard) carry no operation key and stay
+     * books-sync only.</p>
      */
-    record RefundSnapshot(long refundedAmountCents) {}
+    record RefundSnapshot(long refundedAmountCents, java.util.List<ExecutedRefund> executedRefunds) {
+
+        /** Books-sync only: no refund identities carried (legacy callers). */
+        RefundSnapshot(long refundedAmountCents) {
+            this(refundedAmountCents, java.util.List.of());
+        }
+    }
+
+    /**
+     * A refund the provider reports as completed on the charge, with the
+     * refund operation key this service stamped as its metadata (null when
+     * the refund was not created through this service's contract).
+     */
+    record ExecutedRefund(String refundId, String operationKey) {}
 
     /**
      * Verified webhook fields mapped onto the house dispatch contract. For

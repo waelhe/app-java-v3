@@ -421,11 +421,14 @@ class PaymentsServicePspTest {
      * CodeRabbit round 2 on #828 (major — data integrity): the RETURN scope's
      * rollback-then-webhook window. The remote refund executes at the PSP, the
      * carrier (the return completion) rolls back, and the charge.refunded
-     * webhook then syncs the books — the operation row stays SUBMITTED (the
-     * webhook advances the cumulative only; it never touches the journal), so
-     * the re-completion must settle the operation through the provider's
-     * idempotent answer for the SAME key instead of rejecting itself on the
-     * common cap forever (pre-fix: 2000 synced + 2000 frozen > 2000 total).
+     * webhook then syncs the books — the operation row stays SUBMITTED (nothing
+     * but the webhook's refund identity can settle it), so the pre-fix
+     * re-completion rejected itself on the common cap forever (2000 synced +
+     * 2000 frozen > 2000 total). The settle: the refund this service created
+     * carries the operation key as its provider metadata, and the webhook —
+     * the only witness of the provider's own refund record — settles the
+     * journal by IDENTITY. The re-completion then reads EXECUTED and returns
+     * the reconciled state, re-submitting nothing.
      */
     @Test
     void refundPayment_returnScopedRefund_pendingThenRollbackThenWebhookSync_recompletionSettles() {
@@ -438,19 +441,20 @@ class PaymentsServicePspTest {
         payment.markCompleted("ch_r9");
         String key = "marketplace-refund-" + payment.getId() + "-return-" + returnId + "-2000";
         PaymentRefundOperation frozen = new PaymentRefundOperation(key, payment.getId(), 2000L, 0L);
+        PaymentRefundOperation executed = new PaymentRefundOperation(key, payment.getId(), 2000L, 0L);
+        executed.markExecuted("re_r9");
         when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
         when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
-        // round 1: the provider accepts the refund but answers pending — the
-        // books await the webhook and the operation row stays SUBMITTED;
-        // round 2: the idempotent replay of the SAME key answers succeeded
+        // the provider accepts the refund but answers pending — the books
+        // await the webhook and the operation row stays SUBMITTED
         when(pspChannel.createRemoteRefund(eq("pi_remote_r9"), eq(2000L), eq(key)))
-                .thenReturn(new PspChannel.RemoteRefund("re_r9", "pending", 0L))
-                .thenReturn(new PspChannel.RemoteRefund("re_r9", "succeeded", 2000L));
+                .thenReturn(new PspChannel.RemoteRefund("re_r9", "pending", 0L));
         when(refundOperationJournal.findSubmitted(key))
-                .thenReturn(null)   // the first submission
-                .thenReturn(frozen); // the re-completion after the carrier's rollback
+                .thenReturn(null)      // round 1: the first submission
+                .thenReturn(frozen)    // the webhook's identity settle probe
+                .thenReturn(executed); // the re-completion reads EXECUTED
         when(refundOperationJournal.ensureSubmitted(eq(key), eq(payment.getId()), eq(2000L), eq(0L)))
                 .thenReturn(frozen);
 
@@ -459,21 +463,23 @@ class PaymentsServicePspTest {
         svc.refundPayment(payment.getId(), 2000L, PaymentsService.StableRefundScope.forReturn(returnId));
         assertEquals(PaymentStatus.COMPLETED, payment.getStatus());
         assertEquals(0L, payment.getRefundedAmountCents());
+
         // the carrier transaction rolls back (the operation row survives in
-        // its own REQUIRES_NEW) and the charge.refunded webhook syncs the
-        // remote cumulative actual
-        svc.syncRemoteRefund(intent.getId(), 2000L);
+        // its own REQUIRES_NEW) and the charge.refunded webhook arrives: the
+        // books sync to the remote cumulative AND the refund's identity —
+        // carried as the operation key metadata — settles the journal
+        svc.syncRemoteRefund(intent.getId(), 2000L,
+                java.util.List.of(new PspChannel.ExecutedRefund("re_r9", key)));
         assertEquals(PaymentStatus.REFUNDED, payment.getStatus());
         assertEquals(2000L, payment.getRefundedAmountCents());
+        verify(refundOperationJournal).markExecuted(eq(key), eq("re_r9"));
 
-        // the re-completion settles: the provider's idempotent answer for the
-        // SAME key proves THIS operation's execution, marks the journal's
-        // EXECUTED record, and returns the reconciled state
+        // the re-completion reads the EXECUTED record, passes the books-sync
+        // gate, and returns the reconciled state — WITHOUT re-submitting
         PaymentsService.RefundedPayment settled = svc.refundPayment(
                 payment.getId(), 2000L, PaymentsService.StableRefundScope.forReturn(returnId));
 
-        verify(pspChannel, times(2)).createRemoteRefund(eq("pi_remote_r9"), eq(2000L), eq(key));
-        verify(refundOperationJournal).markExecuted(eq(key), eq("re_r9"));
+        verify(pspChannel, times(1)).createRemoteRefund(eq("pi_remote_r9"), eq(2000L), eq(key));
         assertEquals(PaymentStatus.REFUNDED, settled.payment().getStatus());
         assertEquals(2000L, settled.payment().getRefundedAmountCents());
     }

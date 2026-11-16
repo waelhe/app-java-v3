@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -52,6 +53,13 @@ class StripePspChannel implements PspChannel {
 
     /** Metadata key carrying the marketplace intent id into the remote intent. */
     static final String MARKETPLACE_INTENT_ID = "marketplace_intent_id";
+
+    /**
+     * Metadata key carrying the refund operation's idempotency key into the
+     * remote refund (CodeRabbit round 2 on #828): the charge.refunded webhook
+     * reads it back to settle the journal by identity.
+     */
+    static final String OPERATION_KEY_METADATA = "marketplace_refund_operation_key";
 
     private final String apiKey;
     private final String webhookSecret;
@@ -95,6 +103,13 @@ class StripePspChannel implements PspChannel {
         if (amountCents != null) {
             params.setAmount(amountCents);
         }
+        // CodeRabbit round 2 on #828: the operation key rides the refund as
+        // provider metadata (the documented metadata mechanism — "attach
+        // key-value data" to any Stripe object) so the charge.refunded
+        // webhook can settle THIS operation's journal record by identity.
+        // The Idempotency-Key header alone is not echoed back in webhook
+        // payloads; metadata is.
+        params.putMetadata(OPERATION_KEY_METADATA, idempotencyKey);
         RequestOptions options = RequestOptions.builder()
                 .setApiKey(apiKey)
                 .setIdempotencyKey(idempotencyKey)
@@ -147,7 +162,8 @@ class StripePspChannel implements PspChannel {
                 Long cumulative = charge.getAmountRefunded();
                 return new VerifiedWebhook(event.getId(), event.getType(), null,
                         charge.getPaymentIntent(),
-                        new RefundSnapshot(cumulative == null ? 0L : cumulative));
+                        new RefundSnapshot(cumulative == null ? 0L : cumulative,
+                                executedRefunds(charge)));
             }
             // Events we did not subscribe to (or unknown objects) —
             // acknowledged and ignored by returning a no-op record; dispatch
@@ -196,6 +212,26 @@ class StripePspChannel implements PspChannel {
             log.warn("Stripe event {} data could not be deserialized: {}", event.getId(), e.getMessage());
         }
         return null;
+    }
+
+    /**
+     * The charge's completed refunds (CodeRabbit round 2 on #828): each
+     * succeeded refund entry with the operation key this service stamped as
+     * its metadata. Refunds without the key (created directly at the
+     * provider) carry a null key and stay books-sync only. The refunds
+     * collection is expandable and absent from un-expanded payloads — null
+     * means "not carried", an empty list means "none completed".
+     */
+    private List<PspChannel.ExecutedRefund> executedRefunds(Charge charge) {
+        if (charge.getRefunds() == null || charge.getRefunds().getData() == null) {
+            return List.of();
+        }
+        return charge.getRefunds().getData().stream()
+                .filter(refund -> "succeeded".equals(refund.getStatus()))
+                .map(refund -> new PspChannel.ExecutedRefund(refund.getId(),
+                        refund.getMetadata() == null ? null
+                                : refund.getMetadata().get(OPERATION_KEY_METADATA)))
+                .toList();
     }
 
     private UUID metadataIntentId(Map<String, String> metadata) {

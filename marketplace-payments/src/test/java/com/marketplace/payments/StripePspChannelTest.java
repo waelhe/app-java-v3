@@ -118,4 +118,36 @@ class StripePspChannelTest {
         assertThat(verified.pspIntentId()).isEqualTo("pi_test_300");
         assertThat(verified.marketplaceIntentId()).isNull();
     }
+
+    @Test
+    void verifyWebhook_carriesTheExecutedRefundsIdentities() throws Exception {
+        // CodeRabbit round 2 on #828: the charge.refunded payload carries the
+        // charge's completed refunds. A refund created through this service's
+        // contract carries the operation key as its metadata — the identity
+        // the webhook settle matches; a pending refund is not execution
+        // evidence; a dashboard-created refund carries no key at all.
+        String payload = "{\"id\":\"evt_2003\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{"
+                + "\"id\":\"ch_9\",\"object\":\"charge\",\"payment_intent\":\"pi_remote_r9\","
+                + "\"amount_refunded\":2000,"
+                + "\"refunds\":{\"object\":\"list\",\"data\":["
+                + "{\"id\":\"re_r9\",\"object\":\"refund\",\"status\":\"succeeded\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":"
+                + "\"marketplace-refund-p1-return-r1-2000\"}},"
+                + "{\"id\":\"re_pending\",\"object\":\"refund\",\"status\":\"pending\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":"
+                + "\"marketplace-refund-p1-return-r2-500\"}},"
+                + "{\"id\":\"re_dash\",\"object\":\"refund\",\"status\":\"succeeded\",\"metadata\":{}}"
+                + "]}}}}";
+        String signature = Webhook.Signature.generateSignatureHeader(payload, SECRET);
+
+        PspChannel.VerifiedWebhook verified = channel.verifyWebhook(payload, signature);
+
+        assertThat(verified.eventType()).isEqualTo("charge.refunded");
+        assertThat(verified.pspIntentId()).isEqualTo("pi_remote_r9");
+        assertThat(verified.refund().refundedAmountCents()).isEqualTo(2000L);
+        assertThat(verified.refund().executedRefunds()).containsExactly(
+                new PspChannel.ExecutedRefund("re_r9", "marketplace-refund-p1-return-r1-2000"));
+    }
 }

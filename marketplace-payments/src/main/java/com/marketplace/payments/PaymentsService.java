@@ -39,6 +39,7 @@ import jakarta.validation.constraints.Min;
 import io.micrometer.observation.annotation.Observed;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -328,7 +329,8 @@ public class PaymentsService implements PaymentsSpi {
                 if (refund != null && paymentIntentId != null) {
                     log.info("Webhook dispatch: charge.refunded for intent {} cumulative {} cents",
                             paymentIntentId, refund.refundedAmountCents());
-                    syncRemoteRefund(paymentIntentId, refund.refundedAmountCents());
+                    syncRemoteRefund(paymentIntentId, refund.refundedAmountCents(),
+                            refund.executedRefunds());
                 } else {
                     log.warn("Webhook charge.refunded without refund snapshot or resolvable intent: eventType={}",
                             eventType);
@@ -982,32 +984,15 @@ public class PaymentsService implements PaymentsSpi {
                             operationKey, operation.getRemoteRefundId());
                     return new RefundedPayment(payment, intent);
                 }
-                // CodeRabbit round 2 on #828 (major — data integrity): the
-                // PENDING retry's SETTLE, the return twin verbatim. The
-                // rollback-then-webhook window hits the dispute identically:
-                // the resolve transaction rolled back after the PSP executed,
-                // the webhook synced the books, and the PENDING operation now
-                // rejects every re-resolve on the cap (books + frozen amount
-                // > total) — PaymentRefundAdapter's early return covers only
-                // the FULL-refund shape. The refund-specific evidence is the
-                // provider's idempotent answer for THIS amount-less dispute
-                // key; the cumulative alone is not (a sibling operation can
-                // advance it). NO_CHANNEL keeps the cap checks in force.
-                RemoteRefundOutcome settled = refundThroughChannel(payment, intent,
-                        operation.getAmountCents(), idempotencyScope);
-                if (settled == RemoteRefundOutcome.SYNCED) {
-                    paymentIntentRepository.save(intent);
-                    eventPublisher.publishEvent(new PaymentStateChangedEvent(
-                            intent.getId(), intent.getStatus().name()));
-                    eventPublisher.publishEvent(new CacheInvalidationRequested(
-                            Set.of("paymentIntents"), intent.getId()));
-                    return new RefundedPayment(payment, intent);
-                }
-                if (settled == RemoteRefundOutcome.PENDING_AT_PROVIDER) {
-                    return new RefundedPayment(payment, intent);
-                }
-                // NO_CHANNEL: execution not proven — the cap checks below
-                // stay in force.
+                // CodeRabbit round 2 on #828: the SUBMITTED discipline, the
+                // return twin verbatim — no re-submission from the books'
+                // cumulative alone (an INDEPENDENT refund's advance is
+                // indistinguishable; the guardian test pins it). The
+                // refund-specific evidence is the charge.refunded webhook:
+                // createRemoteRefund stamps the operation key as the refund's
+                // provider metadata, the webhook's sync settles the journal
+                // by that identity, and the re-resolve reads EXECUTED above.
+                // Until then the cap checks below stay in force.
                 // The freeze-reuse: an unexecuted retry re-submits with the
                 // frozen amount, so the key's params never drift.
                 amountCents = operation.getAmountCents();
@@ -1086,43 +1071,19 @@ public class PaymentsService implements PaymentsSpi {
                         operationKey, operation.getRemoteRefundId());
                 return new RefundedPayment(payment, intent);
             }
-            // CodeRabbit round 2 on #828 (major — data integrity): the PENDING
-            // retry's SETTLE. The rollback-then-webhook window: the remote
-            // refund executed at the PSP inside a carrier transaction that
-            // rolled back, and the charge.refunded webhook then synced the
-            // local books — the operation row stays PENDING (the webhook
-            // advances the cumulative only; it never touches the journal),
-            // so the re-completion falls to the COMMON cap checks below and
-            // rejects itself forever (books + frozen amount > total). The
-            // refund-specific execution evidence is the provider's OWN
-            // idempotent answer for THIS operation's key: replaying the ONE
-            // refund contract under the same key returns the SAME remote
-            // refund with its current status and id (the PSP idempotency
-            // contract, the L19 basis) — succeeded settles the journal's
-            // EXECUTED record through the same markExecuted leg
-            // refundThroughChannel owns; pending returns the still-awaiting
-            // state; no channel / not linked leaves the operation unproven
-            // and keeps the cap checks below in force (the inert path for
-            // internal test money). The cumulative total alone is
-            // deliberately NOT the evidence — a sibling operation's refund
-            // can advance it.
-            if (operation != null) {
-                RemoteRefundOutcome settled = refundThroughChannel(payment, intent,
-                        operation.getAmountCents(), idempotencyScope);
-                if (settled == RemoteRefundOutcome.SYNCED) {
-                    paymentIntentRepository.save(intent);
-                    eventPublisher.publishEvent(new PaymentStateChangedEvent(
-                            intent.getId(), intent.getStatus().name()));
-                    eventPublisher.publishEvent(new CacheInvalidationRequested(
-                            Set.of("paymentIntents"), intent.getId()));
-                    return new RefundedPayment(payment, intent);
-                }
-                if (settled == RemoteRefundOutcome.PENDING_AT_PROVIDER) {
-                    return new RefundedPayment(payment, intent);
-                }
-                // NO_CHANNEL: execution not proven — the cap checks below
-                // stay in force.
-            }
+            // CodeRabbit round 2 on #828: a SUBMITTED operation is NEVER
+            // re-submitted on the re-completion — the books' cumulative
+            // alone cannot distinguish "my own refund synced by the webhook"
+            // from "an INDEPENDENT refund advanced them", and a re-submission
+            // in the latter case double-refunds (the guardian test
+            // aSubmittedOperationIsNotExecutedByTheBooksAlone pins this). The
+            // refund-specific execution evidence is the charge.refunded
+            // WEBHOOK: it carries the refund's own identity, and — because
+            // createRemoteRefund now stamps the operation key as the refund's
+            // provider metadata — the webhook's sync settles THIS operation's
+            // journal record (markExecuted with the remote refund id). The
+            // re-completion then reads EXECUTED above. Until the webhook
+            // lands, the cap checks below stay in force.
             // The unexecuted retry (or the first submission): the effective
             // amount — the frozen one on a retry, the request's own on a
             // first submission — must be refundable before any record is
@@ -1302,12 +1263,52 @@ public class PaymentsService implements PaymentsSpi {
      * SNAPSHOT arriving under a different event id).
      */
     void syncRemoteRefund(UUID paymentIntentId, long remoteRefundedTotalCents) {
+        syncRemoteRefund(paymentIntentId, remoteRefundedTotalCents, List.of());
+    }
+
+    /**
+     * CodeRabbit round 2 on #828 (major — data integrity): the full
+     * charge.refunded contract. The books still sync to the remote cumulative
+     * actual (the async safety net above), and the snapshot's refund
+     * identities settle the journal — the refund-specific execution
+     * evidence. A refund created through this service's contract carries the
+     * operation's idempotency key as its provider metadata; when the webhook
+     * — the only witness of the provider's own refund record — reports that
+     * refund completed, the matching SUBMITTED operation is marked EXECUTED
+     * with the remote refund's identity. This is a settlement by IDENTITY,
+     * never by the books' cumulative arithmetic (an independent refund
+     * advances the cumulative just as well while this operation never sent —
+     * the guardian test pins that discipline on the re-completion path). It
+     * closes the rollback-then-webhook window: the operation row stays
+     * SUBMITTED across the carrier's rollback, and without this settle the
+     * re-completion would reject itself on the common cap forever (the books
+     * the webhook synced plus the frozen amount exceed the total) — now the
+     * re-completion reads EXECUTED and returns the reconciled state.
+     */
+    void syncRemoteRefund(UUID paymentIntentId, long remoteRefundedTotalCents,
+                          List<PspChannel.ExecutedRefund> executedRefunds) {
         PaymentIntent intent = getIntent(paymentIntentId);
         Payment payment = paymentRepository.findByPaymentIntentId(paymentIntentId).orElse(null);
         if (payment == null) {
             log.warn("charge.refunded for intent {} without a local payment row — nothing to sync",
                     paymentIntentId);
             return;
+        }
+        // The identity settle runs BEFORE the out-of-order books guard: a
+        // stale cumulative snapshot still carries REAL refund identities, and
+        // the journal's EXECUTED record is a fact about the provider, not
+        // about the local books' ordering.
+        for (PspChannel.ExecutedRefund executed : executedRefunds == null ? List.<PspChannel.ExecutedRefund>of() : executedRefunds) {
+            if (executed.operationKey() == null) {
+                continue; // a refund created outside this service's contract
+            }
+            PaymentRefundOperation operation = refundOperationJournal.findSubmitted(executed.operationKey());
+            if (operation != null && payment.getId().equals(operation.getPaymentId())) {
+                refundOperationJournal.markExecuted(executed.operationKey(), executed.refundId());
+                log.info("charge.refunded settled refund operation {} as EXECUTED (remote refund {}) — "
+                                + "identity-matched through the refund's provider metadata",
+                        executed.operationKey(), executed.refundId());
+            }
         }
         // CodeRabbit #249 round 1: Stripe does not guarantee webhook delivery
         // order (official docs), and amount_refunded only grows — a snapshot
