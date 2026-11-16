@@ -982,6 +982,32 @@ public class PaymentsService implements PaymentsSpi {
                             operationKey, operation.getRemoteRefundId());
                     return new RefundedPayment(payment, intent);
                 }
+                // CodeRabbit round 2 on #828 (major — data integrity): the
+                // PENDING retry's SETTLE, the return twin verbatim. The
+                // rollback-then-webhook window hits the dispute identically:
+                // the resolve transaction rolled back after the PSP executed,
+                // the webhook synced the books, and the PENDING operation now
+                // rejects every re-resolve on the cap (books + frozen amount
+                // > total) — PaymentRefundAdapter's early return covers only
+                // the FULL-refund shape. The refund-specific evidence is the
+                // provider's idempotent answer for THIS amount-less dispute
+                // key; the cumulative alone is not (a sibling operation can
+                // advance it). NO_CHANNEL keeps the cap checks in force.
+                RemoteRefundOutcome settled = refundThroughChannel(payment, intent,
+                        operation.getAmountCents(), idempotencyScope);
+                if (settled == RemoteRefundOutcome.SYNCED) {
+                    paymentIntentRepository.save(intent);
+                    eventPublisher.publishEvent(new PaymentStateChangedEvent(
+                            intent.getId(), intent.getStatus().name()));
+                    eventPublisher.publishEvent(new CacheInvalidationRequested(
+                            Set.of("paymentIntents"), intent.getId()));
+                    return new RefundedPayment(payment, intent);
+                }
+                if (settled == RemoteRefundOutcome.PENDING_AT_PROVIDER) {
+                    return new RefundedPayment(payment, intent);
+                }
+                // NO_CHANNEL: execution not proven — the cap checks below
+                // stay in force.
                 // The freeze-reuse: an unexecuted retry re-submits with the
                 // frozen amount, so the key's params never drift.
                 amountCents = operation.getAmountCents();
@@ -1059,6 +1085,43 @@ public class PaymentsService implements PaymentsSpi {
                                 + " re-submitting",
                         operationKey, operation.getRemoteRefundId());
                 return new RefundedPayment(payment, intent);
+            }
+            // CodeRabbit round 2 on #828 (major — data integrity): the PENDING
+            // retry's SETTLE. The rollback-then-webhook window: the remote
+            // refund executed at the PSP inside a carrier transaction that
+            // rolled back, and the charge.refunded webhook then synced the
+            // local books — the operation row stays PENDING (the webhook
+            // advances the cumulative only; it never touches the journal),
+            // so the re-completion falls to the COMMON cap checks below and
+            // rejects itself forever (books + frozen amount > total). The
+            // refund-specific execution evidence is the provider's OWN
+            // idempotent answer for THIS operation's key: replaying the ONE
+            // refund contract under the same key returns the SAME remote
+            // refund with its current status and id (the PSP idempotency
+            // contract, the L19 basis) — succeeded settles the journal's
+            // EXECUTED record through the same markExecuted leg
+            // refundThroughChannel owns; pending returns the still-awaiting
+            // state; no channel / not linked leaves the operation unproven
+            // and keeps the cap checks below in force (the inert path for
+            // internal test money). The cumulative total alone is
+            // deliberately NOT the evidence — a sibling operation's refund
+            // can advance it.
+            if (operation != null) {
+                RemoteRefundOutcome settled = refundThroughChannel(payment, intent,
+                        operation.getAmountCents(), idempotencyScope);
+                if (settled == RemoteRefundOutcome.SYNCED) {
+                    paymentIntentRepository.save(intent);
+                    eventPublisher.publishEvent(new PaymentStateChangedEvent(
+                            intent.getId(), intent.getStatus().name()));
+                    eventPublisher.publishEvent(new CacheInvalidationRequested(
+                            Set.of("paymentIntents"), intent.getId()));
+                    return new RefundedPayment(payment, intent);
+                }
+                if (settled == RemoteRefundOutcome.PENDING_AT_PROVIDER) {
+                    return new RefundedPayment(payment, intent);
+                }
+                // NO_CHANNEL: execution not proven — the cap checks below
+                // stay in force.
             }
             // The unexecuted retry (or the first submission): the effective
             // amount — the frozen one on a retry, the request's own on a
@@ -1150,7 +1213,20 @@ public class PaymentsService implements PaymentsSpi {
      * service.
      */
     private void applyRemoteRefund(Payment payment, PaymentIntent intent, long remoteRefundedTotalCents) {
-        if (remoteRefundedTotalCents >= payment.getAmountCents()) {
+        boolean fullRemote = remoteRefundedTotalCents >= payment.getAmountCents();
+        // Idempotent by construction: the fields are SET to the provider's
+        // cumulative total, never incremented, so re-applying the SAME total
+        // must be a no-op, not a state-machine violation (REFUNDED ->
+        // REFUNDED is not a transition). The webhook path guards this inline
+        // (its alreadySynced check); the #828 round-2 settle replay reaches
+        // this primitive with books the charge.refunded event already synced.
+        boolean alreadyApplied = payment.getRefundedAmountCents() == remoteRefundedTotalCents
+                && intent.getRefundedAmountCents() == remoteRefundedTotalCents
+                && payment.getStatus() == (fullRemote ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED);
+        if (alreadyApplied) {
+            return;
+        }
+        if (fullRemote) {
             payment.markRefunded();
             intent.markRefunded();
         } else {
