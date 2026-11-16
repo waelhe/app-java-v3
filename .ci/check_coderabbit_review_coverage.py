@@ -208,7 +208,12 @@ def latest_review(reviews, sha, login):
     return max(candidates, key=lambda item: item.get("submitted_at") or "") if candidates else None
 
 
-DECLARATION_HEADER = re.compile(r"Files selected for processing:\s*\d+", re.I)
+# The header is matched WITHOUT requiring a numeric count: a body whose
+# header carries an unparseable count (e.g. "Files selected for processing:
+# unknown") is a malformed declaration and must reach ``processed_files``,
+# which fails closed — never be silently skipped in favour of an older
+# declaration on the same head.
+DECLARATION_HEADER = re.compile(r"Files selected for processing:", re.I)
 
 
 def declares_processed_files(body):
@@ -238,6 +243,16 @@ def declaring_review(reviews, sha, login, states):
     declaration and raises — it must never be papered over by falling back to
     an older review. Returns ``(review, selected_paths)`` or
     ``(None, None)``; the caller fails closed on ``None``.
+
+    Decision (documented on PR #842's review): a ``CHANGES_REQUESTED``
+    review is deliberately NOT accepted as coverage evidence even when a
+    later empty-bodied APPROVED lands on the same head. The declaration
+    describes the files as they stood when changes were requested; letting
+    an approval that asserts nothing resurrect that declaration would
+    weaken the fail-closed posture. No same-head CHANGES_REQUESTED-then-
+    empty-APPROVED pair has been observed on this repository (measured on
+    the #819/#820 review histories), and the escape if one ever appears is
+    the proven one: a fresh review on the head.
     """
     candidates = [item for item in reviews
                   if (item.get("user") or {}).get("login") == login
