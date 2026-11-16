@@ -32,6 +32,25 @@ public class EventPublicationDiagnosticsEndpoint {
 
     static final Duration STALE_THRESHOLD = Duration.ofHours(6);
 
+    /**
+     * The report's row cap. The endpoint exists for the incident it
+     * diagnoses — an accumulation of stale publications — and the live
+     * backlog under exactly that incident is unbounded (measured on the
+     * 2026-11 production mail outage: every notification listener leg
+     * stranded its publication). An uncapped report would answer with a
+     * multi-megabyte JSON precisely when the operator needs the endpoint
+     * fast; the cap keeps the response bounded and reports the true total
+     * and the truncation honestly instead.
+     */
+    static final int MAX_PUBLICATIONS = 200;
+
+    private static final String COUNT_STALE_PUBLICATIONS = """
+            SELECT COUNT(*)
+              FROM event_publication
+             WHERE completion_date IS NULL
+               AND publication_date < ?
+            """;
+
     private static final String FIND_STALE_PUBLICATIONS = """
             SELECT id,
                    event_type,
@@ -45,6 +64,7 @@ public class EventPublicationDiagnosticsEndpoint {
              WHERE completion_date IS NULL
                AND publication_date < ?
              ORDER BY publication_date ASC
+             LIMIT ?
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -58,12 +78,22 @@ public class EventPublicationDiagnosticsEndpoint {
         Instant measuredAt = Instant.now();
         Instant cutoff = measuredAt.minus(STALE_THRESHOLD);
 
+        Long total = jdbcTemplate.queryForObject(
+                COUNT_STALE_PUBLICATIONS,
+                Long.class,
+                cutoff.atOffset(ZoneOffset.UTC));
+
         List<Publication> publications = jdbcTemplate.query(
                 FIND_STALE_PUBLICATIONS,
-                statement -> statement.setObject(1, cutoff.atOffset(ZoneOffset.UTC)),
+                statement -> {
+                    statement.setObject(1, cutoff.atOffset(ZoneOffset.UTC));
+                    statement.setInt(2, MAX_PUBLICATIONS);
+                },
                 (resultSet, rowNumber) -> toPublication(resultSet, measuredAt));
 
-        return new Report(measuredAt, STALE_THRESHOLD.toSeconds(), publications.size(), publications);
+        long totalStale = total == null ? 0L : total;
+        return new Report(measuredAt, STALE_THRESHOLD.toSeconds(), publications.size(),
+                totalStale, totalStale > publications.size(), publications);
     }
 
     private static Publication toPublication(ResultSet resultSet, Instant measuredAt) throws SQLException {
@@ -91,6 +121,8 @@ public class EventPublicationDiagnosticsEndpoint {
             Instant measuredAt,
             long staleThresholdSeconds,
             int count,
+            long total,
+            boolean truncated,
             List<Publication> publications) {
     }
 

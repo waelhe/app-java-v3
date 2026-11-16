@@ -285,6 +285,8 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         JsonNode report = objectMapper.readTree(response.getResponse().getContentAsString());
         assertThat(report.path("staleThresholdSeconds").asLong()).isEqualTo(21600);
         assertThat(report.path("count").asInt()).isEqualTo(2);
+        assertThat(report.path("total").asLong()).isEqualTo(2);
+        assertThat(report.path("truncated").asBoolean()).isFalse();
 
         JsonNode publications = report.path("publications");
         assertThat(publications.isArray()).isTrue();
@@ -333,6 +335,39 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         assertThat(processingRow.get("status")).isEqualTo("PROCESSING");
         assertThat(processingRow.get("completion_date")).isNull();
         assertThat(processingRow.get("serialized_event")).isEqualTo("also-not-deserialized");
+    }
+
+    @Test
+    void eventPublicationDiagnosticsCapsTheReportAtTheOperationalBound() throws Exception {
+        // The adversarial finding (2026-11-16): the endpoint exists for the
+        // incident it diagnoses, and the live backlog under exactly that
+        // incident is unbounded (the production mail outage stranded every
+        // notification listener leg's publication). 201 stale rows must
+        // answer a bounded report: 200 oldest-first entries, the honest
+        // total, and an explicit truncation flag.
+        Instant now = Instant.now();
+        for (int i = 0; i < 201; i++) {
+            insertEventPublication(
+                    now.minus(Duration.ofHours(8)).minusSeconds(i), null, null, 0, null,
+                    "com.marketplace.current.CappedDomainEvent",
+                    "capped-listener-" + i,
+                    "capped-payload");
+        }
+
+        var response = mockMvc.perform(get("/actuator/eventpublications").with(operatorJwt()))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode report = objectMapper.readTree(response.getResponse().getContentAsString());
+        assertThat(report.path("count").asInt()).isEqualTo(200);
+        assertThat(report.path("total").asLong()).isEqualTo(201);
+        assertThat(report.path("truncated").asBoolean()).isTrue();
+        JsonNode publications = report.path("publications");
+        assertThat(publications.size()).isEqualTo(200);
+        // oldest-first survives the cap: the first row is the oldest insert
+        // (i = 200 carries the earliest publication_date)
+        assertThat(publications.get(0).path("listener").asText()).isEqualTo("capped-listener-200");
+        assertThat(publications.get(199).path("listener").asText()).isEqualTo("capped-listener-1");
     }
 
     private UUID insertEventPublication(
