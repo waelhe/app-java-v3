@@ -19,9 +19,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -260,7 +262,7 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
                 "com.marketplace.removed.LegacyDomainEvent",
                 "legacy-listener",
                 "not-valid-json");
-        Instant lastResubmissionAt = now.minus(Duration.ofHours(6));
+        Instant lastResubmissionAt = now.minus(Duration.ofHours(6)).truncatedTo(ChronoUnit.MICROS);
         UUID processingId = insertEventPublication(
                 now.minus(Duration.ofHours(7)), null, "PROCESSING", 3, lastResubmissionAt,
                 "com.marketplace.current.PendingDomainEvent",
@@ -287,7 +289,7 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
 
         JsonNode publications = report.path("publications");
         assertThat(publications.isArray()).isTrue();
-        assertThat(publications).hasSize(2);
+        assertThat(publications.size()).isEqualTo(2);
 
         Map<String, JsonNode> publicationsById = new HashMap<>();
         for (JsonNode publication : publications) {
@@ -358,12 +360,12 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 id,
-                Timestamp.from(publicationDate),
+                publicationDate.atOffset(ZoneOffset.UTC),
                 listenerId,
                 serializedEvent,
                 eventType,
-                completionDate == null ? null : Timestamp.from(completionDate),
-                lastResubmissionDate == null ? null : Timestamp.from(lastResubmissionDate),
+                completionDate == null ? null : completionDate.atOffset(ZoneOffset.UTC),
+                lastResubmissionDate == null ? null : lastResubmissionDate.atOffset(ZoneOffset.UTC),
                 completionAttempts,
                 status);
         diagnosticPublicationIds.add(id);
