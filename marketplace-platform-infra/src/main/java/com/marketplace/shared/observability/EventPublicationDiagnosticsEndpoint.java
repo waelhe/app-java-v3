@@ -44,13 +44,6 @@ public class EventPublicationDiagnosticsEndpoint {
      */
     static final int MAX_PUBLICATIONS = 200;
 
-    private static final String COUNT_STALE_PUBLICATIONS = """
-            SELECT COUNT(*)
-              FROM event_publication
-             WHERE completion_date IS NULL
-               AND publication_date < ?
-            """;
-
     private static final String FIND_STALE_PUBLICATIONS = """
             SELECT id,
                    event_type,
@@ -59,7 +52,8 @@ public class EventPublicationDiagnosticsEndpoint {
                    completion_date,
                    status,
                    completion_attempts,
-                   last_resubmission_date
+                   last_resubmission_date,
+                   COUNT(*) OVER () AS total_stale
               FROM event_publication
              WHERE completion_date IS NULL
                AND publication_date < ?
@@ -78,22 +72,31 @@ public class EventPublicationDiagnosticsEndpoint {
         Instant measuredAt = Instant.now();
         Instant cutoff = measuredAt.minus(STALE_THRESHOLD);
 
-        Long total = jdbcTemplate.queryForObject(
-                COUNT_STALE_PUBLICATIONS,
-                Long.class,
-                cutoff.atOffset(ZoneOffset.UTC));
-
-        List<Publication> publications = jdbcTemplate.query(
+        // CodeRabbit round 4 (consistency): ONE statement, ONE snapshot — the
+        // window function carries the pre-LIMIT total on every row, so the
+        // count, the total, and the returned rows can never disagree (a
+        // separate COUNT query had a between-reads window where a completing
+        // or newly-stale publication changed one answer and not the other).
+        // PostgreSQL's documented READ COMMITTED semantics: each STATEMENT
+        // sees a single consistent snapshot.
+        List<StaleRow> rows = jdbcTemplate.query(
                 FIND_STALE_PUBLICATIONS,
                 statement -> {
                     statement.setObject(1, cutoff.atOffset(ZoneOffset.UTC));
                     statement.setInt(2, MAX_PUBLICATIONS);
                 },
-                (resultSet, rowNumber) -> toPublication(resultSet, measuredAt));
+                (resultSet, rowNumber) -> new StaleRow(
+                        toPublication(resultSet, measuredAt),
+                        resultSet.getLong("total_stale")));
 
-        long totalStale = total == null ? 0L : total;
+        List<Publication> publications = rows.stream().map(StaleRow::publication).toList();
+        long totalStale = rows.isEmpty() ? 0L : rows.get(0).totalStale();
         return new Report(measuredAt, STALE_THRESHOLD.toSeconds(), publications.size(),
                 totalStale, totalStale > publications.size(), publications);
+    }
+
+    /** The row and the statement-wide total it carries (one snapshot). */
+    private record StaleRow(Publication publication, long totalStale) {
     }
 
     private static Publication toPublication(ResultSet resultSet, Instant measuredAt) throws SQLException {
