@@ -3,6 +3,7 @@ package com.marketplace.shared.api;
 import java.net.URI;
 import java.util.List;
 
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import jakarta.servlet.http.HttpServletRequest;
@@ -190,6 +191,19 @@ public class GlobalExceptionHandler {
         return problem(ApiErrorTaxonomy.SERVICE_UNAVAILABLE,
                 "Service temporarily unavailable. Please try again later.", request,
                 "Service currently degraded", "detail");
+    }
+
+    /**
+     * Resilience4j bulkhead saturated → the same 503 SERVICE_UNAVAILABLE
+     * masked answer (CodeRabbit round 7 on #828: the shared refundCarriers
+     * gate's max-wait expiry). Same family as the open circuit: a capacity
+     * state, never a client fault, and the same retry-later posture.
+     */
+    @ExceptionHandler(BulkheadFullException.class)
+    public ProblemDetail handleBulkheadSaturation(BulkheadFullException ex, HttpServletRequest request) {
+        return problem(ApiErrorTaxonomy.SERVICE_UNAVAILABLE,
+                "Service temporarily unavailable. Please try again later.", request,
+                "Service currently saturated", "detail");
     }
 
     /**

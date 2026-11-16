@@ -398,6 +398,9 @@ class PaymentsServicePspTest {
         when(refundOperationJournal.findSubmitted(keyD)).thenReturn(executedD);
         assertTrue(service(boundChannel).handleStripeWebhook("payloadD", "t=1,v1=sig"));
         assertEquals(PaymentStatus.REFUNDED, paymentD.getStatus());
+        // CodeRabbit round 7: an already-EXECUTED record is skipped at the
+        // call site — no markExecuted delegation for it
+        verify(refundOperationJournal, never()).markExecuted(eq(keyD), anyString());
 
         // the settle contract: A and D delegate to the journal (the
         // identity-matched, payment-matched operations); B never looks the

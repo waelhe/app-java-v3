@@ -924,127 +924,18 @@ public class PaymentsService implements PaymentsSpi {
         //   * the freeze-reuse — an unexecuted retry re-submits with the
         //     frozen amount, so the key's params never drift.
         if (idempotencyScope != null && "dispute".equals(idempotencyScope.kind())) {
-            String operationKey = idempotencyScope.idempotencyKey(payment.getId(), amountCents);
-            // Review round 2, the freeze-order finding: read WITHOUT
-            // creating. The round-1 order ran the find-or-create FIRST, so
-            // an over-cap first request froze its INVALID amount in its own
-            // REQUIRES_NEW transaction (a transaction no caller rollback
-            // could undo); the cap check then rejected the request, and the
-            // admin's corrected amount hit the frozen-amount rejection —
-            // the dispute could never refund without manual record repair.
-            // The record is now created only AFTER the cap validates the
-            // request below.
-            PaymentRefundOperation operation = refundOperationJournal.findSubmitted(operationKey);
-            if (operation != null) {
-                if (!java.util.Objects.equals(operation.getAmountCents(), amountCents)) {
-                    throw new ConflictException("The dispute's refund operation froze its amount at the first"
-                            + " submission: " + operation.getAmountCents() + " cents (this request carries "
-                            + amountCents + "). The operation's idempotency key replays the SAME remote refund"
-                            + " — a different amount is a new decision to reject explicitly, never a"
-                            + " re-submission under the same key");
-                }
-                // Review round 2, the executed-proof finding: the operation's
-                // own EXECUTED record — written when the provider answered
-                // success for THIS operation's refund — is the only
-                // execution fact. The round-1 arithmetic (the books advanced
-                // past the submission baseline) can be satisfied by an
-                // INDEPENDENT refund of the same or a larger amount while
-                // this operation never sent; inferring execution from the
-                // cumulative total alone would close the dispute unexecuted.
-                if ("EXECUTED".equals(operation.getStatus())) {
-                    // CodeRabbit (2026-10-28, the c62bdab9 review round): the
-                    // books-sync gate before the reconciled answer. The
-                    // EXECUTED record survives the resolve rollback by
-                    // construction (REQUIRES_NEW), but the BOOKS do not — a
-                    // retry that lands in the window between the rollback and
-                    // the charge.refunded webhook would return the payment
-                    // with its pre-refund amounts, and the dispute would
-                    // resolve against numbers the provider already moved
-                    // past. The gate holds the answer until the cumulative
-                    // books reach the submission baseline plus the frozen
-                    // amount (the full-refund shape reads its terminal
-                    // REFUNDED state). Review round 2 on #741's part 4
-                    // (2026-10-29) then measured the WAIT's true contract:
-                    // this gate fires only on the dispute-resolve path,
-                    // where the refund runs SYNCHRONOUSLY inside the
-                    // caller's (DisputeService) transaction — an in-process
-                    // @Retry is architecturally void there: the first
-                    // throw marks the SHARED transaction rollback-only
-                    // (official participating-@Transactional semantics)
-                    // and every retried attempt re-enters the caller's
-                    // persistence context, re-reading the same first-level
-                    // cache — no webhook-synced books can appear INSIDE
-                    // one transaction. The wait therefore rides the
-                    // deliberately NON-retryable ConflictException, and
-                    // its message prescribes the retry vehicle that
-                    // actually exists: the CALLER's fresh re-invocation
-                    // (the admin's new resolve/refund request — a fresh
-                    // transaction with a fresh persistence context reading
-                    // the synced books), exactly like every other
-                    // caller-controlled refusal below. The earlier
-                    // RefundBooksSyncPendingException experiment was
-                    // reverted for this measured reason.
-                    boolean booksSynced = operation.getAmountCents() == null
-                            ? payment.getStatus() == PaymentStatus.REFUNDED
-                            : payment.getRefundedAmountCents()
-                                    >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
-                    if (!booksSynced) {
-                        throw new ConflictException("The dispute's refund operation already EXECUTED at the"
-                                + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
-                                + " but the local books await the charge.refunded sync — retry after the"
-                                + " webhook lands");
-                    }
-                    log.info("Dispute refund operation {} already EXECUTED (remote refund {} recorded)"
-                                    + " — returning the reconciled state without re-applying the cap or"
-                                    + " re-submitting",
-                            operationKey, operation.getRemoteRefundId());
-                    return new RefundedPayment(payment, intent);
-                }
-                // CodeRabbit round 2 on #828: the SUBMITTED discipline, the
-                // return twin verbatim — no re-submission from the books'
-                // cumulative alone (an INDEPENDENT refund's advance is
-                // indistinguishable; the guardian test pins it). The
-                // refund-specific evidence is the charge.refunded webhook:
-                // createRemoteRefund stamps the operation key as the refund's
-                // provider metadata, the webhook's sync settles the journal
-                // by that identity, and the re-resolve reads EXECUTED above.
-                // Until then the cap checks below stay in force.
-                // The freeze-reuse: an unexecuted retry re-submits with the
-                // frozen amount, so the key's params never drift.
-                amountCents = operation.getAmountCents();
+            // CodeRabbit round 7: the shared journal gate — the freeze/cap/
+            // books-sync discipline both scoped rides share, one helper. The
+            // scope's own policy: the DISPUTE key is amount-less, so a
+            // mismatched re-approval is rejected outright (a different amount
+            // is a new decision, never a re-submission under the same key).
+            ScopedJournalRide ride = rideScopedRefundJournal(payment, intent,
+                    idempotencyScope.idempotencyKey(payment.getId(), amountCents),
+                    amountCents, "dispute", true);
+            if (ride.reconciled()) {
+                return new RefundedPayment(payment, intent);
             }
-            // The cap validation runs BEFORE the freeze (review round 2):
-            // the effective amount — the frozen one on a retry, the
-            // request's own on a first submission — must be refundable
-            // before any record is created.
-            if (amountCents != null) {
-                if (payment.getRefundedAmountCents() + amountCents > payment.getAmountCents()) {
-                    throw new ConflictException("Refund amount exceeds payment amount");
-                }
-                if (intent.getRefundedAmountCents() + amountCents > intent.getAmountCents()) {
-                    throw new ConflictException("Refund amount exceeds intent amount");
-                }
-            }
-            if (operation == null) {
-                // The first VALID submission freezes NOW — after the cap, in
-                // its own REQUIRES_NEW transaction (the freeze survives the
-                // caller's rollback window by construction).
-                PaymentRefundOperation persisted = refundOperationJournal.ensureSubmitted(
-                        operationKey, payment.getId(), amountCents, payment.getRefundedAmountCents());
-                // A concurrent different-amount submission may have won the
-                // INSERT between the read and the create: the persisted row
-                // is the winner's truth, and a mismatch is the same explicit
-                // freeze rejection (the REQUIRES_NEW find-or-create is the
-                // atomicity point; this re-check closes the race's drift).
-                if (!java.util.Objects.equals(persisted.getAmountCents(), amountCents)) {
-                    throw new ConflictException("The dispute's refund operation froze its amount at the first"
-                            + " submission: " + persisted.getAmountCents() + " cents (this request carries "
-                            + amountCents + "). The operation's idempotency key replays the SAME remote refund"
-                            + " — a different amount is a new decision to reject explicitly, never a"
-                            + " re-submission under the same key");
-                }
-                amountCents = persisted.getAmountCents();
-            }
+            amountCents = ride.effectiveAmountCents();
         }
 
         // CodeRabbit round 1 on #828 (major — data integrity): the RETURN
@@ -1064,72 +955,17 @@ public class PaymentsService implements PaymentsSpi {
         // drift); a first submission freezes NOW — after its own cap
         // validation, before the record is created (the freeze-order rule).
         if (idempotencyScope != null && "return".equals(idempotencyScope.kind())) {
-            String operationKey = idempotencyScope.idempotencyKey(payment.getId(), amountCents);
-            PaymentRefundOperation operation = refundOperationJournal.findSubmitted(operationKey);
-            if (operation != null && "EXECUTED".equals(operation.getStatus())) {
-                // The books-sync gate (the dispute twin's c62bdab9 round):
-                // the EXECUTED record survives the carrier rollback by
-                // construction, the BOOKS advanced in the same REQUIRES_NEW
-                // commit — a webhook-synced window cannot leave the books
-                // behind here, but the gate stays as the honest invariant:
-                // the reconciled answer carries the post-refund numbers.
-                boolean booksSynced = payment.getRefundedAmountCents()
-                        >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
-                if (!booksSynced) {
-                    throw new ConflictException("The return's refund operation already EXECUTED at the"
-                            + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
-                            + " but the local books await the charge.refunded sync — retry after the"
-                            + " webhook lands");
-                }
-                log.info("Return refund operation {} already EXECUTED (remote refund {} recorded)"
-                                + " — returning the reconciled state without re-applying the cap or"
-                                + " re-submitting",
-                        operationKey, operation.getRemoteRefundId());
+            // CodeRabbit round 7: the SAME shared journal gate. The return
+            // scope's own policy: the key EMBEDS the return's amount, so the
+            // frozen amount and the request's coincide by construction — the
+            // mismatch rejection stays the dispute's (amount-less key) own.
+            ScopedJournalRide ride = rideScopedRefundJournal(payment, intent,
+                    idempotencyScope.idempotencyKey(payment.getId(), amountCents),
+                    amountCents, "return", false);
+            if (ride.reconciled()) {
                 return new RefundedPayment(payment, intent);
             }
-            // CodeRabbit round 2 on #828: a SUBMITTED operation is NEVER
-            // re-submitted on the re-completion — the books' cumulative
-            // alone cannot distinguish "my own refund synced by the webhook"
-            // from "an INDEPENDENT refund advanced them", and a re-submission
-            // in the latter case double-refunds (the guardian test
-            // aSubmittedOperationIsNotExecutedByTheBooksAlone pins this). The
-            // refund-specific execution evidence is the charge.refunded
-            // WEBHOOK: it carries the refund's own identity, and — because
-            // createRemoteRefund now stamps the operation key as the refund's
-            // provider metadata — the webhook's sync settles THIS operation's
-            // journal record (markExecuted with the remote refund id). The
-            // re-completion then reads EXECUTED above. Until the webhook
-            // lands, the cap checks below stay in force.
-            // The unexecuted retry (or the first submission): the effective
-            // amount — the frozen one on a retry, the request's own on a
-            // first submission — must be refundable before any record is
-            // created (the freeze-order rule, the dispute twin verbatim).
-            if (operation != null && !java.util.Objects.equals(operation.getAmountCents(), amountCents)) {
-                amountCents = operation.getAmountCents();
-            }
-            if (amountCents != null) {
-                if (payment.getRefundedAmountCents() + amountCents > payment.getAmountCents()) {
-                    throw new ConflictException("Refund amount exceeds payment amount");
-                }
-                if (intent.getRefundedAmountCents() + amountCents > intent.getAmountCents()) {
-                    throw new ConflictException("Refund amount exceeds intent amount");
-                }
-            }
-            if (operation == null && amountCents != null) {
-                // The first VALID submission freezes NOW — in the journal's
-                // own REQUIRES_NEW transaction, surviving this caller's
-                // rollback window by construction (the dispute twin).
-                PaymentRefundOperation persisted = refundOperationJournal.ensureSubmitted(
-                        operationKey, payment.getId(), amountCents, payment.getRefundedAmountCents());
-                if (!java.util.Objects.equals(persisted.getAmountCents(), amountCents)) {
-                    throw new ConflictException("The return's refund operation froze its amount at the first"
-                            + " submission: " + persisted.getAmountCents() + " cents (this request carries "
-                            + amountCents + "). The operation's idempotency key replays the SAME remote refund"
-                            + " — a different amount is a new decision to reject explicitly, never a"
-                            + " re-submission under the same key");
-                }
-                amountCents = persisted.getAmountCents();
-            }
+            amountCents = ride.effectiveAmountCents();
         }
 
         long alreadyRefunded = payment.getRefundedAmountCents();
@@ -1271,6 +1107,115 @@ public class PaymentsService implements PaymentsSpi {
     }
 
     /**
+     * The outcome of the scoped journal ride: {@code reconciled} marks the
+     * already-EXECUTED answer (the caller returns the reconciled state),
+     * otherwise the effective amount (the frozen one on a retry, the
+     * request's own on a first submission) flows into the common path.
+     */
+    private record ScopedJournalRide(boolean reconciled, Long effectiveAmountCents) {
+    }
+
+    /**
+     * The refund operation journal's shared gate (CodeRabbit round 7 on #828,
+     * extracted from the two verbatim-duplicated blocks): the executed-proof
+     * (the books-sync gate before the reconciled answer — the EXECUTED record
+     * survives the caller's rollback by construction, the BOOKS do not), the
+     * frozen-amount policy, the cap validation BEFORE the freeze (an over-cap
+     * first request freezes nothing — the record is created only after the
+     * request validates), and the first VALID submission's freeze in the
+     * journal's own REQUIRES_NEW transaction.
+     *
+     * <p>The scope's own policy is the {@code rejectFrozenAmountMismatch}
+     * flag: the DISPUTE key is amount-less, so a mismatched re-approval is
+     * rejected outright (a different amount is a new decision, never a
+     * re-submission under the same key); the RETURN key embeds the return's
+     * amount, so the frozen and requested amounts coincide by construction
+     * and the ride simply reuses the frozen one. Everything else — the
+     * order, the gates, the messages (modulo the scope label) — is the two
+     * blocks' shared discipline verbatim.</p>
+     */
+    private ScopedJournalRide rideScopedRefundJournal(Payment payment, PaymentIntent intent,
+            String operationKey, Long amountCents, String scopeKind, boolean rejectFrozenAmountMismatch) {
+        // read WITHOUT creating (the freeze-order rule): the record is
+        // created only AFTER the cap validates the request below.
+        PaymentRefundOperation operation = refundOperationJournal.findSubmitted(operationKey);
+        if (operation != null) {
+            if (rejectFrozenAmountMismatch
+                    && !java.util.Objects.equals(operation.getAmountCents(), amountCents)) {
+                throw new ConflictException("The " + scopeKind + "'s refund operation froze its amount at the first"
+                        + " submission: " + operation.getAmountCents() + " cents (this request carries "
+                        + amountCents + "). The operation's idempotency key replays the SAME remote refund"
+                        + " — a different amount is a new decision to reject explicitly, never a"
+                        + " re-submission under the same key");
+            }
+            if ("EXECUTED".equals(operation.getStatus())) {
+                // the executed-proof: the operation's own EXECUTED record is
+                // the only execution fact (the books' cumulative arithmetic
+                // can be satisfied by an INDEPENDENT refund while this
+                // operation never sent). The books-sync gate holds the
+                // reconciled answer until the cumulative books reach the
+                // submission baseline plus the frozen amount (the
+                // full-refund shape reads its terminal REFUNDED state) — the
+                // wait rides the deliberately NON-retryable
+                // ConflictException, whose message prescribes the retry
+                // vehicle that actually exists: the CALLER's fresh
+                // re-invocation (a fresh transaction reading the synced
+                // books).
+                boolean booksSynced = operation.getAmountCents() == null
+                        ? payment.getStatus() == PaymentStatus.REFUNDED
+                        : payment.getRefundedAmountCents()
+                                >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
+                if (!booksSynced) {
+                    throw new ConflictException("The " + scopeKind + "'s refund operation already EXECUTED at the"
+                            + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
+                            + " but the local books await the charge.refunded sync — retry after the"
+                            + " webhook lands");
+                }
+                log.info("{} refund operation {} already EXECUTED (remote refund {} recorded)"
+                                + " — returning the reconciled state without re-applying the cap or"
+                                + " re-submitting",
+                        scopeKind, operationKey, operation.getRemoteRefundId());
+                return new ScopedJournalRide(true, null);
+            }
+            // the freeze-reuse: an unexecuted retry re-submits with the
+            // frozen amount, so the key's params never drift. A SUBMITTED
+            // operation is NEVER re-submitted from the books' cumulative
+            // alone — the refund-specific evidence is the webhook's identity
+            // settle; until it lands, the cap checks below stay in force.
+            amountCents = operation.getAmountCents();
+        }
+        // the cap validation runs BEFORE the freeze: the effective amount
+        // must be refundable before any record is created.
+        if (amountCents != null) {
+            if (payment.getRefundedAmountCents() + amountCents > payment.getAmountCents()) {
+                throw new ConflictException("Refund amount exceeds payment amount");
+            }
+            if (intent.getRefundedAmountCents() + amountCents > intent.getAmountCents()) {
+                throw new ConflictException("Refund amount exceeds intent amount");
+            }
+        }
+        if (operation == null) {
+            // the first VALID submission freezes NOW — after the cap, in the
+            // journal's own REQUIRES_NEW transaction (the freeze survives the
+            // caller's rollback window by construction). A concurrent
+            // different-amount submission may have won the INSERT between
+            // the read and the create: the persisted row is the winner's
+            // truth, and a mismatch is the same explicit freeze rejection.
+            PaymentRefundOperation persisted = refundOperationJournal.ensureSubmitted(
+                    operationKey, payment.getId(), amountCents, payment.getRefundedAmountCents());
+            if (!java.util.Objects.equals(persisted.getAmountCents(), amountCents)) {
+                throw new ConflictException("The " + scopeKind + "'s refund operation froze its amount at the first"
+                        + " submission: " + persisted.getAmountCents() + " cents (this request carries "
+                        + amountCents + "). The operation's idempotency key replays the SAME remote refund"
+                        + " — a different amount is a new decision to reject explicitly, never a"
+                        + " re-submission under the same key");
+            }
+            amountCents = persisted.getAmountCents();
+        }
+        return new ScopedJournalRide(false, amountCents);
+    }
+
+    /**
      * The identity settle shared by both webhook vehicles (CodeRabbit round 6):
      * charge.refunded's snapshot and the refund.* events' Refund object. Each
      * executed refund carrying an operation key settles the matching SUBMITTED
@@ -1291,12 +1236,17 @@ public class PaymentsService implements PaymentsSpi {
                 continue; // a refund created outside this service's contract
             }
             PaymentRefundOperation operation = refundOperationJournal.findSubmitted(executed.operationKey());
-            if (operation != null && payment.getId().equals(operation.getPaymentId())) {
-                refundOperationJournal.markExecuted(executed.operationKey(), executed.refundId());
-                log.info("Webhook settled refund operation {} as EXECUTED (remote refund {}) — "
-                                + "identity-matched through the refund's provider metadata",
-                        executed.operationKey(), executed.refundId());
+            // CodeRabbit round 7: an already-EXECUTED record needs no
+            // delegation — the skip keeps the call sites' contract explicit
+            // instead of leaning on the journal's internal idempotence
+            if (operation == null || "EXECUTED".equals(operation.getStatus())
+                    || !payment.getId().equals(operation.getPaymentId())) {
+                continue;
             }
+            refundOperationJournal.markExecuted(executed.operationKey(), executed.refundId());
+            log.info("Webhook settled refund operation {} as EXECUTED (remote refund {}) — "
+                            + "identity-matched through the refund's provider metadata",
+                    executed.operationKey(), executed.refundId());
         }
     }
 
