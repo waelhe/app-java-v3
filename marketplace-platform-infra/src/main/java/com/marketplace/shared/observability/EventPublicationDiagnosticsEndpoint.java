@@ -2,9 +2,10 @@ package com.marketplace.shared.observability;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -59,20 +60,20 @@ public class EventPublicationDiagnosticsEndpoint {
 
         List<Publication> publications = jdbcTemplate.query(
                 FIND_STALE_PUBLICATIONS,
-                statement -> statement.setTimestamp(1, Timestamp.from(cutoff)),
+                statement -> statement.setObject(1, cutoff.atOffset(ZoneOffset.UTC)),
                 (resultSet, rowNumber) -> toPublication(resultSet, measuredAt));
 
         return new Report(measuredAt, STALE_THRESHOLD.toSeconds(), publications.size(), publications);
     }
 
     private static Publication toPublication(ResultSet resultSet, Instant measuredAt) throws SQLException {
-        Instant publishedAt = resultSet.getTimestamp("publication_date").toInstant();
-        Timestamp completionDate = resultSet.getTimestamp("completion_date");
+        Instant publishedAt = resultSet.getObject("publication_date", OffsetDateTime.class).toInstant();
+        OffsetDateTime completionDate = resultSet.getObject("completion_date", OffsetDateTime.class);
         String storedStatus = resultSet.getString("status");
         String status = storedStatus != null
                 ? storedStatus
                 : completionDate != null ? "COMPLETED" : "LEGACY_UNCLASSIFIED";
-        Timestamp lastResubmissionDate = resultSet.getTimestamp("last_resubmission_date");
+        OffsetDateTime lastResubmissionDate = resultSet.getObject("last_resubmission_date", OffsetDateTime.class);
         long ageSeconds = Math.max(0, Duration.between(publishedAt, measuredAt).toSeconds());
 
         return new Publication(
