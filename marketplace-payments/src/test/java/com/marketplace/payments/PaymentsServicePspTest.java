@@ -402,11 +402,11 @@ class PaymentsServicePspTest {
         // call site — no markExecuted delegation for it
         verify(refundOperationJournal, never()).markExecuted(eq(keyD), anyString());
 
-        // the settle contract: A and D delegate to the journal (the
-        // identity-matched, payment-matched operations); B never looks the
-        // journal up; C's foreign operation is never settled
+        // the settle contract: A delegates to the journal (the
+        // identity-matched, payment-matched SUBMITTED operation); B never
+        // looks the journal up; C's foreign operation and D's already-EXECUTED
+        // record are never settled
         verify(refundOperationJournal).markExecuted(eq(keyA), eq("re_a"));
-        verify(refundOperationJournal).markExecuted(eq(keyD), eq("re_d"));
         verify(refundOperationJournal, never()).markExecuted(eq(keyC), anyString());
         verify(refundOperationJournal, times(3)).findSubmitted(anyString());
     }
