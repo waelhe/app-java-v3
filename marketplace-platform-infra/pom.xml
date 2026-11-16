@@ -85,6 +85,16 @@
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-retry</artifactId>
         </dependency>
+        <!-- CodeRabbit round 5 on #828: the SHARED refund-carriers concurrency
+             gate. Spring Framework 7's @ConcurrencyLimit shares a throttle
+             only within ONE class hierarchy (measured in the 7.0.10 sources),
+             and the refund paths span two carrier services — the documented
+             cross-class shared gate is resilience4j's NAMED bulkhead instance
+             (version-managed by the resilience4j-bom already imported). -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-bulkhead</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>

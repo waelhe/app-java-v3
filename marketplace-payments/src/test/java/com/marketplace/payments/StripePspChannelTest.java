@@ -265,6 +265,109 @@ class StripePspChannelTest {
     }
 
     @Test
+    void createRemoteRefund_skipsADeadMatchAndReconcilesTheLiveOne() throws Exception {
+        // CodeRabbit round 5: a matching refund whose provider status is
+        // failed/canceled is not the operation's money — the scan continues
+        // (across the remaining pages, simulated as one iterable) and the
+        // LIVE match under the same key is the one reconciled.
+        com.stripe.model.Refund dead = Mockito.mock(com.stripe.model.Refund.class);
+        Mockito.when(dead.getMetadata()).thenReturn(
+                java.util.Map.of("marketplace_refund_operation_key", "op-key-3"));
+        Mockito.when(dead.getId()).thenReturn("re_dead");
+        Mockito.when(dead.getStatus()).thenReturn("failed");
+        com.stripe.model.Refund live = Mockito.mock(com.stripe.model.Refund.class);
+        Mockito.when(live.getMetadata()).thenReturn(
+                java.util.Map.of("marketplace_refund_operation_key", "op-key-3"));
+        Mockito.when(live.getId()).thenReturn("re_live");
+        Mockito.when(live.getStatus()).thenReturn("succeeded");
+        Mockito.when(live.getCharge()).thenReturn("ch_z");
+        RefundCollection collection = Mockito.mock(RefundCollection.class);
+        Mockito.when(collection.autoPagingIterable(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of(dead, live));
+        String chargeEvent = "{\"id\":\"evt_chz\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{\"id\":\"ch_z\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_z\",\"amount_refunded\":2000}}}";
+        Event chargeEvt = Webhook.constructEvent(chargeEvent,
+                Webhook.Signature.generateSignatureHeader(chargeEvent, SECRET), SECRET);
+        Charge chargeWithCumulative = (Charge) chargeEvt.getDataObjectDeserializer().getObject()
+                .orElseGet(() -> { try { return chargeEvt.getDataObjectDeserializer().deserializeUnsafe(); }
+                    catch (Exception e) { throw new IllegalStateException(e); } });
+
+        try (MockedStatic<com.stripe.model.Refund> refundMock = mockStatic(com.stripe.model.Refund.class);
+             MockedStatic<Charge> chargeMock = mockStatic(Charge.class)) {
+            refundMock.when(() -> com.stripe.model.Refund.list(
+                            org.mockito.ArgumentMatchers.any(RefundListParams.class),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)))
+                    .thenReturn(collection);
+            chargeMock.when(() -> Charge.retrieve(org.mockito.ArgumentMatchers.eq("ch_z"),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)))
+                    .thenReturn(chargeWithCumulative);
+
+            PspChannel.RemoteRefund outcome = channel.createRemoteRefund("pi_z", 1500L, "op-key-3");
+
+            org.assertj.core.api.Assertions.assertThat(outcome.refundId()).isEqualTo("re_live");
+            org.assertj.core.api.Assertions.assertThat(outcome.status()).isEqualTo("succeeded");
+            refundMock.verify(() -> com.stripe.model.Refund.create(
+                            org.mockito.ArgumentMatchers.any(RefundCreateParams.class),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)),
+                    org.mockito.Mockito.never());
+        }
+    }
+
+    @Test
+    void createRemoteRefund_createsWhenEveryMatchUnderTheKeyIsDead() throws Exception {
+        // the multi-page shape (the iterable carries the whole scan): every
+        // refund carrying the operation's key is dead — a fresh one is
+        // created for the retry.
+        com.stripe.model.Refund dead = Mockito.mock(com.stripe.model.Refund.class);
+        Mockito.when(dead.getMetadata()).thenReturn(
+                java.util.Map.of("marketplace_refund_operation_key", "op-key-4"));
+        Mockito.when(dead.getId()).thenReturn("re_dead4");
+        Mockito.when(dead.getStatus()).thenReturn("canceled");
+        RefundCollection collection = Mockito.mock(RefundCollection.class);
+        Mockito.when(collection.autoPagingIterable(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of(dead));
+        com.stripe.model.Refund created = Mockito.mock(com.stripe.model.Refund.class);
+        Mockito.when(created.getId()).thenReturn("re_fresh");
+        Mockito.when(created.getStatus()).thenReturn("succeeded");
+        Mockito.when(created.getCharge()).thenReturn("ch_w");
+        String chargeEvent = "{\"id\":\"evt_chw\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{\"id\":\"ch_w\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_w\",\"amount_refunded\":1500}}}";
+        Event chargeEvt = Webhook.constructEvent(chargeEvent,
+                Webhook.Signature.generateSignatureHeader(chargeEvent, SECRET), SECRET);
+        Charge chargeWithCumulative = (Charge) chargeEvt.getDataObjectDeserializer().getObject()
+                .orElseGet(() -> { try { return chargeEvt.getDataObjectDeserializer().deserializeUnsafe(); }
+                    catch (Exception e) { throw new IllegalStateException(e); } });
+
+        try (MockedStatic<com.stripe.model.Refund> refundMock = mockStatic(com.stripe.model.Refund.class);
+             MockedStatic<Charge> chargeMock = mockStatic(Charge.class)) {
+            refundMock.when(() -> com.stripe.model.Refund.list(
+                            org.mockito.ArgumentMatchers.any(RefundListParams.class),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)))
+                    .thenReturn(collection);
+            refundMock.when(() -> com.stripe.model.Refund.create(
+                            org.mockito.ArgumentMatchers.any(RefundCreateParams.class),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)))
+                    .thenReturn(created);
+            chargeMock.when(() -> Charge.retrieve(org.mockito.ArgumentMatchers.eq("ch_w"),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)))
+                    .thenReturn(chargeWithCumulative);
+
+            PspChannel.RemoteRefund outcome = channel.createRemoteRefund("pi_w", 1500L, "op-key-4");
+
+            org.assertj.core.api.Assertions.assertThat(outcome.refundId()).isEqualTo("re_fresh");
+            refundMock.verify(() -> com.stripe.model.Refund.create(
+                            org.mockito.ArgumentMatchers.any(RefundCreateParams.class),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)));
+        }
+    }
+
+    @Test
     void verifyWebhook_retrievesTheRefundIdentitiesWhenThePayloadOmitsThem() throws Exception {
         // CodeRabbit round 3: a charge.refunded payload may omit the
         // expandable refunds collection — answering an empty list there

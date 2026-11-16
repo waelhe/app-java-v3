@@ -142,7 +142,12 @@ class StripePspChannel implements PspChannel {
     /**
      * The operation's existing refund, matched by its provider metadata —
      * null when none exists. The list is filtered by the payment intent and
-     * rides the documented auto-pagination.
+     * rides the documented auto-pagination. A matching refund whose provider
+     * status is {@code failed} or {@code canceled} is NOT the operation's
+     * money (CodeRabbit round 5): the scan continues — across the remaining
+     * pages — and only a non-failed match (succeeded, pending, or any other
+     * live status) is returned as the operation's refund; a fresh one is
+     * created when every match under the key is dead.
      */
     private com.stripe.model.Refund findRefundByOperationKey(String pspIntentId, String operationKey) {
         try {
@@ -151,10 +156,17 @@ class StripePspChannel implements PspChannel {
                     RequestOptions.builder().setApiKey(apiKey).build());
             for (com.stripe.model.Refund refund : refunds.autoPagingIterable(java.util.Map.of(),
                     RequestOptions.builder().setApiKey(apiKey).build())) {
-                if (operationKey.equals(refund.getMetadata() == null
+                if (!operationKey.equals(refund.getMetadata() == null
                         ? null : refund.getMetadata().get(OPERATION_KEY_METADATA))) {
-                    return refund;
+                    continue;
                 }
+                if ("failed".equals(refund.getStatus()) || "canceled".equals(refund.getStatus())) {
+                    log.info("Stripe refund {} carries operation key {} but is {} — not the "
+                                    + "operation's money; the reconcile scan continues",
+                            refund.getId(), operationKey, refund.getStatus());
+                    continue;
+                }
+                return refund;
             }
             return null;
         } catch (StripeException e) {

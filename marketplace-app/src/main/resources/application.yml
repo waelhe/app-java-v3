@@ -572,6 +572,22 @@ logging:
     org.hibernate.SQL: WARN
 
 resilience4j:
+  # CodeRabbit round 5 on #828: the SHARED refund-carriers concurrency gate.
+  # Every refund-carrying carrier entry (OrderReturnsService.complete and
+  # both DisputeService.resolve overloads) rides the one named semaphore —
+  # each in-flight completion may hold ~3 connections (the carrier's + the
+  # refund's REQUIRES_NEW + the ledger's), so the shared 5 keeps the worst
+  # case at ~15 of the 20-connection production pool. The bulkhead aspect's
+  # order (LOWEST_PRECEDENCE - 1, resilience4j 2.4.0 sources) sorts OUTSIDE
+  # the transaction interceptor — a caller waiting for a permit holds no
+  # connection; the 10s max-wait bounds the queue instead of rejecting.
+  # Staging halves the gate against its 10-connection pool
+  # (application-staging.yml).
+  bulkhead:
+    instances:
+      refundCarriers:
+        maxConcurrentCalls: 5
+        maxWaitDuration: 10s
   circuitbreaker:
     configs:
       default:

@@ -163,15 +163,24 @@ class PaymentsServiceReturnRefundJournalTest {
         // return's amount and the books baseline (in the journal's own
         // REQUIRES_NEW transaction), the provider's success answer records
         // the remote refund's identity, and the books advance by the remote
-        // cumulative actual.
+        // cumulative actual. CodeRabbit round 5: the repository mock is a
+        // STORE — findById returns what save stored — so markExecuted's
+        // transition actually runs and the captured record's final state is
+        // asserted, not just the call count.
         PaymentsService svc = service();
         Payment payment = collectedPayment(0L);
         UUID returnId = UUID.randomUUID();
         String operationKey = PaymentsService.StableRefundScope.forReturn(returnId)
                 .idempotencyKey(payment.getId(), 2000L);
-        when(journalRepository.findById(operationKey)).thenReturn(Optional.empty());
+        java.util.concurrent.atomic.AtomicReference<PaymentRefundOperation> stored =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(journalRepository.findById(operationKey))
+                .thenAnswer(inv -> Optional.ofNullable(stored.get()));
         when(journalRepository.save(any(PaymentRefundOperation.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
+                .thenAnswer(inv -> {
+                    stored.set(inv.getArgument(0));
+                    return inv.getArgument(0);
+                });
         when(pspChannel.createRemoteRefund(eq("pi_remote_return"), eq(2000L), eq(operationKey)))
                 .thenReturn(new PspChannel.RemoteRefund("re_new_return", "succeeded", 2000L));
 
@@ -185,6 +194,11 @@ class PaymentsServiceReturnRefundJournalTest {
         org.mockito.ArgumentCaptor<PaymentRefundOperation> captor =
                 org.mockito.ArgumentCaptor.forClass(PaymentRefundOperation.class);
         verify(journalRepository).save(captor.capture());
+        PaymentRefundOperation recorded = captor.getValue();
+        // the store-backed read let markExecuted's transition RUN: the
+        // captured record ends EXECUTED with the provider's refund identity
+        org.assertj.core.api.Assertions.assertThat(recorded.getStatus()).isEqualTo("EXECUTED");
+        org.assertj.core.api.Assertions.assertThat(recorded.getRemoteRefundId()).isEqualTo("re_new_return");
         // the three reads of the first-submission journey: findSubmitted
         // (the executed-proof lookup), ensureSubmitted (the find-or-create),
         // and markExecuted (the provider answer's durable recording).
