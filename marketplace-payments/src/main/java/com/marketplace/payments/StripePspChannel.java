@@ -9,6 +9,7 @@ import com.stripe.model.RefundCollection;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.ChargeRetrieveParams;
+import com.stripe.param.RefundListParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
 import io.micrometer.observation.annotation.Observed;
@@ -101,6 +102,18 @@ class StripePspChannel implements PspChannel {
     @Override
     @Observed(name = "payment.psp.refund")
     public RemoteRefund createRemoteRefund(String pspIntentId, Long amountCents, String idempotencyKey) {
+        // CodeRabbit round 4 (reconcile-before-create): the provider's
+        // idempotency records expire after 24 hours — a retry of the SAME
+        // operation past that window would otherwise CREATE a second refund
+        // for it. A refund already carrying THIS operation's key in its
+        // metadata IS the operation's refund: it is returned as-is (its own
+        // status, its charge's cumulative), never re-created. The idempotency
+        // key itself is unchanged — the reconcile is the safety net AROUND
+        // the key's expiry, never a replacement for it.
+        com.stripe.model.Refund existing = findRefundByOperationKey(pspIntentId, idempotencyKey);
+        if (existing != null) {
+            return toRemoteRefund(existing);
+        }
         RefundCreateParams.Builder params = RefundCreateParams.builder()
                 .setPaymentIntent(pspIntentId);
         if (amountCents != null) {
@@ -119,25 +132,59 @@ class StripePspChannel implements PspChannel {
                 .build();
         try {
             com.stripe.model.Refund refund = com.stripe.model.Refund.create(params.build(), options);
-            // The cumulative remote actual lives on the charge the refund
-            // landed on ("amount_refunded", Charges API) — the local books
-            // must reflect the provider's number, not a local sum. A refund
-            // created by payment intent always resolves to its charge; a
-            // null charge id means the provider answered incoherently and
-            // is surfaced loudly instead of being papered over.
-            if (refund.getCharge() == null) {
-                throw new PspChannelException("Stripe refund " + refund.getId()
-                        + " for intent " + pspIntentId + " carried no charge id — cannot read the"
-                        + " cumulative refunded amount");
+            return toRemoteRefund(refund);
+        } catch (StripeException e) {
+            throw new PspChannelException("Stripe refund creation failed for intent "
+                    + pspIntentId + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * The operation's existing refund, matched by its provider metadata —
+     * null when none exists. The list is filtered by the payment intent and
+     * rides the documented auto-pagination.
+     */
+    private com.stripe.model.Refund findRefundByOperationKey(String pspIntentId, String operationKey) {
+        try {
+            RefundCollection refunds = com.stripe.model.Refund.list(
+                    RefundListParams.builder().setPaymentIntent(pspIntentId).setLimit(100L).build(),
+                    RequestOptions.builder().setApiKey(apiKey).build());
+            for (com.stripe.model.Refund refund : refunds.autoPagingIterable(java.util.Map.of(),
+                    RequestOptions.builder().setApiKey(apiKey).build())) {
+                if (operationKey.equals(refund.getMetadata() == null
+                        ? null : refund.getMetadata().get(OPERATION_KEY_METADATA))) {
+                    return refund;
+                }
             }
-            Charge charge = Charge.retrieve(refund.getCharge(), RequestOptions.builder()
-                    .setApiKey(apiKey).build());
+            return null;
+        } catch (StripeException e) {
+            throw new PspChannelException("Stripe refund listing failed for intent "
+                    + pspIntentId + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * The remote-refund answer for an existing refund object: its own status
+     * and its charge's cumulative — the same shape the create path answers
+     * (the cumulative read the local books follow, L19).
+     */
+    private RemoteRefund toRemoteRefund(com.stripe.model.Refund refund) {
+        // A refund created by payment intent always resolves to its charge; a
+        // null charge id means the provider answered incoherently and is
+        // surfaced loudly instead of being papered over.
+        if (refund.getCharge() == null) {
+            throw new PspChannelException("Stripe refund " + refund.getId()
+                    + " carried no charge id — cannot read the cumulative refunded amount");
+        }
+        try {
+            Charge charge = Charge.retrieve(refund.getCharge(),
+                    RequestOptions.builder().setApiKey(apiKey).build());
             Long cumulative = charge.getAmountRefunded();
             return new RemoteRefund(refund.getId(), refund.getStatus(),
                     cumulative == null ? 0L : cumulative);
         } catch (StripeException e) {
-            throw new PspChannelException("Stripe refund creation failed for intent "
-                    + pspIntentId + ": " + e.getMessage(), e);
+            throw new PspChannelException("Stripe charge retrieval failed for refund "
+                    + refund.getId() + ": " + e.getMessage(), e);
         }
     }
 
@@ -162,17 +209,24 @@ class StripePspChannel implements PspChannel {
             // the V33 link and its amount_refunded is the remote actual.
             Charge charge = extractCharge(event);
             if (charge != null) {
-                Long cumulative = charge.getAmountRefunded();
                 // The identities are resolved only for a USABLE event (one
                 // carrying the payment_intent the dispatch resolves); an
                 // unusable one never reads its snapshot, so no retrieval
-                // fires for it.
-                RefundSnapshot snapshot = charge.getPaymentIntent() == null
-                        ? new RefundSnapshot(cumulative == null ? 0L : cumulative)
-                        : new RefundSnapshot(cumulative == null ? 0L : cumulative,
-                                executedRefunds(charge));
+                // fires for it. When the payload omits the refunds
+                // collection the charge is re-retrieved — and the RETRIEVED
+                // cumulative rides along with the identities (CodeRabbit
+                // round 4): it is the fresher number from the same API
+                // snapshot the identities came from, never the event's stale
+                // one.
+                RefundIdentities identities = charge.getPaymentIntent() == null
+                        ? new RefundIdentities(
+                                charge.getAmountRefunded() == null ? 0L : charge.getAmountRefunded(),
+                                List.of())
+                        : refundIdentities(charge);
                 return new VerifiedWebhook(event.getId(), event.getType(), null,
-                        charge.getPaymentIntent(), snapshot);
+                        charge.getPaymentIntent(),
+                        new RefundSnapshot(identities.cumulativeRefundedCents(),
+                                identities.executedRefunds()));
             }
             // Events we did not subscribe to (or unknown objects) —
             // acknowledged and ignored by returning a no-op record; dispatch
@@ -241,21 +295,32 @@ class StripePspChannel implements PspChannel {
      * auto-pagination would throw (measured in the 33.4.2 sources:
      * StripeCollection.autoPagingIterable dereferences the transient
      * responseGetter only API responses attach).</p>
+     *
+     * <p>CodeRabbit round 4: when the retrieval fires, the RETRIEVED charge's
+     * cumulative is the answer — the fresher number from the same API
+     * snapshot the identities came from. The event's own cumulative is the
+     * pre-retrieval baseline only.</p>
      */
-    private List<PspChannel.ExecutedRefund> executedRefunds(Charge charge) {
+    private RefundIdentities refundIdentities(Charge charge) {
+        long cumulative = charge.getAmountRefunded() == null ? 0L : charge.getAmountRefunded();
         RefundCollection refunds = charge.getRefunds();
         boolean embeddedComplete = refunds != null && refunds.getData() != null
                 && !Boolean.TRUE.equals(refunds.getHasMore());
         if (!embeddedComplete && charge.getId() != null) {
-            refunds = retrieveExpandedRefunds(charge.getId());
-            embeddedComplete = refunds != null && refunds.getData() != null
-                    && !Boolean.TRUE.equals(refunds.getHasMore());
+            Charge retrieved = retrieveExpandedRefunds(charge.getId());
+            if (retrieved.getRefunds() != null && retrieved.getRefunds().getData() != null) {
+                refunds = retrieved.getRefunds();
+                if (retrieved.getAmountRefunded() != null) {
+                    cumulative = retrieved.getAmountRefunded();
+                }
+                embeddedComplete = !Boolean.TRUE.equals(refunds.getHasMore());
+            }
         }
         if (refunds == null || refunds.getData() == null) {
-            return List.of();
+            return new RefundIdentities(cumulative, List.of());
         }
         if (embeddedComplete) {
-            return mapExecutedRefunds(refunds.getData());
+            return new RefundIdentities(cumulative, mapExecutedRefunds(refunds.getData()));
         }
         // the retrieved, multi-page collection: the documented auto-pagination
         List<PspChannel.ExecutedRefund> executed = new ArrayList<>();
@@ -265,7 +330,12 @@ class StripePspChannel implements PspChannel {
                 executed.add(toExecutedRefund(refund));
             }
         }
-        return List.copyOf(executed);
+        return new RefundIdentities(cumulative, List.copyOf(executed));
+    }
+
+    /** The cumulative and the identities, from ONE snapshot. */
+    private record RefundIdentities(long cumulativeRefundedCents,
+                                    List<PspChannel.ExecutedRefund> executedRefunds) {
     }
 
     private List<PspChannel.ExecutedRefund> mapExecutedRefunds(List<com.stripe.model.Refund> refunds) {
@@ -286,12 +356,11 @@ class StripePspChannel implements PspChannel {
      * omitted the refunds collection — the same API surface
      * {@code createRemoteRefund} already uses for the cumulative read.
      */
-    private RefundCollection retrieveExpandedRefunds(String chargeId) {
+    private Charge retrieveExpandedRefunds(String chargeId) {
         try {
-            Charge retrieved = Charge.retrieve(chargeId,
+            return Charge.retrieve(chargeId,
                     ChargeRetrieveParams.builder().addExpand("refunds").build(),
                     RequestOptions.builder().setApiKey(apiKey).build());
-            return retrieved.getRefunds();
         } catch (StripeException e) {
             throw new PspChannelException("Stripe charge retrieval for the refund identities failed (charge "
                     + chargeId + "): " + e.getMessage(), e);
