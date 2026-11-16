@@ -379,8 +379,14 @@ class GlobalExceptionHandlerTest {
                 java.util.List.of(new org.springframework.validation.FieldError(
                         "cmd", "email", "must be a well-formed email address"));
         org.mockito.Mockito.when(result.getResolvableErrors()).thenReturn(errors);
+        // Framework 7's HandlerMethodValidationException wraps a
+        // MethodValidationResult (the 6.1 List<ParameterValidationResult>
+        // constructor is gone); the official static factory builds it.
         var ex = new org.springframework.web.method.annotation.HandlerMethodValidationException(
-                java.util.List.of(result));
+                org.springframework.validation.method.MethodValidationResult.create(
+                        new TestController(),
+                        TestController.class.getDeclaredMethod("submit", String.class),
+                        java.util.List.of(result)));
         HttpServletRequest request = new StubHttpServletRequest("/api/users");
 
         var response = handler.handleMethodValidation(ex, request);
