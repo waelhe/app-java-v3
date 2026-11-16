@@ -113,7 +113,6 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         diagnosticPublicationIds.clear();
     }
 
-
     /** The operator's own token — the ADMIN authority the /actuator/** rule requires. */
     private static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
             .JwtRequestPostProcessor operatorJwt() {
@@ -312,7 +311,7 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         assertThat(processing.path("listener").asText()).isEqualTo("processing-listener");
         assertThat(processing.path("status").asText()).isEqualTo("PROCESSING");
         assertThat(processing.path("completionAttempts").asInt()).isEqualTo(3);
-        assertThat(Instant.parse(processing.path("lastResubmissionAt").asText()))
+        assertThat(OffsetDateTime.parse(processing.path("lastResubmissionAt").asText()).toInstant())
                 .isEqualTo(lastResubmissionAt);
 
         Integer fixtureCount = jdbcTemplate.queryForObject(
