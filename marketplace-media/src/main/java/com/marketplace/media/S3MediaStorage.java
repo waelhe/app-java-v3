@@ -242,73 +242,218 @@ final class S3MediaStorage implements AutoCloseable {
     }
 
     /**
-     * G3 (adversarial review 2026-11-10, owner-gate batch 6a — the erasure
-     * flow's storage leg) + F-833-1 (the 2026-11-14 adversarial behavioral
-     * review, P2): batch best-effort removal of KNOWN keys — the
-     * account-erasure flow's media adapter holds the subject's exact
-     * object keys (originals + thumbnails), so the official documented
-     * batch API is the right channel: AWS S3 {@code DeleteObjects}
-     * (the multi-object delete — <b>up to 1,000 keys per call</b>, the
-     * service documentation's own batch shape) instead of one round trip
-     * per object. A subject holding MORE than 1,000 keys is split into
-     * consecutive ≤1,000-key batches — the pre-fix single request
-     * exceeded the service's documented ceiling and was rejected
-     * WHOLE, so the tier-2 destruction never happened while the purge
-     * logged completion (the review's measured finding). Duplicate keys
-     * are deduped first (the service rejects a request holding the same
-     * key twice).
+     * G3: permanently removes known media objects.
      *
-     * <p>Best-effort per batch (the {@link #deleteObject} contract's own
-     * discipline): a batch's wire failure never aborts the remaining
-     * batches — every batch is attempted, and the FIRST failure is
-     * re-thrown once the loop ends so the caller's log line (the tier-2
-     * gap signal) still fires; the successfully deleted batches
-     * stand, and a re-run converges idempotently. A batch whose HTTP
-     * call succeeded but whose response carries per-key
-     * {@code errors()} entries (the service's own partial-failure
-     * surface) is surfaced the same way: the entry count and sample
-     * ride the thrown message, the successful keys stand.</p>
+     * <p>Cloudflare R2's current S3 compatibility matrix does not implement
+     * GetBucketVersioning or ListObjectVersions and does not support object
+     * versioning/Object Lock. Its documented bucket model is therefore handled
+     * as unversioned: DeleteObjects by key permanently removes the object.</p>
      *
-     * <p>Same best-effort contract as {@link #deleteObject}:
-     * storage-side failure is logged by the caller, never fatal — bucket
-     * lifecycle rules own orphans. An empty/null input is a no-op (the
-     * subject held no media — the honest zero, never a wire call).</p>
+     * <p>For other S3 endpoints, versioning state is read first. ENABLED and
+     * SUSPENDED both require enumerating every object version AND delete marker,
+     * then deleting each entry with its explicit versionId. A missing status is
+     * the S3 unversioned state. Failure to read versioning or enumerate versions
+     * is fatal: the caller retains PURGE_PENDING and retries; it never falls
+     * back to a key-only delete when capability is unknown.</p>
+     *
+     * <p>DeleteObjects accepts at most 1,000 identifiers. Per-key errors in a
+     * successful HTTP response are retried for those failed identifiers only;
+     * an ambiguous request-level failure retries that request batch. Residual
+     * failures propagate after three attempts, leaving the database tombstone
+     * retryable. Object Lock is not bypassed.</p>
      */
     void deleteObjects(java.util.Collection<String> objectKeys) {
         if (objectKeys == null || objectKeys.isEmpty()) {
             return;
         }
-        java.util.List<String> distinctKeys = objectKeys.stream().distinct().toList();
-        RuntimeException firstFailure = null;
-        for (int start = 0; start < distinctKeys.size(); start += DELETE_OBJECTS_MAX_KEYS_PER_REQUEST) {
-            int end = Math.min(start + DELETE_OBJECTS_MAX_KEYS_PER_REQUEST, distinctKeys.size());
-            java.util.List<String> batchKeys = distinctKeys.subList(start, end);
-            java.util.List<software.amazon.awssdk.services.s3.model.ObjectIdentifier> identifiers =
-                    batchKeys.stream()
-                            .map(key -> software.amazon.awssdk.services.s3.model.ObjectIdentifier.builder()
-                                    .key(key)
-                                    .build())
-                            .toList();
-            try {
-                DeleteObjectsResponse response = circuitBreaker.executeSupplier(() -> client.deleteObjects(
-                        DeleteObjectsRequest.builder()
-                                .bucket(bucket)
-                                .delete(d -> d.objects(identifiers))
-                                .build()));
-                if (response != null && !response.errors().isEmpty()) {
-                    throw new IllegalStateException("S3 reported " + response.errors().size()
-                            + " per-key delete failures (first: key='" + response.errors().get(0).key()
-                            + "', code='" + response.errors().get(0).code()
-                            + "', message='" + response.errors().get(0).message() + "')");
-                }
-            } catch (RuntimeException ex) {
-                if (firstFailure == null) {
-                    firstFailure = ex;
+        java.util.List<String> keys = objectKeys.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(key -> !key.isBlank())
+                .distinct()
+                .toList();
+        if (keys.isEmpty()) {
+            return;
+        }
+
+        if (unversionedR2Endpoint) {
+            deleteIdentifierBatches(keys.stream()
+                    .map(key -> ObjectIdentifier.builder().key(key).build())
+                    .toList());
+            return;
+        }
+
+        GetBucketVersioningResponse versioning = circuitBreaker.executeSupplier(() ->
+                client.getBucketVersioning(GetBucketVersioningRequest.builder().bucket(bucket).build()));
+        VersioningConfiguration.Status status = versioning == null ? null : versioning.status();
+        boolean versioned = status == VersioningConfiguration.Status.ENABLED
+                || status == VersioningConfiguration.Status.SUSPENDED;
+
+        if (!versioned) {
+            // No Status is the S3-defined never-versioned bucket state.
+            deleteIdentifierBatches(keys.stream()
+                    .map(key -> ObjectIdentifier.builder().key(key).build())
+                    .toList());
+            return;
+        }
+
+        // Finish enumerating one key before issuing deletes for its versions.
+        // This avoids shifting that key's pagination while still batching
+        // identifiers across keys up to the service's 1,000-item ceiling.
+        java.util.List<ObjectIdentifier> pendingBatch = new java.util.ArrayList<>(
+                DELETE_OBJECTS_MAX_KEYS_PER_REQUEST);
+        for (String key : keys) {
+            java.util.List<ObjectIdentifier> versions = listAllVersionsAndMarkers(key);
+            for (ObjectIdentifier identifier : versions) {
+                pendingBatch.add(identifier);
+                if (pendingBatch.size() == DELETE_OBJECTS_MAX_KEYS_PER_REQUEST) {
+                    deleteIdentifierBatches(pendingBatch);
+                    pendingBatch.clear();
                 }
             }
         }
-        if (firstFailure != null) {
-            throw firstFailure;
+        if (!pendingBatch.isEmpty()) {
+            deleteIdentifierBatches(pendingBatch);
+        }
+    }
+
+    private java.util.List<ObjectIdentifier> listAllVersionsAndMarkers(String exactKey) {
+        java.util.List<ObjectIdentifier> identifiers = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        String keyMarker = null;
+        String versionIdMarker = null;
+
+        while (true) {
+            ListObjectVersionsRequest.Builder request = ListObjectVersionsRequest.builder()
+                    .bucket(bucket)
+                    .prefix(exactKey);
+            if (keyMarker != null) {
+                request.keyMarker(keyMarker);
+            }
+            if (versionIdMarker != null) {
+                request.versionIdMarker(versionIdMarker);
+            }
+
+            ListObjectVersionsResponse page = circuitBreaker.executeSupplier(
+                    () -> client.listObjectVersions(request.build()));
+            if (page == null) {
+                throw new IllegalStateException("S3 returned no version-list response for key " + exactKey);
+            }
+
+            if (page.versions() != null) {
+                for (var version : page.versions()) {
+                    if (exactKey.equals(version.key())) {
+                        addVersionIdentifier(identifiers, seen, exactKey, version.versionId());
+                    }
+                }
+            }
+            if (page.deleteMarkers() != null) {
+                for (var marker : page.deleteMarkers()) {
+                    if (exactKey.equals(marker.key())) {
+                        addVersionIdentifier(identifiers, seen, exactKey, marker.versionId());
+                    }
+                }
+            }
+
+            if (!page.isTruncated()) {
+                return identifiers;
+            }
+
+            String nextKeyMarker = page.nextKeyMarker();
+            String nextVersionIdMarker = page.nextVersionIdMarker();
+            if ((nextKeyMarker == null && nextVersionIdMarker == null)
+                    || (java.util.Objects.equals(keyMarker, nextKeyMarker)
+                    && java.util.Objects.equals(versionIdMarker, nextVersionIdMarker))) {
+                throw new IllegalStateException(
+                        "S3 version listing did not advance its pagination markers for key " + exactKey);
+            }
+            keyMarker = nextKeyMarker;
+            versionIdMarker = nextVersionIdMarker;
+        }
+    }
+
+    private static void addVersionIdentifier(java.util.List<ObjectIdentifier> identifiers,
+                                             java.util.Set<String> seen,
+                                             String key,
+                                             String versionId) {
+        // The literal string "null" is a valid S3 null-version identifier.
+        // A Java null is not: omitting it would turn a permanent delete into
+        // a key-only delete marker operation.
+        if (versionId == null) {
+            throw new IllegalStateException(
+                    "S3 omitted versionId while listing a versioned object: " + key);
+        }
+        String identity = key + "\u0000" + versionId;
+        if (seen.add(identity)) {
+            identifiers.add(ObjectIdentifier.builder().key(key).versionId(versionId).build());
+        }
+    }
+
+    private void deleteIdentifierBatches(java.util.List<ObjectIdentifier> identifiers) {
+        for (int start = 0; start < identifiers.size(); start += DELETE_OBJECTS_MAX_KEYS_PER_REQUEST) {
+            int end = Math.min(start + DELETE_OBJECTS_MAX_KEYS_PER_REQUEST, identifiers.size());
+            java.util.List<ObjectIdentifier> originalBatch = java.util.List.copyOf(identifiers.subList(start, end));
+            java.util.List<ObjectIdentifier> pending = originalBatch;
+
+            for (int attempt = 1; attempt <= 3 && !pending.isEmpty(); attempt++) {
+                DeleteObjectsResponse response;
+                try {
+                    java.util.List<ObjectIdentifier> requestBatch = pending;
+                    response = circuitBreaker.executeSupplier(() -> client.deleteObjects(
+                            DeleteObjectsRequest.builder()
+                                    .bucket(bucket)
+                                    .delete(d -> d.objects(requestBatch))
+                                    .build()));
+                } catch (RuntimeException ex) {
+                    if (attempt == 3) {
+                        throw ex;
+                    }
+                    // The request outcome is ambiguous; repeat only this batch.
+                    continue;
+                }
+
+                if (response == null) {
+                    if (attempt == 3) {
+                        throw new IllegalStateException("S3 returned no DeleteObjects response");
+                    }
+                    continue;
+                }
+                if (response.errors() == null || response.errors().isEmpty()) {
+                    pending = java.util.List.of();
+                    break;
+                }
+
+                java.util.List<ObjectIdentifier> failed = new java.util.ArrayList<>();
+                for (var error : response.errors()) {
+                    if (error.key() == null) {
+                        throw new IllegalStateException("S3 returned a per-key delete error without a key");
+                    }
+                    String errorVersionId = error.versionId();
+                    ObjectIdentifier original = originalBatch.stream()
+                            .filter(item -> error.key().equals(item.key())
+                                    && java.util.Objects.equals(errorVersionId, item.versionId()))
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "S3 returned a delete error for an identifier not in the request: "
+                                            + error.key() + " versionId=" + errorVersionId));
+                    failed.add(original);
+                }
+
+                if (attempt == 3) {
+                    var first = response.errors().get(0);
+                    throw new IllegalStateException("S3 could not delete " + failed.size()
+                            + " object version(s) after three attempts (first: key='" + first.key()
+                            + "', versionId='" + first.versionId() + "', code='" + first.code()
+                            + "', message='" + first.message() + "')");
+                }
+                pending = failed.stream()
+                        .collect(java.util.stream.Collectors.collectingAndThen(
+                                java.util.stream.Collectors.toMap(
+                                        item -> item.key() + "\u0000" + item.versionId(),
+                                        item -> item,
+                                        (left, right) -> left,
+                                        java.util.LinkedHashMap::new),
+                                map -> java.util.List.copyOf(map.values())));
+            }
         }
     }
 
