@@ -77,17 +77,8 @@
       ],
       "classification": "capability_gap",
       "severity": "medium",
-      "status": "fixed",
-      "note": "The gap: the stale-publication metric carried no diagnosable metadata and the Modulith endpoint would deserialize legacy payloads. The fix: the bounded read-only metadata endpoint (this PR).",
-      "fix": {
-        "commitSha": "ad916947903b507e60f0926244d284986e5d2e9a",
-        "regressionTest": "OperatorActuatorSurfaceSmokeIntegrationTest.eventPublicationDiagnosticsReadRawMetadataWithoutDeserializingOrMutatingRows",
-        "verification": {
-          "status": "passed",
-          "testedHeadSha": "ad916947903b507e60f0926244d284986e5d2e9a",
-          "workflowRunUrl": "https://github.com/waelhe/app-java-v3/actions/runs/43909590876"
-        }
-      }
+      "status": "open",
+      "note": "The diagnostics endpoint, its exposure, and the two regression ITs are implemented and the CI run 43909590876 succeeded on the code-bearing head ad91694790 (event pull_request, PR #841). The D11 evidence contract resolves the run's PR association through the LIVE GitHub Actions API, which now reports the PR's CURRENT head (the receipt-bearing head after the receipt commits), so the run can no longer be recorded as this finding's verification without contradicting the validator — the self-reference paradox the change-records README documents ('tested first, then run evidence recorded'). The finding stays open with its full local evidence; the required CI now running on the receipt-bearing head will gate the merge itself, and a follow-up commit may bind a fresh code-bearing run to close it per the contract's sequencing."
     }
   ]
 }
