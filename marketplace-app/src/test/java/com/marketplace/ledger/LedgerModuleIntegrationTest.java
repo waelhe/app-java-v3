@@ -638,13 +638,10 @@ class LedgerModuleIntegrationTest {
                     }));
             int waiterPid = secondBackendPid.get(10, java.util.concurrent.TimeUnit.SECONDS);
             awaitAdvisoryLockWait(waiterPid, second);
-        } finally {
-            releaseFirst.countDown();
-        }
-        try {
             first.get(60, java.util.concurrent.TimeUnit.SECONDS);
             second.get(60, java.util.concurrent.TimeUnit.SECONDS);
         } finally {
+            releaseFirst.countDown();
             pool.shutdownNow();
         }
 
@@ -771,13 +768,10 @@ class LedgerModuleIntegrationTest {
                     }));
             int waiterPid = completionBackendPid.get(10, java.util.concurrent.TimeUnit.SECONDS);
             awaitAdvisoryLockWait(waiterPid, completionSecond);
-        } finally {
-            releaseRefund.countDown();
-        }
-        try {
             refundFirst.get(60, java.util.concurrent.TimeUnit.SECONDS);
             completionSecond.get(60, java.util.concurrent.TimeUnit.SECONDS);
         } finally {
+            releaseRefund.countDown();
             pool.shutdownNow();
         }
 
