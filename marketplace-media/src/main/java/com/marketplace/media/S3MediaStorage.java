@@ -361,7 +361,9 @@ final class S3MediaStorage implements AutoCloseable {
                 }
             }
 
-            if (!page.isTruncated()) {
+            // AWS SDK models represent an omitted optional Boolean as null;
+            // only TRUE means another page is contractually present.
+            if (!Boolean.TRUE.equals(page.isTruncated())) {
                 return identifiers;
             }
 
