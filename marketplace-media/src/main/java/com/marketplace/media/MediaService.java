@@ -21,8 +21,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -471,57 +469,27 @@ public class MediaService {
     }
 
     /**
-     * G3 (adversarial review 2026-11-10, owner-gate batch 6a — the erasure
-     * flow's storage leg, the documented recommendation's Degree 2
-     * «إتلاف الكائن»): destroys the given KNOWN storage keys — the
-     * account-erasure flow's media adapter collected the subject's exact
-     * object keys (originals + thumbnails) — best-effort, and only AFTER
-     * the caller's transaction commits (the {@code delete(UUID, …)}
-     * method's own #241 discipline: the purge's tombstone statements are
-     * only scheduled until commit, so destroying the objects first would
-     * leave the rows pointing at vanished objects whenever the purge
-     * transaction rolls back).
+     * G3: synchronously destroys every known media object for account erasure.
+     * The caller has already committed PURGE_PENDING, so a storage failure
+     * leaves the media hidden and retryable rather than announcing completion.
      *
-     * <p><b>The unconfigured channel's honest gap:</b> an absent storage
-     * bean (the {@code MediaStorageConfiguredCondition} gate) never fails
-     * the erasure — the tombstone (the data-model erasure, Degree 1) has
-     * already landed in the caller's transaction; the storage objects of
-     * an unconfigured channel do not exist to destroy. The gap is logged,
-     * never silent — the purge's structured completion line lives with
-     * the orchestrator either way.</p>
+     * <p>No best-effort swallowing is permitted on this path. If storage is
+     * unconfigured, the provider rejects a key, a version cannot be listed, or
+     * Object Lock prevents deletion, the exception reaches the purge
+     * orchestrator and PURGED is not written.</p>
      */
     @Observed(name = "media.erasure.destroyObjects")
-    public void destroyObjectsAfterCommit(Collection<String> objectKeys) {
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    public void destroyObjectsForErasure(Collection<String> objectKeys) {
         if (objectKeys == null || objectKeys.isEmpty()) {
             return;
         }
         S3MediaStorage s3 = storage.getIfAvailable();
         if (s3 == null) {
-            log.warn("G3 erasure: storage channel unconfigured — {} known object keys left to bucket "
-                    + "lifecycle rules (the tombstone rows are already purged; the gap is logged, "
-                    + "never silent)", objectKeys.size());
-            return;
+            throw new ServiceUnavailableException(
+                    "Media erasure cannot complete because the configured object-storage channel is unavailable");
         }
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    destroyStorageObjects(s3, objectKeys);
-                }
-            });
-        } else {
-            // No active transaction (unit tests) — destroy immediately.
-            destroyStorageObjects(s3, objectKeys);
-        }
-    }
-
-    private void destroyStorageObjects(S3MediaStorage s3, Collection<String> objectKeys) {
-        try {
-            s3.deleteObjects(objectKeys);
-        } catch (RuntimeException ex) {
-            log.warn("Storage object batch removal failed for {} keys (bucket lifecycle will own them): {}",
-                    objectKeys.size(), ex.getMessage());
-        }
+        s3.deleteObjects(objectKeys);
     }
 
     @Transactional(readOnly = true)
