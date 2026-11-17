@@ -288,15 +288,19 @@ final class S3MediaStorage implements AutoCloseable {
             throw new IllegalStateException("S3 returned no bucket-versioning response; refusing key-only erasure");
         }
         BucketVersioningStatus status = versioning.status();
-        boolean versioned = status == BucketVersioningStatus.ENABLED
-                || status == BucketVersioningStatus.SUSPENDED;
-
-        if (!versioned) {
-            // No Status is the S3-defined never-versioned bucket state.
+        if (status == null) {
+            // AWS omits Status for a bucket that has never had versioning enabled.
             deleteIdentifierBatches(keys.stream()
                     .map(key -> ObjectIdentifier.builder().key(key).build())
                     .toList());
             return;
+        }
+        if (status != BucketVersioningStatus.ENABLED && status != BucketVersioningStatus.SUSPENDED) {
+            // UNKNOWN_TO_SDK_VERSION (or any future enum member) is not proof
+            // that the bucket is unversioned. A key-only delete could leave
+            // historical versions retrievable, so fail closed.
+            throw new IllegalStateException(
+                    "Unsupported S3 bucket versioning status '" + status + "'; refusing key-only erasure");
         }
 
         // Finish enumerating one key before issuing deletes for its versions.
