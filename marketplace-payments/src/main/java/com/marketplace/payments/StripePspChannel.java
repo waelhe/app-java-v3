@@ -342,9 +342,14 @@ class StripePspChannel implements PspChannel {
      * recreating the very stuck window this closes. On omission (or a
      * truncated embedded page) the charge is re-retrieved with the documented
      * expand mechanism (ChargeRetrieveParams.addExpand("refunds")) and the
-     * retrieved collection rides the documented auto-pagination with explicit
-     * request options. A webhook-deserialized collection is iterated from its
-     * embedded data only — it carries no response getter, and its
+     * retrieved collection rides the documented auto-pagination with EXPLICIT
+     * channel-key request options (CodeRabbit round 9): the nested refunds
+     * collection inherits the response getter from the retrieval but NEVER
+     * the request options — the SDK attaches those only to top-level
+     * collections — so the no-arg overload would throw
+     * ApiKeyMissingException under the per-channel key model (no global
+     * Stripe key is ever set). A webhook-deserialized collection is iterated
+     * from its embedded data only — it carries no response getter, and its
      * auto-pagination would throw (measured in the 33.4.2 sources:
      * StripeCollection.autoPagingIterable dereferences the transient
      * responseGetter only API responses attach).</p>
@@ -375,11 +380,24 @@ class StripePspChannel implements PspChannel {
         if (embeddedComplete) {
             return new RefundIdentities(cumulative, mapExecutedRefunds(refunds.getData()));
         }
-        // the retrieved, multi-page collection: the documented no-arg
-        // auto-pagination keeps the retrieval's original params and options
-        // (CodeRabbit round 8) — the collection carries its response getter
+        // The retrieved, multi-page NESTED collection: the SDK attaches
+        // request options ONLY to top-level collections (measured in the
+        // 33.4.2 sources: LiveStripeResponseGetter sets them on the response
+        // resource itself, and Charge.setResponseGetter propagates only the
+        // response getter into the nested refunds) — this collection's own
+        // options are null, so the no-arg auto-pagination would validate
+        // null against the response getter's global default and throw
+        // ApiKeyMissingException under the per-channel key model. The
+        // explicit-options overload validates AND attaches the channel key,
+        // so every subsequent page fetch rides it; the empty params override
+        // loses nothing — the collection's own URL carries the charge
+        // filter, and a nested collection never had request params
+        // (CodeRabbit round 9; contrast findRefundByOperationKey, whose
+        // TOP-LEVEL Refund.list collection carries its options and params,
+        // so the no-arg overload is the correct call there).
         List<PspChannel.ExecutedRefund> executed = new ArrayList<>();
-        for (com.stripe.model.Refund refund : refunds.autoPagingIterable()) {
+        for (com.stripe.model.Refund refund : refunds.autoPagingIterable(
+                Map.of(), RequestOptions.builder().setApiKey(apiKey).build())) {
             if ("succeeded".equals(refund.getStatus())) {
                 executed.add(toExecutedRefund(refund));
             }

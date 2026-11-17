@@ -3,7 +3,14 @@ package com.marketplace.payments;
 import com.stripe.model.Charge;
 import com.stripe.model.Event;
 import com.stripe.model.RefundCollection;
+import com.stripe.model.StripeObject;
+import com.stripe.net.ApiMode;
+import com.stripe.net.ApiResource;
+import com.stripe.net.BaseAddress;
+import com.stripe.net.BearerTokenAuthenticator;
+import com.stripe.net.LiveStripeResponseGetter;
 import com.stripe.net.RequestOptions;
+import com.stripe.net.StripeResponseGetter;
 import com.stripe.net.Webhook;
 import com.stripe.param.ChargeRetrieveParams;
 import com.stripe.param.RefundCreateParams;
@@ -12,7 +19,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
+import java.io.InputStream;
+import java.lang.reflect.Type;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -452,5 +462,157 @@ class StripePspChannelTest {
 
         org.assertj.core.api.Assertions.assertThat(pendingVerified.eventType()).isEqualTo("refund.created");
         org.assertj.core.api.Assertions.assertThat(pendingVerified.refund().executedRefunds()).isEmpty();
+    }
+
+    @Test
+    void verifyWebhook_pagesTheRetrievedRefundsWithTheChannelKeyRequestOptions() throws Exception {
+        // CodeRabbit round 9: the SDK attaches request options ONLY to
+        // top-level collections — the retrieved charge's NESTED refunds
+        // collection carries the response getter (Charge.setResponseGetter
+        // recurses into it) but NULL request options, so the no-arg
+        // auto-pagination would call the response getter's own validation
+        // with null options and throw ApiKeyMissingException under the
+        // per-channel key model (no global Stripe key is ever set —
+        // GlobalStripeResponseGetterOptions reads Stripe.apiKey, unset
+        // here and in every pipeline run). The explicit-options overload
+        // validates AND attaches the channel key, so the page-2 fetch
+        // rides it. This test walks the REAL PagingIterator over a REAL
+        // SDK collection (has_more=true) and answers page 2 through a
+        // stub whose validation delegates to the SDK's own
+        // LiveStripeResponseGetter rule — no network anywhere.
+        String retrievalPayload = "{\"id\":\"evt_hm1\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{"
+                + "\"id\":\"ch_hm\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_hm\",\"amount_refunded\":3000,"
+                + "\"refunds\":{\"object\":\"list\",\"has_more\":true,"
+                + "\"url\":\"/v1/charges/ch_hm/refunds\",\"data\":["
+                + "{\"id\":\"re_p1\",\"object\":\"refund\",\"status\":\"succeeded\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":"
+                + "\"marketplace-refund-pHM-return-rHM-1500\"}}"
+                + "]}}}}";
+        Charge retrievedCharge = chargeFromSignedEvent(retrievalPayload);
+        RefundCollection firstPage = retrievedCharge.getRefunds();
+        org.assertj.core.api.Assertions.assertThat(firstPage.getHasMore()).isTrue();
+
+        String secondPagePayload = "{\"id\":\"evt_hm2\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{"
+                + "\"id\":\"ch_hm\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_hm\",\"amount_refunded\":3000,"
+                + "\"refunds\":{\"object\":\"list\",\"has_more\":false,"
+                + "\"url\":\"/v1/charges/ch_hm/refunds\",\"data\":["
+                + "{\"id\":\"re_p2\",\"object\":\"refund\",\"status\":\"succeeded\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":"
+                + "\"marketplace-refund-pHM-return-rHM-1500\"}}"
+                + "]}}}}";
+        RefundCollection secondPage = chargeFromSignedEvent(secondPagePayload).getRefunds();
+
+        // the captured page-2 request facts (the deprecated request
+        // overload receives every element as plain parameters — public
+        // API, no reflection)
+        AtomicReference<ApiResource.RequestMethod> capturedMethod = new AtomicReference<>();
+        AtomicReference<String> capturedPath = new AtomicReference<>();
+        AtomicReference<java.util.Map<String, Object>> capturedParams = new AtomicReference<>();
+        AtomicReference<RequestOptions> capturedOptions = new AtomicReference<>();
+        final LiveStripeResponseGetter sdkValidator = new LiveStripeResponseGetter();
+        StripeResponseGetter pageTwoGetter = new StripeResponseGetter() {
+            @Override
+            public <T extends StripeObject> T request(BaseAddress baseAddress,
+                    ApiResource.RequestMethod method, String path,
+                    java.util.Map<String, Object> params, Type typeToken,
+                    RequestOptions options, ApiMode apiMode) {
+                capturedMethod.set(method);
+                capturedPath.set(path);
+                capturedParams.set(params);
+                capturedOptions.set(options);
+                @SuppressWarnings("unchecked")
+                T answer = (T) secondPage;
+                return answer;
+            }
+
+            @Override
+            public InputStream requestStream(BaseAddress baseAddress,
+                    ApiResource.RequestMethod method, String path,
+                    java.util.Map<String, Object> params, RequestOptions options,
+                    ApiMode apiMode) {
+                throw new UnsupportedOperationException("no stream requests in this test");
+            }
+
+            @Override
+            public void validateRequestOptions(RequestOptions options) {
+                // the SDK's own rule, verbatim — the real global getter's
+                // validator: null/keyless options with no global key throw
+                // ApiKeyMissingException, exactly the production failure
+                // the no-arg overload would hit on this nested collection
+                sdkValidator.validateRequestOptions(options);
+            }
+        };
+        // what the API response path itself does: the nested collection
+        // receives the response getter (never the request options)
+        firstPage.setResponseGetter(pageTwoGetter);
+
+        // the incoming webhook: charge.refunded WITHOUT the refunds
+        // collection (the round-3 omission) and a STALE cumulative — the
+        // retrieval fires, and its fresher snapshot answers
+        String payload = "{\"id\":\"evt_hm0\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{"
+                + "\"id\":\"ch_hm\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_hm\",\"amount_refunded\":1000}}}";
+        String signature = Webhook.Signature.generateSignatureHeader(payload, SECRET);
+
+        try (MockedStatic<Charge> chargeMock = mockStatic(Charge.class)) {
+            chargeMock.when(() -> Charge.retrieve(eq("ch_hm"), any(ChargeRetrieveParams.class),
+                            any(RequestOptions.class)))
+                    .thenReturn(retrievedCharge);
+
+            PspChannel.VerifiedWebhook verified = channel.verifyWebhook(payload, signature);
+
+            assertThat(verified.eventType()).isEqualTo("charge.refunded");
+            assertThat(verified.pspIntentId()).isEqualTo("pi_hm");
+            // the RETRIEVED cumulative wins over the event's stale one
+            assertThat(verified.refund().refundedAmountCents()).isEqualTo(3000L);
+            // the pagination crossed the page boundary: both keyed
+            // identities — page 1 AND page 2 — are execution evidence
+            assertThat(verified.refund().executedRefunds()).containsExactly(
+                    new PspChannel.ExecutedRefund("re_p1", "marketplace-refund-pHM-return-rHM-1500"),
+                    new PspChannel.ExecutedRefund("re_p2", "marketplace-refund-pHM-return-rHM-1500"));
+        }
+
+        // the page-2 fetch rode the CHANNEL KEY options — the SDK's
+        // BearerTokenAuthenticator carrying this channel's key, never a
+        // global key (none exists)
+        org.assertj.core.api.Assertions.assertThat(capturedOptions.get()).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(capturedOptions.get().getAuthenticator())
+                .isInstanceOf(BearerTokenAuthenticator.class);
+        org.assertj.core.api.Assertions.assertThat(
+                        ((BearerTokenAuthenticator) capturedOptions.get().getAuthenticator()).getApiKey())
+                .isEqualTo("sk_test_key");
+        // the page-2 request: a GET on the collection's own URL (the charge
+        // filter lives there) with ONLY the starting_after cursor — the
+        // empty params override added nothing
+        org.assertj.core.api.Assertions.assertThat(capturedMethod.get())
+                .isEqualTo(ApiResource.RequestMethod.GET);
+        org.assertj.core.api.Assertions.assertThat(capturedPath.get())
+                .isEqualTo("/v1/charges/ch_hm/refunds");
+        org.assertj.core.api.Assertions.assertThat(capturedParams.get())
+                .containsExactlyInAnyOrderEntriesOf(java.util.Map.of("starting_after", "re_p1"));
+    }
+
+    /** A Charge extracted through the channel's own tolerant pattern. */
+    private static Charge chargeFromSignedEvent(String payload) {
+        try {
+            Event event = Webhook.constructEvent(payload,
+                    Webhook.Signature.generateSignatureHeader(payload, SECRET), SECRET);
+            var deserializer = event.getDataObjectDeserializer();
+            if (deserializer.getObject().isPresent()
+                    && deserializer.getObject().get() instanceof Charge charge) {
+                return charge;
+            }
+            return (Charge) deserializer.deserializeUnsafe();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
