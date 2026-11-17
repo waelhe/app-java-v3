@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.s3.model.GetBucketVersioningResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import software.amazon.awssdk.services.s3.model.VersioningConfiguration;
+import software.amazon.awssdk.services.s3.model.BucketVersioningStatus;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -287,9 +287,9 @@ final class S3MediaStorage implements AutoCloseable {
         if (versioning == null) {
             throw new IllegalStateException("S3 returned no bucket-versioning response; refusing key-only erasure");
         }
-        VersioningConfiguration.Status status = versioning.status();
-        boolean versioned = status == VersioningConfiguration.Status.ENABLED
-                || status == VersioningConfiguration.Status.SUSPENDED;
+        BucketVersioningStatus status = versioning.status();
+        boolean versioned = status == BucketVersioningStatus.ENABLED
+                || status == BucketVersioningStatus.SUSPENDED;
 
         if (!versioned) {
             // No Status is the S3-defined never-versioned bucket state.
