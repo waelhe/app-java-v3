@@ -891,6 +891,49 @@ class RunPathTests(ManifestTests):
                 "coverage requires a good verdict"):
             self.run_gate(client)
 
+    def test_submitted_at_tie_resolves_to_the_later_declaration(self):
+        # CodeRabbit round 12 (2026-11-17T17:46Z, inline 4603504886): two
+        # COMMENTED declaring reviews carrying the SAME submitted_at — an
+        # older complete declaration followed by a newer malformed one
+        # (declares 3, lists 2) — then a later empty approval. Python's
+        # stable sort with reverse=True preserves the original order among
+        # equal keys, so without the response-position tiebreaker the OLDER
+        # complete declaration wins and the gate PASSes over the newer
+        # malformed one. The later position in the response is the newer
+        # submission: the malformed declaration must raise, while the
+        # complete-declaration-then-empty-approval pair keeps passing.
+        small = ["src/A.java", "src/B.java"]
+        older_complete = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        newer_malformed = {
+            "id": 14, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small).replace("processing: 2", "processing: 3"),
+        }
+        approval = {
+            "id": 9, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "APPROVED", "submitted_at": "2026-10-31T19:00:07Z", "body": "",
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [older_complete, newer_malformed, approval],
+                     51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(gate.GateError, "declared 3 files but listed 2"):
+            self.run_gate(client)
+
 
 if __name__ == "__main__":
     unittest.main()

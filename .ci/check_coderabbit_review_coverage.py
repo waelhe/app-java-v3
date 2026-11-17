@@ -259,8 +259,20 @@ def declaring_review(reviews, sha, login, states):
                   and item.get("commit_id") == sha
                   and item.get("state") in states
                   and declares_processed_files(item.get("body", ""))]
-    for item in sorted(candidates, key=lambda review: review.get("submitted_at") or "",
-                       reverse=True):
+    # CodeRabbit round 12 (2026-11-17T17:46Z, inline 4603504886): a
+    # submitted_at TIE resolves to the LATER position in the response.
+    # GitHub returns reviews chronologically, but Python's sort is stable —
+    # reverse=True preserves the original order among equal keys, so a
+    # tie between an older complete declaration and a newer malformed one
+    # (both COMMENTED at the same submitted_at, then a later empty
+    # approval) would return the OLDER declaration and PASS instead of
+    # raising on the newest malformed one. The response position is the
+    # tiebreaker: (submitted_at, position) descending selects the newest
+    # submission the API carries, malformed or not — fail-closed either
+    # way.
+    for _, item in sorted(enumerate(candidates),
+                          key=lambda pair: (pair[1].get("submitted_at") or "", pair[0]),
+                          reverse=True):
         return item, processed_files(item.get("body", ""))
     return None, None
 
