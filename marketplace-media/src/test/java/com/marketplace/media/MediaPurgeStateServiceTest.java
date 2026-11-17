@@ -37,7 +37,7 @@ class MediaPurgeStateServiceTest {
             ResultSet row = org.mockito.Mockito.mock(ResultSet.class);
             if (sql.contains("media_assets")) {
                 when(row.getString(1)).thenReturn("listings/1/a.jpg", "posts/2/b.jpg");
-                when(row.getString(2)).thenReturn("listings/1/a.jpg/thumb", null);
+                when(row.getString(2)).thenReturn("listings/1/a.jpg/thumb").thenReturn((String) null);
                 handler.processRow(row);
                 handler.processRow(row);
             } else {
