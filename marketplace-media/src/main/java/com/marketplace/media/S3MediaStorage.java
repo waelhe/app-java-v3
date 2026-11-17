@@ -284,7 +284,10 @@ final class S3MediaStorage implements AutoCloseable {
 
         GetBucketVersioningResponse versioning = circuitBreaker.executeSupplier(() ->
                 client.getBucketVersioning(GetBucketVersioningRequest.builder().bucket(bucket).build()));
-        VersioningConfiguration.Status status = versioning == null ? null : versioning.status();
+        if (versioning == null) {
+            throw new IllegalStateException("S3 returned no bucket-versioning response; refusing key-only erasure");
+        }
+        VersioningConfiguration.Status status = versioning.status();
         boolean versioned = status == VersioningConfiguration.Status.ENABLED
                 || status == VersioningConfiguration.Status.SUSPENDED;
 
