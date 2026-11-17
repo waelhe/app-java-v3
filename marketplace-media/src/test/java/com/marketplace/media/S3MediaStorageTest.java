@@ -69,6 +69,8 @@ class S3MediaStorageTest {
     private void givenUnversionedBucket() {
         when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
                 .thenReturn(GetBucketVersioningResponse.builder().build());
+        when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
     }
 
 
