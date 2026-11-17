@@ -85,7 +85,7 @@
         "verification": {
           "status": "passed",
           "testedHeadSha": "ad916947903b507e60f0926244d284986e5d2e9a",
-          "workflowRunUrl": ""
+          "workflowRunUrl": "https://github.com/waelhe/app-java-v3/actions/runs/43909590876"
         }
       }
     }
