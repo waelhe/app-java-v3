@@ -19,10 +19,10 @@ import java.util.UUID;
  * preserves the access tombstone and a later erasure run retries the exact keys.</p>
  */
 @Service
-class MediaPurgeStateService {
+public class MediaPurgeStateService {
     private final JdbcTemplate jdbcTemplate;
 
-    MediaPurgeStateService(JdbcTemplate jdbcTemplate) {
+    public MediaPurgeStateService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
