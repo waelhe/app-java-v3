@@ -638,6 +638,7 @@ class LedgerModuleIntegrationTest {
                     }));
             int waiterPid = secondBackendPid.get(10, java.util.concurrent.TimeUnit.SECONDS);
             awaitAdvisoryLockWait(waiterPid, second);
+            releaseFirst.countDown();
             first.get(60, java.util.concurrent.TimeUnit.SECONDS);
             second.get(60, java.util.concurrent.TimeUnit.SECONDS);
         } finally {
@@ -768,6 +769,7 @@ class LedgerModuleIntegrationTest {
                     }));
             int waiterPid = completionBackendPid.get(10, java.util.concurrent.TimeUnit.SECONDS);
             awaitAdvisoryLockWait(waiterPid, completionSecond);
+            releaseRefund.countDown();
             refundFirst.get(60, java.util.concurrent.TimeUnit.SECONDS);
             completionSecond.get(60, java.util.concurrent.TimeUnit.SECONDS);
         } finally {
