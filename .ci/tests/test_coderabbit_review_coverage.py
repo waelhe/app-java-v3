@@ -934,6 +934,95 @@ class RunPathTests(ManifestTests):
         with self.assertRaisesRegex(gate.GateError, "declared 3 files but listed 2"):
             self.run_gate(client)
 
+    def test_submitted_at_tie_in_verdict_selector_resolves_to_the_later_blocking_review(self):
+        # CodeRabbit round 13 (2026-11-17, assertive full review on head
+        # 445dc368): the VERDICT selector (latest_review) shared the same
+        # submitted_at tie flaw declaring_review carried in round 12 —
+        # max() is stable and returns the FIRST maximal element, so a tie
+        # between an earlier APPROVED (position 1) and a later
+        # CHANGES_REQUESTED (position 2) on the same head read the APPROVED
+        # as "newest" and accepted coverage over the chronologically newer
+        # blocking review. The later response position is the newer
+        # submission: the blocking review must decide the verdict, while
+        # the unchanged complete-declaration-then-EMPTY-approval pair keeps
+        # passing (the declaring pair measured on #819/#820).
+        small = ["src/A.java", "src/B.java"]
+        declaring = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        approval = {
+            "id": 9, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "APPROVED", "submitted_at": "2026-10-31T19:00:07Z",
+            "body": "",
+        }
+        blocking = {
+            "id": 15, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "CHANGES_REQUESTED", "submitted_at": "2026-10-31T19:00:07Z",
+            "body": shard_review_body(small),
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [declaring, approval, blocking],
+                     51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(
+                gate.GateError,
+                "coverage requires a good verdict"):
+            self.run_gate(client)
+
+    def test_submitted_at_tie_in_verdict_selector_dismissed_also_blocks(self):
+        # Round 13's second requested pin: the same tie in the verdict
+        # selector with a later DISMISSED review — the round-11 GOOD_STATES
+        # membership gate must read the DISMISSED (later position), not the
+        # earlier APPROVED, so the pair fails closed exactly as the
+        # non-tied DISMISSED case does (test_newest_dismissed_rejects_an_
+        # older_declaration).
+        small = ["src/A.java", "src/B.java"]
+        declaring = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        approval = {
+            "id": 9, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "APPROVED", "submitted_at": "2026-10-31T19:00:07Z",
+            "body": "",
+        }
+        dismissed = {
+            "id": 16, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "DISMISSED", "submitted_at": "2026-10-31T19:00:07Z",
+            "body": "",
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [declaring, approval, dismissed],
+                     51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(
+                gate.GateError,
+                "coverage requires a good verdict"):
+            self.run_gate(client)
+
 
 if __name__ == "__main__":
     unittest.main()

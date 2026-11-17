@@ -205,7 +205,23 @@ def latest_review(reviews, sha, login):
                   if (item.get("user") or {}).get("login") == login
                   and item.get("commit_id") == sha
                   and item.get("state") != "PENDING"]
-    return max(candidates, key=lambda item: item.get("submitted_at") or "") if candidates else None
+    # CodeRabbit round 13 (2026-11-17, assertive full review on head
+    # 445dc368): a submitted_at TIE in the verdict selector resolves to the
+    # LATER position in the response — the same tiebreaker declaring_review
+    # already applies (round 12). Python's max() is stable and returns the
+    # FIRST maximal element, so a tie between an earlier APPROVED and a
+    # later CHANGES_REQUESTED/DISMISSED review on the same head would read
+    # the APPROVED as "newest" and pass a head the chronologically newer
+    # blocking review rejects. GitHub returns reviews in submission order,
+    # so the later response position is the newer submission; the
+    # (submitted_at, position) descending key selects it — fail-closed
+    # either way, and consistent with the gate workflow's newest-review
+    # verdict model.
+    for _, item in sorted(enumerate(candidates),
+                          key=lambda pair: (pair[1].get("submitted_at") or "", pair[0]),
+                          reverse=True):
+        return item
+    return None
 
 
 # The header is matched WITHOUT requiring a numeric count: a body whose
