@@ -69,17 +69,8 @@
       ],
       "classification": "confirmed_defect",
       "severity": "high",
-      "status": "fixed",
-      "note": "The verifier failed open-or-closed wrongly on fully-declared heads (the W8 mechanism measured live on #819/#820) and resolved submitted_at ties to the earlier review position.",
-      "fix": {
-        "commitSha": "03e717805fd778a7ba8524db6bb1fad99797f900",
-        "regressionTest": "test_coderabbit_review_coverage.py (84 tests)",
-        "verification": {
-          "status": "passed",
-          "testedHeadSha": "03e717805fd778a7ba8524db6bb1fad99797f900",
-          "workflowRunUrl": ""
-        }
-      }
+      "status": "open",
+      "note": "The W8 mechanism (declaring pair over the chronologically-newest empty approval) and both submitted_at-tie fixes (rounds 12 and 13) are implemented and measured locally (84 tests OK on the code-bearing head 03e71780). Status stays open until a completed successful CI/Integration run binds to the code-bearing head per the D11 evidence contract: the runs on 03e71780 were cancelled when the receipt push superseded them, and the completed Integration Test run (44152920880) binds to the receipt head 17402afa. CI is queued/in-progress on 17402afa; the run that completes there carries the receipt-bearing head, at which point the tested SHA and run URL are recorded in this same receipt (the only path allowed to change after the tested head)."
     }
   ]
 }
