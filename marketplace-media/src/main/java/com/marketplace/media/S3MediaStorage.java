@@ -12,6 +12,12 @@ import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.GetBucketVersioningRequest;
+import software.amazon.awssdk.services.s3.model.GetBucketVersioningResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.VersioningConfiguration;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -70,6 +76,8 @@ final class S3MediaStorage implements AutoCloseable {
     private final Duration presignTtl;
     private final SdkHttpClient httpClient;
     private final CircuitBreaker circuitBreaker;
+    /** R2 currently has no S3 bucket-versioning or ListObjectVersions API. */
+    private final boolean unversionedR2Endpoint;
 
     /**
      * F-833-1: the AWS S3 {@code DeleteObjects} service documentation's own
@@ -125,6 +133,7 @@ final class S3MediaStorage implements AutoCloseable {
         this.bucket = storage.bucket();
         this.presignTtl = presignTtl;
         this.circuitBreaker = circuitBreaker;
+        this.unversionedR2Endpoint = isCloudflareR2Endpoint(storage.endpoint());
     }
 
     /**
@@ -134,12 +143,28 @@ final class S3MediaStorage implements AutoCloseable {
      */
     S3MediaStorage(S3Presigner presigner, S3Client client, String bucket, Duration presignTtl,
                    CircuitBreaker circuitBreaker) {
+        this(presigner, client, bucket, presignTtl, circuitBreaker, false);
+    }
+
+    S3MediaStorage(S3Presigner presigner, S3Client client, String bucket, Duration presignTtl,
+                   CircuitBreaker circuitBreaker, boolean unversionedR2Endpoint) {
         this.presigner = presigner;
         this.client = client;
         this.bucket = bucket;
         this.presignTtl = presignTtl;
         this.httpClient = null;
         this.circuitBreaker = circuitBreaker;
+        this.unversionedR2Endpoint = unversionedR2Endpoint;
+    }
+
+    private static boolean isCloudflareR2Endpoint(String endpoint) {
+        try {
+            String host = URI.create(endpoint).getHost();
+            return host != null && host.toLowerCase(java.util.Locale.ROOT)
+                    .endsWith(".r2.cloudflarestorage.com");
+        } catch (RuntimeException ex) {
+            return false;
+        }
     }
 
     /**
