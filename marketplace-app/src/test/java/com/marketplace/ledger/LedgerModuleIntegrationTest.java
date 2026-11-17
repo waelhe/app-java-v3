@@ -702,6 +702,93 @@ class LedgerModuleIntegrationTest {
         assertThat(journalDebitAccount(refundFirstRequest, "COURIER_PAYABLE")).isEqualTo("DELIVERY_REFUNDS");
     }
 
+    /**
+     * A3 cross-operation race proof: refund() and recognize() must serialize
+     * against the same batch lock. Either callback may win, but the committed
+     * journal must converge to zero PSP clearing, zero customer advances,
+     * the full courier payable, and the same net platform result.
+     */
+    @Test
+    void concurrentDeliveryCompletionAndFullRefundConvergeOnOneNetResult() throws Exception {
+        long fare = 1000L;
+        long courierCompensation = 200L;
+        UUID deliveryRequestId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID consumerId = UUID.randomUUID();
+        UUID courierId = UUID.randomUUID();
+
+        PaymentIntentDetails capture = new PaymentIntentDetails(paymentIntentId, null,
+                consumerId, null, "SUCCEEDED", "DELIVERY", fare, "SAR",
+                null, null, null, deliveryRequestId, 0L);
+        PaymentIntentDetails fullRefund = new PaymentIntentDetails(paymentIntentId, null,
+                consumerId, null, "REFUNDED", "DELIVERY", fare, "SAR",
+                null, null, null, deliveryRequestId, fare);
+        DeliveryCompletedEvent completion = new DeliveryCompletedEvent(deliveryRequestId,
+                paymentIntentId, fare, "SAR", courierCompensation, Instant.now(), courierId);
+
+        transactions.executeWithoutResult(tx -> journalService.capture(capture));
+
+        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+        Runnable recognize = () -> {
+            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (Exception e) { throw new RuntimeException(e); }
+            transactions.executeWithoutResult(tx -> journalService.recognize(completion));
+        };
+        Runnable refund = () -> {
+            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (Exception e) { throw new RuntimeException(e); }
+            transactions.executeWithoutResult(tx -> journalService.refund(fullRefund));
+        };
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var recognizeFuture = pool.submit(recognize);
+            var refundFuture = pool.submit(refund);
+            recognizeFuture.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            refundFuture.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(journalNetForDelivery(deliveryRequestId))
+                .as("A3: the event race must converge to the platform loss of the earned courier compensation")
+                .isEqualTo(-courierCompensation);
+        assertThat(journalAccountNet(deliveryRequestId, "PSP_CLEARING"))
+                .as("captured fare and full refund must clear exactly")
+                .isZero();
+        assertThat(journalAccountNet(deliveryRequestId, "DELIVERY_CUSTOMER_ADVANCES"))
+                .as("customer advances must be fully discharged")
+                .isZero();
+        assertThat(journalAccountNet(deliveryRequestId, "DELIVERY_COURIER_PAYABLE"))
+                .as("the courier's earned payable must survive the full customer refund")
+                .isEqualTo(-courierCompensation);
+
+        Long refundTotal = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(amount_minor), 0) FROM ledger_journal_postings "
+                        + "WHERE source_type = 'DELIVERY' AND source_id = ? "
+                        + "AND operation_key LIKE 'REFUND:%'",
+                Long.class, deliveryRequestId);
+        assertThat(refundTotal).isEqualTo(fare);
+
+        long recognizeCount = journalPostingCount(deliveryRequestId, "RECOGNIZE");
+        assertThat(recognizeCount).isBetween(0L, 1L);
+        assertThat(journalPostingAmount(deliveryRequestId, "COURIER_PAYABLE"))
+                .isEqualTo(courierCompensation);
+
+        if (recognizeCount == 1L) {
+            assertThat(journalPostingAmount(deliveryRequestId, "RECOGNIZE")).isEqualTo(fare);
+            assertThat(journalDebitAccount(deliveryRequestId, "REFUND:" + fare))
+                    .isEqualTo("DELIVERY_REFUNDS");
+            assertThat(journalDebitAccount(deliveryRequestId, "COURIER_PAYABLE"))
+                    .isEqualTo("DELIVERY_REVENUE");
+        } else {
+            assertThat(journalDebitAccount(deliveryRequestId, "REFUND:" + fare))
+                    .isEqualTo("DELIVERY_CUSTOMER_ADVANCES");
+            assertThat(journalDebitAccount(deliveryRequestId, "COURIER_PAYABLE"))
+                    .isEqualTo("DELIVERY_REFUNDS");
+        }
+    }
+
     private long journalNetForDelivery(UUID deliveryRequestId) {
         Long value = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(CASE WHEN credit_account = 'DELIVERY_REVENUE' THEN amount_minor ELSE 0 END), 0) "
