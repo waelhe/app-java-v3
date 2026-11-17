@@ -69,6 +69,9 @@ class S3MediaStorageTest {
     private void givenUnversionedBucket() {
         when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
                 .thenReturn(GetBucketVersioningResponse.builder().build());
+    }
+
+    private void givenSuccessfulDeleteObjects() {
         when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
                 .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
     }
@@ -173,6 +176,7 @@ class S3MediaStorageTest {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             givenUnversionedBucket();
+            givenSuccessfulDeleteObjects();
 
             storage.deleteObjects(java.util.List.of("listings/1/a.jpg", "listings/1/a.jpg/thumb",
                     "posts/2/b.jpg", "review-media/3/c.jpg"));
@@ -216,6 +220,7 @@ class S3MediaStorageTest {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             givenUnversionedBucket();
+            givenSuccessfulDeleteObjects();
 
             java.util.List<String> keys = new java.util.ArrayList<>(1_500);
             for (int i = 0; i < 1_500; i++) {
@@ -253,6 +258,7 @@ class S3MediaStorageTest {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
             givenUnversionedBucket();
+            givenSuccessfulDeleteObjects();
 
             java.util.List<String> thousand = new java.util.ArrayList<>(1_000);
             for (int i = 0; i < 999; i++) {
