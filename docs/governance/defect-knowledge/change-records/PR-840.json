@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "pullRequest": 840,
+  "governingFiles": [
+    "marketplace-platform-infra/src/main/java/com/marketplace/shared/email/EmailSender.java",
+    "marketplace-platform-infra/src/main/java/com/marketplace/shared/email/ResendEmailSender.java",
+    "marketplace-platform-infra/src/main/java/com/marketplace/shared/email/ResendEmailSenderAutoConfiguration.java",
+    "marketplace-platform-infra/src/main/java/com/marketplace/shared/email/ResendProperties.java",
+    "marketplace-app/src/main/resources/application-prod.yml",
+    "docs/feature-expansion-roadmap.md",
+    "AGENTS.md",
+    "docs/governance/defect-knowledge/change-protocol.md",
+    "docs/governance/defect-knowledge/rulebook.md",
+    "docs/governance/defect-knowledge/pattern-catalog.md"
+  ],
+  "rulesTriggered": [
+    "A1",
+    "A3",
+    "A5",
+    "A6",
+    "B2",
+    "B6"
+  ],
+  "patternsReviewed": [
+    "P1",
+    "P2",
+    "P6",
+    "P9"
+  ],
+  "historicalCasesReviewed": [
+    "E-02",
+    "E-03",
+    "E-08",
+    "E-16"
+  ],
+  "invariants": [
+    "External email effects carry a stable idempotency key across retries (SHA-256 of the rendered request), and the bounded 24-hour provider retention is documented rather than claimed as exactly-once.",
+    "The transport choice is profile-driven configuration (spring.autoconfigure exclude + ConditionalOnProperty), not code paths: production selects Resend explicitly, development and tests keep SMTP/GreenMail.",
+    "RESEND_API_KEY lives only in the deployment secret store (Railway preserve()); the properties record fails fast at boot when the key is absent while the provider is resend.",
+    "Retry, circuit-breaker, concurrency-limit, and observation annotations ride the Resend send path exactly as the SMTP path carried them."
+  ],
+  "doors": [
+    "EmailSender.send (the new transport-neutral contract) — every notifications caller reaches it through EmailService unchanged",
+    "EmailServiceAutoConfiguration (SMTP path, provider=smtp or missing) and ResendEmailSenderAutoConfiguration (provider=resend) — mutually exclusive by ConditionalOnProperty",
+    "marketplace-app application.yml / application-prod.yml / application-dev.yml / application-test.yml profiles",
+    ".railway/railway.ts variable declaration (RESEND_API_KEY preserve) — the deployment-composition door (B6/D10 matrix)",
+    "EmailNotificationService / NotificationService tests — the behavioral doors pinned by the existing suites"
+  ],
+  "siblingSearch": [
+    {
+      "family": "Outbound HTTP provider transports with secret-store credentials",
+      "pathsSearched": [
+        "marketplace-platform-infra/src/main/java",
+        "marketplace-notifications/src/main/java",
+        "marketplace-app/src/main/resources/application-prod.yml",
+        ".railway/railway.ts"
+      ],
+      "result": "No second email transport exists (ResendEmailSender is the sole HTTPS provider client in the email family); no other module constructs its own RestClient for email; every other secret-store credential follows the same preserve() + fail-fast properties record pattern (measured on the MAIL_* family in the same file)."
+    },
+    {
+      "family": "Idempotency keys derived from request identity",
+      "pathsSearched": [
+        "marketplace-platform-infra/src/main/java/com/marketplace/shared/email/ResendEmailSender.java",
+        "marketplace-payments/src/main/java"
+      ],
+      "result": "The payments family uses operation-identity idempotency keys (StableRefundScope precedent, E-08); the Resend key follows the same shape (fingerprint of the frozen request), and the bounded-retention limitation is registered in the PR body rather than hidden."
+    }
+  ],
+  "tests": [
+    {
+      "name": "ResendEmailSenderTest",
+      "command": "./mvnw verify -pl marketplace-platform-infra (failsafe/surefire executes ResendEmailSenderTest)",
+      "verification": "Required GitHub CI run on PR #840 head (Build & Test + Full Integration Test)"
+    },
+    {
+      "name": "EmailNotificationServiceTest / NotificationServiceTest",
+      "command": "./mvnw verify -pl marketplace-notifications",
+      "verification": "Required GitHub CI run on PR #840 head — the two updated suites pin the SMTP development/test channel unchanged"
+    }
+  ],
+  "findings": [
+    {
+      "key": "W-840-1",
+      "domain": "notifications.email-transport",
+      "scenario": "A production deployment sends transactional email while Railway blocks outbound SMTP on the plan tier, so the SMTP transport times out (SocketTimeoutException to smtp.resend.com:587) and every notification email leg fails",
+      "invariant": "Production email rides an HTTPS provider API (Resend) with stable idempotency keys and secret-store credentials; SMTP stays the development/test channel; no secret value ever enters Git",
+      "fingerprint": "sha256:77ed9be202cdb9f4d5e6e5388c6c10dcc873486dcce25e3e1b00ae1271627f9c",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/840"
+      ],
+      "classification": "environmental",
+      "severity": "high",
+      "status": "registered",
+      "note": "Railway's documented SMTP block on the plan tier is the provider-side cause (Railway docs; measured SocketTimeoutException in production logs). Fixed in this PR by the Resend HTTPS transport. Status registered: the merge itself is owner-gated — RESEND_API_KEY must exist in the Railway secret store before merge/deploy (the PR's own merge precondition), so the remaining risk is an owner decision, not repository code.",
+      "decision": {
+        "owner": "waelhe",
+        "url": "https://github.com/waelhe/app-java-v3/pull/840"
+      }
+    }
+  ]
+}
