@@ -54,6 +54,47 @@ import static org.mockito.Mockito.when;
   order.verify(jdbcTemplate).execute(lockSql.capture());
   order.verify(postings).findTopBySourceTypeAndSourceIdAndCumulativeRefundMinorIsNotNullOrderByCumulativeRefundMinorDesc("DELIVERY",request);
   assertEquals("SELECT pg_advisory_xact_lock(hashtextextended('marketplace.delivery-refund-delta:' || '"+request+"', 0))",lockSql.getValue());}
+
+ @Test void recognizeAfterPartialRefundPostsOnlyTheNetRevenueAndCourierPayable(){
+  var service=new LedgerJournalService(postings,jdbcTemplate);UUID request=UUID.randomUUID(),payment=UUID.randomUUID(),courier=UUID.randomUUID();
+  when(postings.findBySourceTypeAndSourceIdAndOperationKey("DELIVERY",request,"CAPTURE")).thenReturn(Optional.of(
+   new LedgerJournalPosting(UUID.randomUUID(),"DELIVERY",request,payment,"CAPTURE","PSP_CLEARING","DELIVERY_CUSTOMER_ADVANCES",1000,"SAR",null,"capture")));
+  when(postings.findTopBySourceTypeAndSourceIdAndCumulativeRefundMinorIsNotNullOrderByCumulativeRefundMinorDesc("DELIVERY",request)).thenReturn(Optional.of(
+   new LedgerJournalPosting(UUID.randomUUID(),"DELIVERY",request,payment,"REFUND:300","DELIVERY_CUSTOMER_ADVANCES","PSP_CLEARING",300,"SAR",300L,"refund")));
+  when(postings.findBySourceTypeAndSourceIdAndOperationKey("DELIVERY",request,"RECOGNIZE")).thenReturn(Optional.empty());
+  when(postings.findBySourceTypeAndSourceIdAndOperationKey("DELIVERY",request,"COURIER_PAYABLE")).thenReturn(Optional.empty());
+  service.recognize(new DeliveryCompletedEvent(request,payment,1000,"SAR",200,Instant.now(),courier));
+  ArgumentCaptor<LedgerJournalPosting> saved=ArgumentCaptor.forClass(LedgerJournalPosting.class);
+  verify(postings,times(2)).save(saved.capture());
+  var byOperation=saved.getAllValues().stream().collect(java.util.stream.Collectors.toMap(LedgerJournalPosting::getOperationKey,x->x));
+  assertEquals(700L,byOperation.get("RECOGNIZE").getAmountMinor());
+  assertEquals("DELIVERY_REVENUE",byOperation.get("RECOGNIZE").getCreditAccount());
+  assertEquals(200L,byOperation.get("COURIER_PAYABLE").getAmountMinor());
+  assertEquals("DELIVERY_REVENUE",byOperation.get("COURIER_PAYABLE").getDebitAccount());
+  assertEquals(courier,byOperation.get("COURIER_PAYABLE").getRecipientId());
+  var order=org.mockito.Mockito.inOrder(jdbcTemplate,postings);
+  ArgumentCaptor<String> lockSql=ArgumentCaptor.forClass(String.class);
+  order.verify(jdbcTemplate).execute(lockSql.capture());
+  order.verify(postings).findBySourceTypeAndSourceIdAndOperationKey("DELIVERY",request,"CAPTURE");
+  order.verify(postings).findTopBySourceTypeAndSourceIdAndCumulativeRefundMinorIsNotNullOrderByCumulativeRefundMinorDesc("DELIVERY",request);
+  assertEquals("SELECT pg_advisory_xact_lock(hashtextextended('marketplace.delivery-refund-delta:' || '"+request+"', 0))",lockSql.getValue());
+ }
+ @Test void fullyRefundedDeliveryRecognizesNoRevenueButKeepsCourierPayable(){
+  var service=new LedgerJournalService(postings,jdbcTemplate);UUID request=UUID.randomUUID(),payment=UUID.randomUUID(),courier=UUID.randomUUID();
+  when(postings.findBySourceTypeAndSourceIdAndOperationKey("DELIVERY",request,"CAPTURE")).thenReturn(Optional.of(
+   new LedgerJournalPosting(UUID.randomUUID(),"DELIVERY",request,payment,"CAPTURE","PSP_CLEARING","DELIVERY_CUSTOMER_ADVANCES",1000,"SAR",null,"capture")));
+  when(postings.findTopBySourceTypeAndSourceIdAndCumulativeRefundMinorIsNotNullOrderByCumulativeRefundMinorDesc("DELIVERY",request)).thenReturn(Optional.of(
+   new LedgerJournalPosting(UUID.randomUUID(),"DELIVERY",request,payment,"REFUND:1000","DELIVERY_CUSTOMER_ADVANCES","PSP_CLEARING",1000,"SAR",1000L,"full refund")));
+  when(postings.findBySourceTypeAndSourceIdAndOperationKey("DELIVERY",request,"COURIER_PAYABLE")).thenReturn(Optional.empty());
+  service.recognize(new DeliveryCompletedEvent(request,payment,1000,"SAR",200,Instant.now(),courier));
+  ArgumentCaptor<LedgerJournalPosting> saved=ArgumentCaptor.forClass(LedgerJournalPosting.class);
+  verify(postings).save(saved.capture());
+  assertEquals("COURIER_PAYABLE",saved.getValue().getOperationKey());
+  assertEquals(200L,saved.getValue().getAmountMinor());
+  assertEquals("DELIVERY_REFUNDS",saved.getValue().getDebitAccount());
+  assertEquals("DELIVERY_COURIER_PAYABLE",saved.getValue().getCreditAccount());
+  verify(postings,org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.argThat(x->"RECOGNIZE".equals(x.getOperationKey())));
+ }
  @Test void revenueCannotBeRecognizedBeforeCapturedPayment(){
   var service=new LedgerJournalService(postings,jdbcTemplate);UUID request=UUID.randomUUID(),payment=UUID.randomUUID();
   when(postings.findBySourceTypeAndSourceIdAndOperationKey("DELIVERY",request,"CAPTURE")).thenReturn(Optional.empty());

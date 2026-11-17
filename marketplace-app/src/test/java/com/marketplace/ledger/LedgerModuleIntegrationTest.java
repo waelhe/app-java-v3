@@ -650,6 +650,95 @@ class LedgerModuleIntegrationTest {
         assertThat(highestCumulative).isEqualTo(700L);
     }
 
+    /**
+     * A3: the completion and refund handlers share one transaction-scoped lock.
+     * Whether the full refund commits before or after the completion event,
+     * clearing nets to zero and the combined revenue/refund result carries
+     * the courier's already-earned payable as a platform loss.
+     */
+    @Test
+    void deliveryRefundAndCompletionProduceEquivalentNetResultInEitherEventOrder() {
+        long fare = 1000L;
+        long courierCompensation = 200L;
+        UUID consumerId = UUID.randomUUID();
+        UUID courierId = UUID.randomUUID();
+
+        UUID completionFirstRequest = UUID.randomUUID();
+        UUID completionFirstPayment = UUID.randomUUID();
+        PaymentIntentDetails completionFirstCapture = new PaymentIntentDetails(completionFirstPayment, null,
+                consumerId, null, "SUCCEEDED", "DELIVERY", fare, "SAR", null, null, null, completionFirstRequest, 0L);
+        PaymentIntentDetails completionFirstRefund = new PaymentIntentDetails(completionFirstPayment, null,
+                consumerId, null, "REFUNDED", "DELIVERY", fare, "SAR", null, null, null, completionFirstRequest, fare);
+        DeliveryCompletedEvent completionFirstEvent = new DeliveryCompletedEvent(completionFirstRequest,
+                completionFirstPayment, fare, "SAR", courierCompensation, Instant.now(), courierId);
+        transactions.executeWithoutResult(tx -> journalService.capture(completionFirstCapture));
+        transactions.executeWithoutResult(tx -> journalService.recognize(completionFirstEvent));
+        transactions.executeWithoutResult(tx -> journalService.refund(completionFirstRefund));
+
+        UUID refundFirstRequest = UUID.randomUUID();
+        UUID refundFirstPayment = UUID.randomUUID();
+        PaymentIntentDetails refundFirstCapture = new PaymentIntentDetails(refundFirstPayment, null,
+                consumerId, null, "SUCCEEDED", "DELIVERY", fare, "SAR", null, null, null, refundFirstRequest, 0L);
+        PaymentIntentDetails refundFirstRefund = new PaymentIntentDetails(refundFirstPayment, null,
+                consumerId, null, "REFUNDED", "DELIVERY", fare, "SAR", null, null, null, refundFirstRequest, fare);
+        DeliveryCompletedEvent refundFirstEvent = new DeliveryCompletedEvent(refundFirstRequest,
+                refundFirstPayment, fare, "SAR", courierCompensation, Instant.now(), courierId);
+        transactions.executeWithoutResult(tx -> journalService.capture(refundFirstCapture));
+        transactions.executeWithoutResult(tx -> journalService.refund(refundFirstRefund));
+        transactions.executeWithoutResult(tx -> journalService.recognize(refundFirstEvent));
+
+        long completionFirstNet = journalNetForDelivery(completionFirstRequest);
+        long refundFirstNet = journalNetForDelivery(refundFirstRequest);
+        assertThat(completionFirstNet).isEqualTo(-courierCompensation);
+        assertThat(refundFirstNet).isEqualTo(completionFirstNet);
+        assertThat(journalAccountNet(completionFirstRequest, "PSP_CLEARING")).isZero();
+        assertThat(journalAccountNet(refundFirstRequest, "PSP_CLEARING")).isZero();
+
+        assertThat(journalPostingAmount(completionFirstRequest, "RECOGNIZE")).isEqualTo(fare);
+        assertThat(journalDebitAccount(completionFirstRequest, "COURIER_PAYABLE")).isEqualTo("DELIVERY_REVENUE");
+        assertThat(journalPostingCount(refundFirstRequest, "RECOGNIZE")).isZero();
+        assertThat(journalPostingAmount(refundFirstRequest, "COURIER_PAYABLE")).isEqualTo(courierCompensation);
+        assertThat(journalDebitAccount(refundFirstRequest, "COURIER_PAYABLE")).isEqualTo("DELIVERY_REFUNDS");
+    }
+
+    private long journalNetForDelivery(UUID deliveryRequestId) {
+        Long value = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(CASE WHEN credit_account = 'DELIVERY_REVENUE' THEN amount_minor ELSE 0 END), 0) "
+                        + "- COALESCE(SUM(CASE WHEN debit_account = 'DELIVERY_REVENUE' THEN amount_minor ELSE 0 END), 0) "
+                        + "- COALESCE(SUM(CASE WHEN debit_account = 'DELIVERY_REFUNDS' THEN amount_minor ELSE 0 END), 0) "
+                        + "FROM ledger_journal_postings WHERE source_type = 'DELIVERY' AND source_id = ?",
+                Long.class, deliveryRequestId);
+        return value == null ? 0L : value;
+    }
+
+    private long journalAccountNet(UUID deliveryRequestId, String account) {
+        Long value = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(CASE WHEN debit_account = ? THEN amount_minor ELSE 0 END), 0) "
+                        + "- COALESCE(SUM(CASE WHEN credit_account = ? THEN amount_minor ELSE 0 END), 0) "
+                        + "FROM ledger_journal_postings WHERE source_type = 'DELIVERY' AND source_id = ?",
+                Long.class, account, account, deliveryRequestId);
+        return value == null ? 0L : value;
+    }
+
+    private long journalPostingCount(UUID deliveryRequestId, String operationKey) {
+        Long value=jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ledger_journal_postings WHERE source_type='DELIVERY' AND source_id=? AND operation_key=?",
+                Long.class,deliveryRequestId,operationKey);
+        return value == null ? 0L : value;
+    }
+
+    private long journalPostingAmount(UUID deliveryRequestId, String operationKey) {
+        Long value=jdbcTemplate.queryForObject(
+                "SELECT amount_minor FROM ledger_journal_postings WHERE source_type='DELIVERY' AND source_id=? AND operation_key=?",
+                Long.class,deliveryRequestId,operationKey);
+        return value == null ? 0L : value;
+    }
+
+    private String journalDebitAccount(UUID deliveryRequestId, String operationKey) {
+        return jdbcTemplate.queryForObject(
+                "SELECT debit_account FROM ledger_journal_postings WHERE source_type='DELIVERY' AND source_id=? AND operation_key=?",
+                String.class,deliveryRequestId,operationKey);
+    }
     private void awaitBalance(UUID providerId, long expectedCents) {
         long deadline = System.nanoTime() + 30_000_000_000L;
         long last = Long.MIN_VALUE;
