@@ -13,18 +13,15 @@ import java.util.Set;
  * there is no terminal REJECTED state to reach, so only one transition exists.
  *
  * <p><b>G3 (adversarial review 2026-11-10, owner-gate batch 6a — the
- * documented recommendation's two-degree media purge):</b> {@code PURGED}
- * is the erasure tombstone — a state no read rail presigns from (every
- * read rail filters {@code status = UPLOADED}, so a purged asset's
- * signed links stop being renewed the moment the tombstone lands —
- * Degree 1, «توقف الإتاحة»), and the state the account-erasure flow's
- * media adapter writes through its native SQL (never through this state
- * machine — the erasure flow is an administrative overwrite, the same
- * discipline every {@code AuthoredContentPurgePort} adapter carries for
- * its tombstones). It is terminal: no transition leaves it, and the
- * database's closed-set CHECK widens with it through the V303/V304 pair
- * (the V103/V104 house shape).</p>
- */
+ * documented two-degree media purge):</b> {@code PURGE_PENDING} is the
+ * access tombstone — every read rail filters for {@code status = UPLOADED},
+ * so a pending purge stops new signed-link issuance immediately while
+ * remaining retryable if object-store deletion fails. {@code PURGED} is
+ * the terminal post-destruction state, written by the erasure state service
+ * only after the storage adapter confirms that every known object version
+ * and delete marker has been removed. Both states are written through the
+ * administrative erasure path, never through this public asset state
+ * machine. The database CHECK widens through the V303/V304 pair.</p> */
 public enum MediaAssetStatus {
     PENDING_UPLOAD,
     UPLOADED,
