@@ -596,14 +596,11 @@ class LedgerModuleIntegrationTest {
         UUID consumerId = UUID.randomUUID();
         long fare = 1000L;
 
-        // Plant the capture the refund path requires (its own transaction).
         transactions.executeWithoutResult(tx -> journalService.capture(
                 new PaymentIntentDetails(paymentIntentId, null, consumerId, null,
                         "SUCCEEDED", "DELIVERY", fare, "SAR", null, null, null,
                         deliveryRequestId, 0L)));
 
-        // The two concurrent webhook snapshots — two independent transactions,
-        // started together (the racing shape the ledger's finding measured).
         PaymentIntentDetails snapshot300 = new PaymentIntentDetails(paymentIntentId, null,
                 consumerId, null, "PARTIALLY_REFUNDED", "DELIVERY", fare, "SAR",
                 null, null, null, deliveryRequestId, 300L);
@@ -611,37 +608,53 @@ class LedgerModuleIntegrationTest {
                 consumerId, null, "PARTIALLY_REFUNDED", "DELIVERY", fare, "SAR",
                 null, null, null, deliveryRequestId, 700L);
 
-        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
-        Runnable refund300 = () -> {
-            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
-            catch (Exception e) { throw new RuntimeException(e); }
-            transactions.executeWithoutResult(tx -> journalService.refund(snapshot300));
-        };
-        Runnable refund700 = () -> {
-            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
-            catch (Exception e) { throw new RuntimeException(e); }
-            transactions.executeWithoutResult(tx -> journalService.refund(snapshot700));
-        };
+        // T1 owns the exact production lock, posts 300, and keeps its transaction
+        // open. T2 must be visible as an ungranted advisory-lock waiter before T1
+        // is released; a start barrier alone would not prove this serialization.
+        java.util.concurrent.CountDownLatch firstPostingCommittedToTransaction =
+                new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch releaseFirst =
+                new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CompletableFuture<Integer> secondBackendPid =
+                new java.util.concurrent.CompletableFuture<>();
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.Future<?> first = pool.submit(() ->
+                transactions.executeWithoutResult(tx -> {
+                    holdDeliveryRefundLock(deliveryRequestId);
+                    journalService.refund(snapshot300);
+                    firstPostingCommittedToTransaction.countDown();
+                    awaitLatch(releaseFirst, "First refund transaction was not released");
+                }));
+        java.util.concurrent.Future<?> second = null;
         try {
-            var f300 = pool.submit(refund300);
-            var f700 = pool.submit(refund700);
-            f300.get(60, java.util.concurrent.TimeUnit.SECONDS);
-            f700.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(firstPostingCommittedToTransaction.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("first transaction must acquire the batch lock and post its 300 delta")
+                    .isTrue();
+            second = pool.submit(() ->
+                    transactions.executeWithoutResult(tx -> {
+                        Integer pid = jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class);
+                        secondBackendPid.complete(pid);
+                        journalService.refund(snapshot700);
+                    }));
+            int waiterPid = secondBackendPid.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            awaitAdvisoryLockWait(waiterPid, second);
+        } finally {
+            releaseFirst.countDown();
+        }
+        try {
+            first.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            second.get(60, java.util.concurrent.TimeUnit.SECONDS);
         } finally {
             pool.shutdownNow();
         }
 
-        // The invariant: the batch's refund postings sum to EXACTLY the highest
-        // cumulative — 700, never 1000 (the pre-fix racing double-delta).
         Long posted = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(amount_minor), 0) FROM ledger_journal_postings "
                         + "WHERE source_type = 'DELIVERY' AND source_id = ? "
                         + "AND operation_key LIKE 'REFUND:%'",
                 Long.class, deliveryRequestId);
         assertThat(posted)
-                .as("A3: the two concurrent snapshots post exactly the highest cumulative "
-                        + "(700), never the racing double-delta (1000)")
+                .as("A3: the waited transaction must read 300 after lock release and post only delta 400")
                 .isEqualTo(700L);
         Long highestCumulative = jdbcTemplate.queryForObject(
                 "SELECT MAX(cumulative_refund_minor) FROM ledger_journal_postings "
@@ -728,30 +741,48 @@ class LedgerModuleIntegrationTest {
 
         transactions.executeWithoutResult(tx -> journalService.capture(capture));
 
-        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
-        Runnable recognize = () -> {
-            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
-            catch (Exception e) { throw new RuntimeException(e); }
-            transactions.executeWithoutResult(tx -> journalService.recognize(completion));
-        };
-        Runnable refund = () -> {
-            try { start.await(10, java.util.concurrent.TimeUnit.SECONDS); }
-            catch (Exception e) { throw new RuntimeException(e); }
-            transactions.executeWithoutResult(tx -> journalService.refund(fullRefund));
-        };
-
+        // Refund owns the shared lock first and remains uncommitted. Completion
+        // must wait on that exact advisory lock before it reads cumulative
+        // refunds; this proves both event handlers participate in one lock protocol.
+        java.util.concurrent.CountDownLatch refundPostingReady =
+                new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch releaseRefund =
+                new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CompletableFuture<Integer> completionBackendPid =
+                new java.util.concurrent.CompletableFuture<>();
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.Future<?> refundFirst = pool.submit(() ->
+                transactions.executeWithoutResult(tx -> {
+                    holdDeliveryRefundLock(deliveryRequestId);
+                    journalService.refund(fullRefund);
+                    refundPostingReady.countDown();
+                    awaitLatch(releaseRefund, "First full-refund transaction was not released");
+                }));
+        java.util.concurrent.Future<?> completionSecond = null;
         try {
-            var recognizeFuture = pool.submit(recognize);
-            var refundFuture = pool.submit(refund);
-            recognizeFuture.get(60, java.util.concurrent.TimeUnit.SECONDS);
-            refundFuture.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(refundPostingReady.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("refund transaction must own the lock and post the full refund")
+                    .isTrue();
+            completionSecond = pool.submit(() ->
+                    transactions.executeWithoutResult(tx -> {
+                        Integer pid = jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class);
+                        completionBackendPid.complete(pid);
+                        journalService.recognize(completion);
+                    }));
+            int waiterPid = completionBackendPid.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            awaitAdvisoryLockWait(waiterPid, completionSecond);
+        } finally {
+            releaseRefund.countDown();
+        }
+        try {
+            refundFirst.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            completionSecond.get(60, java.util.concurrent.TimeUnit.SECONDS);
         } finally {
             pool.shutdownNow();
         }
 
         assertThat(journalNetForDelivery(deliveryRequestId))
-                .as("A3: the event race must converge to the platform loss of the earned courier compensation")
+                .as("A3: refund-first completion must leave only the earned courier compensation as a platform loss")
                 .isEqualTo(-courierCompensation);
         assertThat(journalAccountNet(deliveryRequestId, "PSP_CLEARING"))
                 .as("captured fare and full refund must clear exactly")
@@ -769,23 +800,48 @@ class LedgerModuleIntegrationTest {
                         + "AND operation_key LIKE 'REFUND:%'",
                 Long.class, deliveryRequestId);
         assertThat(refundTotal).isEqualTo(fare);
-
-        long recognizeCount = journalPostingCount(deliveryRequestId, "RECOGNIZE");
-        assertThat(recognizeCount).isBetween(0L, 1L);
+        assertThat(journalPostingCount(deliveryRequestId, "RECOGNIZE")).isZero();
         assertThat(journalPostingAmount(deliveryRequestId, "COURIER_PAYABLE"))
                 .isEqualTo(courierCompensation);
+        assertThat(journalDebitAccount(deliveryRequestId, "REFUND:" + fare))
+                .isEqualTo("DELIVERY_CUSTOMER_ADVANCES");
+        assertThat(journalDebitAccount(deliveryRequestId, "COURIER_PAYABLE"))
+                .isEqualTo("DELIVERY_REFUNDS");
+    }
 
-        if (recognizeCount == 1L) {
-            assertThat(journalPostingAmount(deliveryRequestId, "RECOGNIZE")).isEqualTo(fare);
-            assertThat(journalDebitAccount(deliveryRequestId, "REFUND:" + fare))
-                    .isEqualTo("DELIVERY_REFUNDS");
-            assertThat(journalDebitAccount(deliveryRequestId, "COURIER_PAYABLE"))
-                    .isEqualTo("DELIVERY_REVENUE");
-        } else {
-            assertThat(journalDebitAccount(deliveryRequestId, "REFUND:" + fare))
-                    .isEqualTo("DELIVERY_CUSTOMER_ADVANCES");
-            assertThat(journalDebitAccount(deliveryRequestId, "COURIER_PAYABLE"))
-                    .isEqualTo("DELIVERY_REFUNDS");
+    private void holdDeliveryRefundLock(UUID deliveryRequestId) {
+        // The UUID is generated by this test, not supplied by external input.
+        jdbcTemplate.execute("SELECT pg_advisory_xact_lock(hashtextextended("
+                + "'marketplace.delivery-refund-delta:' || '" + deliveryRequestId + "', 0))");
+    }
+
+    private void awaitAdvisoryLockWait(int backendPid, java.util.concurrent.Future<?> waiter) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            if (waiter.isDone()) {
+                waiter.get();
+                throw new AssertionError("The second transaction completed without waiting for the delivery advisory lock");
+            }
+            Boolean waiting = jdbcTemplate.queryForObject(
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks "
+                            + "WHERE pid = ? AND locktype = 'advisory' AND granted = FALSE)",
+                    Boolean.class, backendPid);
+            if (Boolean.TRUE.equals(waiting)) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("The second transaction never appeared as an ungranted PostgreSQL advisory-lock waiter");
+    }
+
+    private static void awaitLatch(java.util.concurrent.CountDownLatch latch, String failureMessage) {
+        try {
+            if (!latch.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new IllegalStateException(failureMessage);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(failureMessage, e);
         }
     }
 
