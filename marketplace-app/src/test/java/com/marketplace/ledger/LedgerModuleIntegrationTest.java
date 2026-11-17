@@ -819,8 +819,16 @@ class LedgerModuleIntegrationTest {
                 throw new AssertionError("The second transaction completed without waiting for the delivery advisory lock");
             }
             Boolean waiting = jdbcTemplate.queryForObject(
-                    "SELECT EXISTS (SELECT 1 FROM pg_locks "
-                            + "WHERE pid = ? AND locktype = 'advisory' AND granted = FALSE)",
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks waiting "
+                            + "JOIN pg_locks holding "
+                            + "ON holding.locktype = waiting.locktype "
+                            + "AND holding.database IS NOT DISTINCT FROM waiting.database "
+                            + "AND holding.classid IS NOT DISTINCT FROM waiting.classid "
+                            + "AND holding.objid IS NOT DISTINCT FROM waiting.objid "
+                            + "AND holding.objsubid = waiting.objsubid "
+                            + "AND holding.pid <> waiting.pid "
+                            + "WHERE waiting.pid = ? AND waiting.locktype = 'advisory' "
+                            + "AND waiting.granted = FALSE AND holding.granted = TRUE)",
                     Boolean.class, backendPid);
             if (Boolean.TRUE.equals(waiting)) {
                 return;
