@@ -28,13 +28,16 @@ import java.util.Set;
 public enum MediaAssetStatus {
     PENDING_UPLOAD,
     UPLOADED,
-    /** G3: the erasure tombstone — terminal, written only by the purge adapter's native SQL. */
+    /** G3: hidden from reads while storage deletion is pending and safely retryable. */
+    PURGE_PENDING,
+    /** G3: terminal state, written only after all known storage versions are deleted. */
     PURGED;
 
     public static final Map<MediaAssetStatus, Set<MediaAssetStatus>> TRANSITIONS =
             Collections.unmodifiableMap(Map.of(
                     PENDING_UPLOAD, EnumSet.of(UPLOADED),
                     UPLOADED, EnumSet.noneOf(MediaAssetStatus.class),
+                    PURGE_PENDING, EnumSet.noneOf(MediaAssetStatus.class),
                     PURGED, EnumSet.noneOf(MediaAssetStatus.class)
             ));
 
