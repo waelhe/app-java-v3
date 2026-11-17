@@ -457,6 +457,27 @@ class S3MediaStorageTest {
     }
 
     @Test
+    void g3_unknownSdkVersioningStatusFailsClosedWithoutKeyOnlyDelete() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(
+                    presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
+                    .thenReturn(GetBucketVersioningResponse.builder()
+                            .status(BucketVersioningStatus.UNKNOWN_TO_SDK_VERSION).build());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> storage.deleteObjects(java.util.List.of("listings/1/future-version-status.jpg")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("refusing key-only erasure");
+
+            verify(client, org.mockito.Mockito.never())
+                    .deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
+            verify(client, org.mockito.Mockito.never())
+                    .listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class));
+        }
+    }
+
+    @Test
     void g3_versionedObjectLockFailuresPropagateWithoutGovernanceBypass() {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
