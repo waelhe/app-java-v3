@@ -11,6 +11,9 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.GetBucketVersioningRequest;
+import software.amazon.awssdk.services.s3.model.GetBucketVersioningResponse;
+import software.amazon.awssdk.services.s3.model.VersioningConfiguration;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
@@ -62,6 +65,12 @@ class S3MediaStorageTest {
 
     @Mock
     private S3Client client;
+
+    private void givenUnversionedBucket() {
+        when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
+                .thenReturn(GetBucketVersioningResponse.builder().build());
+    }
+
 
     @Test
     void presignUpload_signsKeyContentTypeAndExpiry() {
@@ -161,6 +170,7 @@ class S3MediaStorageTest {
         // thumbnails, nothing else.
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            givenUnversionedBucket();
 
             storage.deleteObjects(java.util.List.of("listings/1/a.jpg", "listings/1/a.jpg/thumb",
                     "posts/2/b.jpg", "review-media/3/c.jpg"));
@@ -203,6 +213,7 @@ class S3MediaStorageTest {
         // completion. The fix splits into consecutive bounded batches.
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            givenUnversionedBucket();
 
             java.util.List<String> keys = new java.util.ArrayList<>(1_500);
             for (int i = 0; i < 1_500; i++) {
@@ -239,6 +250,7 @@ class S3MediaStorageTest {
         // same key twice.
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            givenUnversionedBucket();
 
             java.util.List<String> thousand = new java.util.ArrayList<>(1_000);
             for (int i = 0; i < 999; i++) {
@@ -259,54 +271,217 @@ class S3MediaStorageTest {
     }
 
     @Test
-    void f833_1_perKeyPartialFailuresSurfaceToTheCallersLogLine() {
-        // The service's own partial-failure surface: a 200-response whose
-        // body carries per-key errors. The pre-fix code discarded the
-        // response entirely — the gap stayed invisible. The fix surfaces
-        // the count and sample through the thrown message so the caller's
-        // log line fires (the tier-2 gap signal).
+    void f833_1_perKeyPartialFailuresRetryOnlyTheFailedKeys() {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
-
-            org.mockito.Mockito.when(client.deleteObjects(
-                            any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+            givenUnversionedBucket();
+            when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
                     .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder()
                             .errors(java.util.List.of(software.amazon.awssdk.services.s3.model.S3Error.builder()
-                                    .key("listings/1/a.jpg").code("AccessDenied").message("denied").build()))
-                            .build());
+                                    .key("listings/1/a.jpg").code("SlowDown").message("retry").build()))
+                            .build())
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
 
-            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                            storage.deleteObjects(java.util.List.of("listings/1/a.jpg")))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("1 per-key delete failures")
-                    .hasMessageContaining("listings/1/a.jpg")
-                    .hasMessageContaining("AccessDenied");
+            storage.deleteObjects(java.util.List.of("listings/1/a.jpg", "listings/1/b.jpg"));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client, org.mockito.Mockito.times(2)).deleteObjects(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getAllValues().get(0).delete().objects())
+                    .extracting(software.amazon.awssdk.services.s3.model.ObjectIdentifier::key)
+                    .containsExactly("listings/1/a.jpg", "listings/1/b.jpg");
+            org.assertj.core.api.Assertions.assertThat(captor.getAllValues().get(1).delete().objects())
+                    .extracting(software.amazon.awssdk.services.s3.model.ObjectIdentifier::key)
+                    .containsExactly("listings/1/a.jpg");
         }
     }
 
     @Test
-    void f833_1_aFailedBatchNeverAbortsTheRemainingBatches() {
-        // Best-effort per batch: the first batch's wire failure must not
-        // cost the second batch its deletion attempt — every batch is
-        // attempted, and the FIRST failure is re-thrown once the loop ends
-        // (the caller's log still fires; a re-run converges idempotently).
+    void f833_1_aFailedBatchRetriesThenStillAttemptsIndependentBatches() {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            givenUnversionedBucket();
 
             java.util.List<String> keys = new java.util.ArrayList<>(1_500);
             for (int i = 0; i < 1_500; i++) {
                 keys.add("review-media/" + i + "/c.jpg");
             }
-            org.mockito.Mockito.when(client.deleteObjects(
-                            any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+            when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
                     .thenThrow(new RuntimeException("first batch wire failure"))
+                    .thenThrow(new RuntimeException("first batch retry failure"))
+                    .thenThrow(new RuntimeException("first batch final failure"))
                     .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
 
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> storage.deleteObjects(keys))
                     .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("first batch wire failure");
+                    .hasMessageContaining("first batch final failure");
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client, org.mockito.Mockito.times(4)).deleteObjects(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getAllValues().get(3).delete().objects())
+                    .as("the independent second batch is still attempted")
+                    .hasSize(500);
+        }
+    }
+
+    @Test
+    void g3_enabledVersioningDeletesEveryObjectVersionAndDeleteMarkerByVersionId() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            String key = "listings/1/a.jpg";
+            when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
+                    .thenReturn(GetBucketVersioningResponse.builder()
+                            .status(VersioningConfiguration.Status.ENABLED).build());
+            when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
+                            .versions(java.util.List.of(
+                                    software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                            .key(key).versionId("v1").build(),
+                                    software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                            .key(key).versionId("v2").build()))
+                            .deleteMarkers(java.util.List.of(
+                                    software.amazon.awssdk.services.s3.model.DeleteMarkerEntry.builder()
+                                            .key(key).versionId("marker-1").build()))
+                            .build());
+            when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
+
+            storage.deleteObjects(java.util.List.of(key));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client).deleteObjects(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().delete().objects())
+                    .extracting(software.amazon.awssdk.services.s3.model.ObjectIdentifier::versionId)
+                    .containsExactly("v1", "v2", "marker-1");
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().delete().objects())
+                    .allSatisfy(item -> org.assertj.core.api.Assertions.assertThat(item.key()).isEqualTo(key));
+        }
+    }
+
+    @Test
+    void g3_suspendedVersioningDeletesNullAndHistoricalVersionsAndMarkers() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            String key = "posts/2/b.jpg";
+            when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
+                    .thenReturn(GetBucketVersioningResponse.builder()
+                            .status(VersioningConfiguration.Status.SUSPENDED).build());
+            when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
+                            .versions(java.util.List.of(
+                                    software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                            .key(key).versionId("null").build(),
+                                    software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                            .key(key).versionId("older-enabled-version").build()))
+                            .deleteMarkers(java.util.List.of(
+                                    software.amazon.awssdk.services.s3.model.DeleteMarkerEntry.builder()
+                                            .key(key).versionId("marker-older").build()))
+                            .build());
+            when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
+
+            storage.deleteObjects(java.util.List.of(key));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client).deleteObjects(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().delete().objects())
+                    .extracting(software.amazon.awssdk.services.s3.model.ObjectIdentifier::versionId)
+                    .containsExactly("null", "older-enabled-version", "marker-older");
+        }
+    }
+
+    @Test
+    void g3_versionListingPaginatesAndFiltersPrefixSiblings() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            String key = "reviews/abc";
+            when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
+                    .thenReturn(GetBucketVersioningResponse.builder()
+                            .status(VersioningConfiguration.Status.ENABLED).build());
+            when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
+                            .isTruncated(true).nextKeyMarker(key).nextVersionIdMarker("v1")
+                            .versions(java.util.List.of(
+                                    software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                            .key(key).versionId("v1").build(),
+                                    software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                            .key(key + "-sibling").versionId("do-not-delete").build()))
+                            .build(),
+                            software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
+                                    .isTruncated(false)
+                                    .versions(java.util.List.of(
+                                            software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                                    .key(key).versionId("v2").build()))
+                                    .build());
+            when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
+
+            storage.deleteObjects(java.util.List.of(key));
 
             verify(client, org.mockito.Mockito.times(2))
+                    .listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class));
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client).deleteObjects(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().delete().objects())
+                    .extracting(software.amazon.awssdk.services.s3.model.ObjectIdentifier::versionId)
+                    .containsExactly("v1", "v2");
+        }
+    }
+
+    @Test
+    void g3_r2UsesItsDocumentedUnversionedDeletePathWithoutUnsupportedVersionApis() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(
+                    presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens(), true);
+
+            storage.deleteObjects(java.util.List.of("listings/1/r2.jpg"));
+
+            verify(client, org.mockito.Mockito.never())
+                    .getBucketVersioning(any(GetBucketVersioningRequest.class));
+            verify(client, org.mockito.Mockito.never())
+                    .listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class));
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client).deleteObjects(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().delete().objects())
+                    .singleElement()
+                    .satisfies(item -> {
+                        org.assertj.core.api.Assertions.assertThat(item.key()).isEqualTo("listings/1/r2.jpg");
+                        org.assertj.core.api.Assertions.assertThat(item.versionId()).isNull();
+                    });
+        }
+    }
+
+    @Test
+    void g3_versionedObjectLockFailuresPropagateWithoutGovernanceBypass() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            String key = "listings/locked.jpg";
+            when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
+                    .thenReturn(GetBucketVersioningResponse.builder()
+                            .status(VersioningConfiguration.Status.ENABLED).build());
+            when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
+                            .versions(java.util.List.of(
+                                    software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                            .key(key).versionId("locked-version").build()))
+                            .build());
+            when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder()
+                            .errors(java.util.List.of(software.amazon.awssdk.services.s3.model.S3Error.builder()
+                                    .key(key).versionId("locked-version")
+                                    .code("AccessDenied").message("Object retention prevents deletion").build()))
+                            .build());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> storage.deleteObjects(java.util.List.of(key)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("AccessDenied")
+                    .hasMessageContaining("locked-version");
+            verify(client, org.mockito.Mockito.times(3))
                     .deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
         }
     }
