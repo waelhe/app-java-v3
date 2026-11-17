@@ -76,8 +76,24 @@ public class MessagingContentPurgeAdapter implements AuthoredContentPurgePort {
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
+        // The family law (rulebook B5: "version = version + 1 in the purge
+        // statement"): both LIVE-table legs below advance the row's
+        // optimistic-lock version atomically with the erasure — the exact
+        // shape the seven sibling adapters carry (reviews/booking/disputes/
+        // search/knowledge/provider + jobs' own cover-message leg). A
+        // provider's inbox transition (transitionLead) holding a pre-purge
+        // ListingLead snapshot then flushes zero rows and fails with the
+        // framework's optimistic-lock exception, instead of restoring the
+        // erased contact_name/contact_phone/message through the passed
+        // check and recreating them in a new Envers revision. The messages
+        // leg carries the same advance: Message is insert-only today, but
+        // the table carries the version column (measured: NOT NULL DEFAULT
+        // 0) and the moment any update path appears the same resurrection
+        // door opens — the family's single shape, applied to both. The
+        // _aud mirrors carry no version column (Envers revisions) and stay
+        // untouched.
         int messages = jdbcTemplate.update(
-                "UPDATE messages SET content = ? WHERE sender_id = ? AND content IS NOT NULL AND content <> ?",
+                "UPDATE messages SET content = ?, version = version + 1 WHERE sender_id = ? AND content IS NOT NULL AND content <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int auditRows = jdbcTemplate.update(
                 "UPDATE messages_aud SET content = ? WHERE sender_id = ? AND content IS NOT NULL AND content <> ?",
@@ -88,7 +104,7 @@ public class MessagingContentPurgeAdapter implements AuthoredContentPurgePort {
         // the marker — a caller-written "[purged]" message must never
         // armor the real contact_name/contact_phone against the erasure.
         int leads = jdbcTemplate.update(
-                "UPDATE listing_leads SET contact_name = ?, contact_phone = ?, message = ? "
+                "UPDATE listing_leads SET contact_name = ?, contact_phone = ?, message = ?, version = version + 1 "
                         + "WHERE sender_user_id = ? "
                         + "AND (contact_name <> ? OR contact_phone <> ? OR message <> ?)",
                 AuthoredContentPurgePort.PURGED_MARKER, AuthoredContentPurgePort.PURGED_MARKER,

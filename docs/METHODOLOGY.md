@@ -1,6 +1,6 @@
 # Methodology & Protocol — Unified Development Standard
 
-> **Status:** Living document • Last updated: 2026-06-20
+> **Status:** Living document • Last updated: 2026-11-03
 > **Audience:** All developers (including AI agents) contributing to app-java-v3
 > **Scope:** End-to-end methodology for planning, executing, reviewing, and releasing work
 >
@@ -38,26 +38,43 @@ These principles are non-negotiable. Every action in this repository must align 
 
 ### 1.1 Official Documentation is the Source of Truth
 
-> **Rule:** Every code change, configuration change, and architectural decision must cite
-> an official reference. No exceptions.
+> **Rule:** Every code change, configuration change, integration, operational procedure, and architectural decision across **every technology** must be supported by evidence. No implementation is justified by training memory, personal preference, or an undocumented workaround.
 
-**Approved sources (in priority order):**
+**Authority and evidence order (apply to the technology and exact version in use):**
 
-| Priority | Source | URL |
-|----------|--------|-----|
-| 1 | Spring Boot Reference | https://docs.spring.io/spring-boot/ |
-| 2 | Spring Boot How-To (Deployment) | https://docs.spring.io/spring-boot/how-to/deployment/index.html |
-| 3 | Spring Security Reference | https://docs.spring.io/spring-security/reference/ |
-| 4 | Spring Security What's New | https://docs.spring.io/spring-security/reference/whats-new.html |
-| 5 | Spring Modulith Reference | https://docs.spring.io/spring-modulith/ |
-| 6 | Spring Cloud Gateway | https://spring.io/projects/spring-cloud-gateway |
-| 7 | Spring Guides | https://spring.io/guides |
-| 8 | Maven Guides | https://maven.apache.org/guides/index.html |
-| 9 | RFCs (6238, 6749, 7807, 8252, 9068, 6797, 7009) | https://datatracker.ietf.org/ |
-| 10 | NIST (SP 800-63B, SP 800-57) | https://pages.nist.gov/800-63-3/ |
-| 11 | OWASP Cheat Sheets | https://cheatsheetseries.owasp.org/ |
+1. The user's approved product requirements and governing domain decisions define the outcome and contract.
+2. Official documentation for the deployed/pinned version defines supported configuration, APIs, lifecycle, extension points, and operating procedures.
+3. The official source repository at the matching release/tag/commit verifies implementation details and documented behavior.
+4. Published standards and specifications (for example RFC, GraphQL, SQL, OAuth, NIST, and OWASP) govern the areas they standardize.
+5. Official vendor integration guides and supported SDK/tool documentation govern their own interfaces.
+6. Trusted community experience may supplement the above when official material leaves an implementation gap; it must be identifiable, reproducible, and compatible with the official contract. It never overrides an official source.
 
-**If an action cannot cite one of these sources, it must not be performed.**
+For every change, record the exact source URL and version/release plus the relevant section, API, or source location. If official documentation and source appear inconsistent, verify the matching version and report the discrepancy before choosing a behavior.
+
+**No unsupported manual work:** do not invent an implementation, setting, extension, deployment step, manual workaround, or integration. Use built-in automation and conventions where the official technology documents them. Custom code is valid only when the need is real and the extension/configuration/lifecycle mechanism is officially supported. Never delete a manually supplied bean or customization merely because it is manual; first verify whether it is a documented and supported customization point.
+
+**Approved sources (examples for this repository; discover the equivalent official source for every other technology):**
+
+| Area | Official source | URL |
+|------|-----------------|-----|
+| Spring Boot framework | Spring Boot Reference | https://docs.spring.io/spring-boot/ |
+| Spring Boot deployment | Spring Boot How-To | https://docs.spring.io/spring-boot/how-to/deployment/index.html |
+| Spring Boot source | Official Spring Boot repository | https://github.com/spring-projects/spring-boot/ |
+| Spring Security | Spring Security Reference | https://docs.spring.io/spring-security/reference/ |
+| Spring Security releases | Spring Security What's New | https://docs.spring.io/spring-security/reference/whats-new.html |
+| Spring Security source | Official Spring Security repository | https://github.com/spring-projects/spring-security/ |
+| Spring Modulith | Spring Modulith Reference | https://docs.spring.io/spring-modulith/ |
+| Spring Cloud Gateway | Project documentation | https://spring.io/projects/spring-cloud-gateway |
+| Spring ecosystem | Spring Guides | https://spring.io/guides |
+| Maven build | Maven Guides | https://maven.apache.org/guides/index.html |
+| Maven source | Official Apache Maven repository | https://github.com/apache/maven/ |
+| Saleor agent workflow | Saleor AI developer guidance | https://docs.saleor.io/developer/ai |
+| Saleor source/schema | Official Saleor repository | https://github.com/saleor/saleor |
+| Standards | RFCs and published standards | https://datatracker.ietf.org/ |
+| Security standards | NIST | https://pages.nist.gov/800-63-3/ |
+| Application security | OWASP Cheat Sheets | https://cheatsheetseries.owasp.org/ |
+
+**If an action cannot be supported by the applicable authoritative sources above, do not perform it.** Community material is supporting evidence only; a successful build or runtime observation alone does not make an unsupported design acceptable.
 
 ### 1.2 Verify Before Acting
 

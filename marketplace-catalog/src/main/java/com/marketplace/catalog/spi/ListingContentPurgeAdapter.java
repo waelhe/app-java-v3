@@ -91,12 +91,24 @@ public class ListingContentPurgeAdapter implements AuthoredContentPurgePort {
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
+        // The family law (rulebook B5: "version = version + 1 in the purge
+        // statement"): every LIVE-table statement below advances the row's
+        // optimistic-lock version atomically with the erasure — the exact
+        // shape the seven sibling adapters carry (reviews/booking/disputes/
+        // search/knowledge/provider + jobs' own cover-message leg). A
+        // lifecycle transition (pause/archive) holding a pre-purge
+        // ProviderListing snapshot — or a Q&A writer holding a pre-purge
+        // question/answer snapshot — then flushes zero rows and fails with
+        // the framework's optimistic-lock exception, instead of restoring
+        // the erased text through the passed check and recreating it in a
+        // new Envers revision. The _aud mirrors carry no version column
+        // (Envers revisions) and stay untouched.
         int descriptions = jdbcTemplate.update(
-                "UPDATE provider_listings SET description = NULL WHERE provider_id = ? "
+                "UPDATE provider_listings SET description = NULL, version = version + 1 WHERE provider_id = ? "
                         + "AND description IS NOT NULL",
                 userId);
         int titles = jdbcTemplate.update(
-                "UPDATE provider_listings SET title = ? WHERE provider_id = ? "
+                "UPDATE provider_listings SET title = ?, version = version + 1 WHERE provider_id = ? "
                         + "AND title IS NOT NULL AND title <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int descriptionAudits = jdbcTemplate.update(
@@ -119,11 +131,11 @@ public class ListingContentPurgeAdapter implements AuthoredContentPurgePort {
         // own law). No cache invalidation: the Q&A feeds read the tables
         // directly (no cached read model anywhere in the module).
         int questionBodies = jdbcTemplate.update(
-                "UPDATE product_questions SET body = ? WHERE asker_id = ? "
+                "UPDATE product_questions SET body = ?, version = version + 1 WHERE asker_id = ? "
                         + "AND body IS NOT NULL AND body <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int answerBodies = jdbcTemplate.update(
-                "UPDATE product_answers SET body = ? WHERE provider_id = ? "
+                "UPDATE product_answers SET body = ?, version = version + 1 WHERE provider_id = ? "
                         + "AND body IS NOT NULL AND body <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int questionBodyAudits = jdbcTemplate.update(

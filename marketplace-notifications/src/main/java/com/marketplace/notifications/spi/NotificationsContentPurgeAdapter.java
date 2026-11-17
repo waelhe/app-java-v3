@@ -47,8 +47,25 @@ public class NotificationsContentPurgeAdapter implements AuthoredContentPurgePor
     @Override
     @Transactional
     public int purgeAuthoredTexts(UUID userId) {
+        // The family law (rulebook B5: "version = version + 1 in the purge
+        // statement"): the LIVE statement advances the row's optimistic-lock
+        // version atomically with the erasure — the exact shape the seven
+        // sibling adapters carry (reviews/booking/disputes/search/knowledge/
+        // provider + jobs' own cover-message leg). A recipient's or admin's
+        // markAsRead holding a pre-purge Notification snapshot then flushes
+        // zero rows and fails with the framework's optimistic-lock exception,
+        // instead of restoring the erased message through the passed check
+        // and recreating it in a new Envers revision. The COALESCE form is
+        // kept as defensive parity with the provider adapter's own
+        // documented precedent; the schema measurement: V25 pins
+        // notifications.version to NOT NULL DEFAULT 0 (V18 originally
+        // declared it nullable; V25__add_base_entity_columns tightened it
+        // like every other family table) — a NOT NULL guard is harmless
+        // and NULL can never advance to NULL under any future widening.
+        // The _aud mirror carries no version column (Envers revisions) and
+        // stays untouched.
         int notifications = jdbcTemplate.update(
-                "UPDATE notifications SET message = ? WHERE recipient_id = ? "
+                "UPDATE notifications SET message = ?, version = COALESCE(version, 0) + 1 WHERE recipient_id = ? "
                         + "AND message IS NOT NULL AND message <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int auditRows = jdbcTemplate.update(

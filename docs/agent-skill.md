@@ -34,14 +34,15 @@ description: >-
   services — including bare Arabic continuations such as «ادمج»
   (merge), «راجع» (review), «تابع» (continue), «ما وضع الباك اند؟»
   (status). Encodes: AGENTS.md §0 enforced governance (the mandatory
-  load order + the five-field declaration before any mutating action);
+  load order + the six-field declaration before any mutating action);
   the METHODOLOGY.md 6-stage workflow as the method; GitHub as the only
-  truth (zero-memory bootstrap); word-gated merges («ادمج» through the
-  three measured gates — CI green + CodeRabbit success + zero open
-  threads); measurement governs with dated evidence «ملف:سطر» and the
-  environment outranking doc snapshots; no Docker locally so
-  integration tests judge on CI. Replies to the owner are always
-  Arabic; the machine layer (code, commits, technical docs) is English.
+  truth (zero-memory bootstrap); official version-matched documentation
+  and source repositories govern all technologies; no unsupported manual
+  workarounds; load only task-relevant pinned skills; GitHub-first branch
+  and PR execution; do not idle while independent CI/review work runs;
+  word-gated merges («ادمج») require all remote gates. Replies to the
+  owner are always Arabic; the machine layer (code, commits, technical
+  docs) is English.
 ---
 
 # app-java-v3 backend agent — the bootstrap map
@@ -52,19 +53,21 @@ this skill is patched to match.
 
 ## 1. Session bootstrap (in order, every session)
 
-1. Re-sync the clone ff-only (`git fetch origin && git checkout main
-   && git merge --ff-only origin/main`); missing clone → re-clone from
-   GitHub. The only local assumption is GitHub credentials (ask the
-   owner when missing).
-2. Read `AGENTS.md` — §0 is ENFORCED: the mandatory load order
+1. Read current repository state and the default-branch SHA through
+   GitHub. A local clone is optional supplementary tooling, never the
+   primary execution surface.
+2. Check in-flight work through GitHub, including all open PRs/issues
+   and recent commits. Open PRs are forward-contract risk (OpenAPI changes
+   ripple to waelhe/web-marketplace).
+3. Read `AGENTS.md` — §0 is ENFORCED: the mandatory load order
    (SYSTEM.md → PROJECT_MAP.md → the task's governing file) and the
-   five-field declaration before any mutating action.
-3. Read `docs/agent-protocol.md` (the full method), then the root
+   six-field declaration before any mutating action.
+4. Read `docs/agent-protocol.md` (the full method), then the root
    family it binds: `SYSTEM.md` (mechanism, facts with file:line
    evidence), `PROJECT_MAP.md` (state — newest wave sections first),
    `docs/METHODOLOGY.md` (the master 6-stage method),
    `CONTRIBUTING.md` (channels, contract rules, secrets policy).
-4. Defect-knowledge system (`docs/governance/defect-knowledge/` —
+5. Defect-knowledge system (`docs/governance/defect-knowledge/` —
    protocol §9's regression list is its quick view; protocol §3's
    step 4 is the binding ritual step this item mirrors): before
    editing, load `change-protocol.md` and apply the pattern families
@@ -74,16 +77,33 @@ this skill is patched to match.
    pass in `review-protocol.md`; when a guard fails, `enforcement-map.md`
    states the rule → enforcement binding. The system is permanent; the
    quick view only points into it.
-5. Check in-flight work: `git log --oneline -15` + open PRs/issues via
-   the API. Open PRs are forward-contract risk (OpenAPI changes ripple
-   to waelhe/web-marketplace).
-6. Toolchain: Temurin JDK 25 + `./mvnw` (Maven distribution 3.10.0, wrapper tool 3.3.4). No Docker
-   locally — integration tests judge on CI.
-7. Measure before building: live `/v3/api-docs` on staging, success
+6. Read `docs/governance/agent-skills-policy.md` and
+   `docs/governance/plans/agent-skills-pins.json`; load only relevant,
+   pinned `.agents/skills/<name>/SKILL.md` files and their triggered
+   rules. Skills are references, not authorities; never run an unpinned
+   skill installer or `npx skills add` in this repository. For Saleor
+   tasks, start at https://docs.saleor.io/developer/ai and `llms.txt`,
+   use its Documentation MCP where available, use the schema matching
+   the repository's pinned Saleor release, and load the adopted
+   `saleor-core` skill when its covered behavior applies. Other Saleor
+   skills require an actual need and reviewed adoption under the policy.
+7. Local JDK/Maven execution is optional supplementary feedback; do not
+   block GitHub-first work on provisioning a local toolchain. Remote
+   GitHub Actions are the required verification record. Docker-dependent
+   integration tests run through their configured remote workflow when
+   local Docker is unavailable.
+8. Measure before building: live `/v3/api-docs` on staging, success
    AND failure shapes of the target endpoints. Every fact carries its
    measurement date.
 
-## 2. The five operating rules (condensed — full text in the twin §4)
+9. Emit the AGENTS.md §0.2 declaration before any mutating action
+   (`[الملف الحاكم]` / `[النواة المعمارية]` / `[البند من المصفوفة §14.2]` /
+   `[أثر على الحدود]` / `[دين]` / `[معرفة العيوب]`) — the twin §3 step 8,
+   verbatim in force.
+10. Create the remote task branch from the exact observed base SHA
+    and make durable edits/commits on GitHub; open a PR for review. Do
+    not push directly to `main` (the twin §3 step 9).
+## 2. The seven operating rules (condensed — full text in the twin §4 and §12)
 
 1. Definition before building — the governing file + SYSTEM.md §14.2
    matrix decide, never an endpoint that happens to exist.
@@ -102,6 +122,16 @@ this skill is patched to match.
 5. Measurement governs: evidence `ملف:سطر`, dated facts + re-verify
    commands (R1), the environment outranks the doc snapshot; when live
    verification is impossible — stop and declare, never guess.
+6. No unsupported manual implementation: use documented automatic
+   mechanisms and supported extension/configuration points across every
+   technology; do not invent workarounds or blindly delete supported
+   customizations.
+7. Do not idle for pending CI/CodeRabbit: continue independent work on
+   non-conflicting branches and monitor results; pending is not passing.
+   For applicable PRs request `@coderabbitai review`, check current-head
+   coverage, and respect the repository's >100-file fail-closed review
+   coverage process. Never bypass a gate or merge without the owner's
+   explicit word.
 
 ## 3. Standing facts (the twin §2 table is the authority)
 

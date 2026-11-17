@@ -33,6 +33,15 @@ import static org.mockito.Mockito.when;
  * mirror, and every option label THROUGH the subject's polls — keyed by
  * the stable author id (V286's column + recovery), never by the label
  * string itself.</p>
+ *
+ * <p>Adversarial-review 2026-11-10 finding G1 (rulebook B5, the family
+ * law): every LIVE statement must ADVANCE the row's optimistic-lock
+ * {@code version} atomically with the erasure — the shape the seven
+ * sibling adapters already carry. A statement that purges the text
+ * without advancing the version lets a moderation/lifecycle transaction
+ * holding a pre-purge snapshot flush its stale entity THROUGH the passed
+ * optimistic-lock check and resurrect the erased text on the live row
+ * (plus a new Envers revision) — the CWE-362 resurrection race.</p>
  */
 @ExtendWith(MockitoExtension.class)
 class CommunityContentPurgeAdapterTest {
@@ -165,5 +174,42 @@ class CommunityContentPurgeAdapterTest {
                                 && sql.contains("p.author_id = ?")
                                 && sql.contains("o.label <> ?")),
                 any(Object[].class));
+    }
+
+    // ---------- G1 (adversarial review 2026-11-10): the optimistic-lock
+    // ---------- advance rides every LIVE statement, never a mirror ----------
+
+    @Test
+    void purgeAuthoredTexts_advancesTheLiveRowVersionAtomicallyWithTheErasure() {
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        new CommunityContentPurgeAdapter(jdbcTemplate).purgeAuthoredTexts(userId);
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate, times(12)).update(sql.capture(), any(Object[].class));
+        // The six LIVE statements each carry the advance — posts, comments,
+        // events, market items, polls, and the options' THROUGH-the-owner
+        // leg (the target alias qualifies the reference under UPDATE...FROM,
+        // the provider adapter's own documented ambiguity lesson).
+        assertThat(sql.getAllValues())
+                .anySatisfy(s -> assertThat(s)
+                        .contains("UPDATE neighborhood_posts SET title = ?, body = ?, version = version + 1"))
+                .anySatisfy(s -> assertThat(s)
+                        .contains("UPDATE post_comments SET body = ?, version = version + 1"))
+                .anySatisfy(s -> assertThat(s)
+                        .contains("organizer_label = ?, version = version + 1"))
+                .anySatisfy(s -> assertThat(s)
+                        .contains("UPDATE neighborhood_market_items SET title = ?, location_label = ?, version = version + 1"))
+                .anySatisfy(s -> assertThat(s)
+                        .contains("UPDATE neighborhood_polls SET question = ?, author_label = ?, version = version + 1"))
+                .anySatisfy(s -> assertThat(s)
+                        .contains("UPDATE neighborhood_poll_options o SET label = ?, version = o.version + 1"));
+        // The six Envers mirrors carry NO version reference — _aud rows are
+        // immutable history keyed by revision, exactly like every sibling
+        // adapter's mirror discipline.
+        assertThat(sql.getAllValues())
+                .filteredOn(s -> s.contains("_aud"))
+                .hasSize(6)
+                .allSatisfy(s -> assertThat(s).doesNotContain("version"));
     }
 }
