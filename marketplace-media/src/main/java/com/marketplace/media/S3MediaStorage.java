@@ -392,71 +392,85 @@ final class S3MediaStorage implements AutoCloseable {
     }
 
     private void deleteIdentifierBatches(java.util.List<ObjectIdentifier> identifiers) {
+        RuntimeException firstFailure = null;
         for (int start = 0; start < identifiers.size(); start += DELETE_OBJECTS_MAX_KEYS_PER_REQUEST) {
             int end = Math.min(start + DELETE_OBJECTS_MAX_KEYS_PER_REQUEST, identifiers.size());
             java.util.List<ObjectIdentifier> originalBatch = java.util.List.copyOf(identifiers.subList(start, end));
-            java.util.List<ObjectIdentifier> pending = originalBatch;
-
-            for (int attempt = 1; attempt <= 3 && !pending.isEmpty(); attempt++) {
-                DeleteObjectsResponse response;
-                try {
-                    java.util.List<ObjectIdentifier> requestBatch = pending;
-                    response = circuitBreaker.executeSupplier(() -> client.deleteObjects(
-                            DeleteObjectsRequest.builder()
-                                    .bucket(bucket)
-                                    .delete(d -> d.objects(requestBatch))
-                                    .build()));
-                } catch (RuntimeException ex) {
-                    if (attempt == 3) {
-                        throw ex;
-                    }
-                    // The request outcome is ambiguous; repeat only this batch.
-                    continue;
+            try {
+                deleteIdentifierBatch(originalBatch);
+            } catch (RuntimeException ex) {
+                if (firstFailure == null) {
+                    firstFailure = ex;
                 }
-
-                if (response == null) {
-                    if (attempt == 3) {
-                        throw new IllegalStateException("S3 returned no DeleteObjects response");
-                    }
-                    continue;
-                }
-                if (response.errors() == null || response.errors().isEmpty()) {
-                    pending = java.util.List.of();
-                    break;
-                }
-
-                java.util.List<ObjectIdentifier> failed = new java.util.ArrayList<>();
-                for (var error : response.errors()) {
-                    if (error.key() == null) {
-                        throw new IllegalStateException("S3 returned a per-key delete error without a key");
-                    }
-                    String errorVersionId = error.versionId();
-                    ObjectIdentifier original = originalBatch.stream()
-                            .filter(item -> error.key().equals(item.key())
-                                    && java.util.Objects.equals(errorVersionId, item.versionId()))
-                            .findFirst()
-                            .orElseThrow(() -> new IllegalStateException(
-                                    "S3 returned a delete error for an identifier not in the request: "
-                                            + error.key() + " versionId=" + errorVersionId));
-                    failed.add(original);
-                }
-
-                if (attempt == 3) {
-                    var first = response.errors().get(0);
-                    throw new IllegalStateException("S3 could not delete " + failed.size()
-                            + " object version(s) after three attempts (first: key='" + first.key()
-                            + "', versionId='" + first.versionId() + "', code='" + first.code()
-                            + "', message='" + first.message() + "')");
-                }
-                pending = failed.stream()
-                        .collect(java.util.stream.Collectors.collectingAndThen(
-                                java.util.stream.Collectors.toMap(
-                                        item -> item.key() + "\u0000" + item.versionId(),
-                                        item -> item,
-                                        (left, right) -> left,
-                                        java.util.LinkedHashMap::new),
-                                map -> java.util.List.copyOf(map.values())));
+                // Continue independent batches. The caller keeps PURGE_PENDING
+                // until the entire operation returns successfully.
             }
+        }
+        if (firstFailure != null) {
+            throw firstFailure;
+        }
+    }
+
+    private void deleteIdentifierBatch(java.util.List<ObjectIdentifier> originalBatch) {
+        java.util.List<ObjectIdentifier> pending = originalBatch;
+        for (int attempt = 1; attempt <= 3 && !pending.isEmpty(); attempt++) {
+            DeleteObjectsResponse response;
+            try {
+                java.util.List<ObjectIdentifier> requestBatch = pending;
+                response = circuitBreaker.executeSupplier(() -> client.deleteObjects(
+                        DeleteObjectsRequest.builder()
+                                .bucket(bucket)
+                                .delete(d -> d.objects(requestBatch))
+                                .build()));
+            } catch (RuntimeException ex) {
+                if (attempt == 3) {
+                    throw ex;
+                }
+                // The request outcome is ambiguous; repeat only this batch.
+                continue;
+            }
+
+            if (response == null) {
+                if (attempt == 3) {
+                    throw new IllegalStateException("S3 returned no DeleteObjects response");
+                }
+                continue;
+            }
+            if (response.errors() == null || response.errors().isEmpty()) {
+                return;
+            }
+
+            java.util.List<ObjectIdentifier> failed = new java.util.ArrayList<>();
+            for (var error : response.errors()) {
+                if (error.key() == null) {
+                    throw new IllegalStateException("S3 returned a per-key delete error without a key");
+                }
+                String errorVersionId = error.versionId();
+                ObjectIdentifier original = originalBatch.stream()
+                        .filter(item -> error.key().equals(item.key())
+                                && java.util.Objects.equals(errorVersionId, item.versionId()))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException(
+                                "S3 returned a delete error for an identifier not in the request: "
+                                        + error.key() + " versionId=" + errorVersionId));
+                failed.add(original);
+            }
+
+            if (attempt == 3) {
+                var first = response.errors().get(0);
+                throw new IllegalStateException("S3 could not delete " + failed.size()
+                        + " object version(s) after three attempts (first: key='" + first.key()
+                        + "', versionId='" + first.versionId() + "', code='" + first.code()
+                        + "', message='" + first.message() + "')");
+            }
+            pending = failed.stream()
+                    .collect(java.util.stream.Collectors.collectingAndThen(
+                            java.util.stream.Collectors.toMap(
+                                    item -> item.key() + "\u0000" + item.versionId(),
+                                    item -> item,
+                                    (left, right) -> left,
+                                    java.util.LinkedHashMap::new),
+                            map -> java.util.List.copyOf(map.values())));
         }
     }
 
