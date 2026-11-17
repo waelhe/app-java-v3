@@ -13,7 +13,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.GetBucketVersioningRequest;
 import software.amazon.awssdk.services.s3.model.GetBucketVersioningResponse;
-import software.amazon.awssdk.services.s3.model.VersioningConfiguration;
+import software.amazon.awssdk.services.s3.model.BucketVersioningStatus;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
@@ -332,7 +332,7 @@ class S3MediaStorageTest {
             String key = "listings/1/a.jpg";
             when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
                     .thenReturn(GetBucketVersioningResponse.builder()
-                            .status(VersioningConfiguration.Status.ENABLED).build());
+                            .status(BucketVersioningStatus.ENABLED).build());
             when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
                     .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
                             .versions(java.util.List.of(
@@ -367,7 +367,7 @@ class S3MediaStorageTest {
             String key = "posts/2/b.jpg";
             when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
                     .thenReturn(GetBucketVersioningResponse.builder()
-                            .status(VersioningConfiguration.Status.SUSPENDED).build());
+                            .status(BucketVersioningStatus.SUSPENDED).build());
             when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
                     .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
                             .versions(java.util.List.of(
@@ -400,7 +400,7 @@ class S3MediaStorageTest {
             String key = "reviews/abc";
             when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
                     .thenReturn(GetBucketVersioningResponse.builder()
-                            .status(VersioningConfiguration.Status.ENABLED).build());
+                            .status(BucketVersioningStatus.ENABLED).build());
             when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
                     .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
                             .isTruncated(true).nextKeyMarker(key).nextVersionIdMarker("v1")
@@ -463,7 +463,7 @@ class S3MediaStorageTest {
             String key = "listings/locked.jpg";
             when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
                     .thenReturn(GetBucketVersioningResponse.builder()
-                            .status(VersioningConfiguration.Status.ENABLED).build());
+                            .status(BucketVersioningStatus.ENABLED).build());
             when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
                     .thenReturn(software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
                             .versions(java.util.List.of(
