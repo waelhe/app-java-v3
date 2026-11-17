@@ -440,6 +440,19 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     # rename-heavy candidate into the manifest path despite an existing review.
     if len(candidate_by_name) <= MAX_FILES:
         need(newest is not None, f"no CodeRabbit review on current candidate head {head_sha}")
+        # CodeRabbit round 10 (2026-11-17, review 5939887782, the defense-in-
+        # depth close): the NEWEST review's state gates the coverage evidence
+        # before any declaration is accepted. A complete declaration on the
+        # head is not coverage evidence while the newest review on that same
+        # head requests changes — the gate workflow's own poll enforces this
+        # verdict too, but the verifier must never contradict it (a green
+        # poll that raced ahead of a CHANGES_REQUESTED review landing on the
+        # same head must not survive here). The declaring pair measured live
+        # on #819/#820/#831 stays accepted: a newest APPROVED state — even
+        # an empty-bodied one — is a good state over a full declaration.
+        need(newest.get("state") != "CHANGES_REQUESTED",
+             "the newest CodeRabbit review on the current candidate head requests changes; "
+             "a coverage declaration on the same head is not coverage evidence while changes are requested")
         review, selected = declaring_review(candidate_reviews, head_sha, BOT, GOOD_STATES)
         need(review is not None,
              "no CodeRabbit review on the current candidate head declares its processed-file list "
