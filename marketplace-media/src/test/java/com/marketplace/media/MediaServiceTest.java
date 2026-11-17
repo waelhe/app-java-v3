@@ -636,51 +636,44 @@ class MediaServiceTest {
         verify(repository).delete(asset);
     }
 
-    // ---- G3 (owner-gate batch 6a — the erasure flow's storage leg) ----
+    // ---- G3: verified object destruction is required before PURGED ----
 
     @Test
-    void g3_destroyObjectsAfterCommit_batchesTheExactKnownKeys() {
-        // Degree 2: the purge's known keys ride the documented batch API in
-        // one call — the objects themselves die, so a link signed BEFORE the
-        // purge has no object to serve after it (the recommendation's own
-        // two-sided proof, this side of the wire).
+    void g3_destroyObjectsForErasure_deletesTheExactKnownKeys() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         java.util.List<String> keys = java.util.List.of("listings/1/a.jpg", "listings/1/a.jpg/thumb");
 
-        service.destroyObjectsAfterCommit(keys);
+        service.destroyObjectsForErasure(keys);
 
         verify(storage).deleteObjects(keys);
     }
 
     @Test
-    void g3_destroyObjectsAfterCommit_unconfiguredChannelIsTheLoggedHonestGap() {
-        // The erasure never fails on an unconfigured channel: the tombstone
-        // already landed in the caller's transaction; the (nonexistent)
-        // objects are left to bucket lifecycle rules — logged, never silent.
+    void g3_destroyObjectsForErasure_unconfiguredChannelFailsClosed() {
         when(storageProvider.getIfAvailable()).thenReturn(null);
 
-        service.destroyObjectsAfterCommit(java.util.List.of("listings/1/a.jpg"));
+        assertThrows(ServiceUnavailableException.class,
+                () -> service.destroyObjectsForErasure(java.util.List.of("listings/1/a.jpg")));
 
         verifyNoInteractions(storage);
     }
 
     @Test
-    void g3_destroyObjectsAfterCommit_emptyKeysDestroyNothing() {
-        service.destroyObjectsAfterCommit(java.util.List.of());
-        service.destroyObjectsAfterCommit(null);
+    void g3_destroyObjectsForErasure_emptyKeysDoNothing() {
+        service.destroyObjectsForErasure(java.util.List.of());
+        service.destroyObjectsForErasure(null);
         verifyNoInteractions(storage, storageProvider);
     }
 
     @Test
-    void g3_destroyObjectsAfterCommit_storageFailureIsBestEffortNeverFatal() {
+    void g3_destroyObjectsForErasure_storageFailurePropagatesForRetry() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         doThrow(new RuntimeException("storage down")).when(storage)
                 .deleteObjects(java.util.List.of("listings/1/a.jpg"));
 
-        service.destroyObjectsAfterCommit(java.util.List.of("listings/1/a.jpg"));
+        assertThrows(RuntimeException.class,
+                () -> service.destroyObjectsForErasure(java.util.List.of("listings/1/a.jpg")));
 
-        // Best-effort: the erasure flow's completion is never poisoned by a
-        // storage-side failure (bucket lifecycle rules own the orphans).
         verify(storage).deleteObjects(java.util.List.of("listings/1/a.jpg"));
     }
 
