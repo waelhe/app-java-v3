@@ -711,10 +711,11 @@ class RunPathTests(ManifestTests):
             },
             manifests={},
         )
-        # round 10: the newest-state gate fires first with its own message
-        # (the declaring_review selection would have rejected this review
-        # too — the round-10 check simply names the cause precisely).
-        with self.assertRaisesRegex(gate.GateError, "requests changes"):
+        # rounds 10-11: the newest-state GOOD_STATES gate fires first with
+        # its own message (the declaring_review selection would have
+        # rejected this review too — the newest-state check names the
+        # cause precisely).
+        with self.assertRaisesRegex(gate.GateError, "coverage requires a good verdict"):
             self.run_gate(client)
 
     def test_malformed_declaration_never_falls_back_to_an_older_review(self):
@@ -849,7 +850,45 @@ class RunPathTests(ManifestTests):
         )
         with self.assertRaisesRegex(
                 gate.GateError,
-                "newest CodeRabbit review on the current candidate head requests changes"):
+                "coverage requires a good verdict"):
+            self.run_gate(client)
+
+    def test_newest_dismissed_rejects_an_older_declaration(self):
+        # CodeRabbit round 11 (the assertive full review, 2026-11-17T16:45Z):
+        # the round-10 exclusion-only check (newest != CHANGES_REQUESTED)
+        # left DISMISSED through — a newest DISMISSED review over an older
+        # complete declaration would have passed, contradicting the gate
+        # workflow's own verdict model (CHANGES_REQUESTED and DISMISSED
+        # fail; APPROVED and COMMENTED pass). The GOOD_STATES membership
+        # gate is the workflow model verbatim; this test pins the DISMISSED
+        # member the exclusion-only check missed.
+        small = ["src/A.java", "src/B.java"]
+        declaring = {
+            "id": 8, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "COMMENTED", "submitted_at": "2026-10-31T19:00:00Z",
+            "body": shard_review_body(small),
+        }
+        dismissed = {
+            "id": 13, "user": {"login": gate.BOT}, "commit_id": "head-A",
+            "state": "DISMISSED", "submitted_at": "2026-10-31T19:06:00Z",
+            "body": "",
+        }
+        base = {path: (path + "-base", "100644", "blob") for path in small}
+        head = {path: (path + "-head", "100644", "blob") for path in small}
+        client = self.client(
+            pulls={50: self.candidate_pull, 51: self.shard_pull},
+            reviews={50: [declaring, dismissed], 51: [self.shard_review]},
+            files={50: [{"filename": path} for path in small],
+                   51: [{"filename": path} for path in small]},
+            trees={
+                "mb-1": base, self.trusted_base: dict(base, **{".github/workflows/coderabbit-gate.yml": ("gate-blob", "100644", "blob")}),
+                "head-A": head, "shard-head-A": head,
+            },
+            manifests={},
+        )
+        with self.assertRaisesRegex(
+                gate.GateError,
+                "coverage requires a good verdict"):
             self.run_gate(client)
 
 
