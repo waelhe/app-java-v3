@@ -439,6 +439,8 @@ class S3MediaStorageTest {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(
                     presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens(), true);
+            when(client.deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class)))
+                    .thenReturn(software.amazon.awssdk.services.s3.model.DeleteObjectsResponse.builder().build());
 
             storage.deleteObjects(java.util.List.of("listings/1/r2.jpg"));
 
