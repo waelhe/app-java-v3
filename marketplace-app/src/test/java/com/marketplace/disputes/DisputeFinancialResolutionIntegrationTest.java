@@ -175,8 +175,11 @@ class DisputeFinancialResolutionIntegrationTest {
         Dispute resolved = disputeService.resolve(dispute.getId(), DisputeResolution.REFUND_CONSUMER,
                 SecurityContextHolder.getContext().getAuthentication());
 
-        // The refund's REFUNDED event drives the debit that mirrors the credit.
-        awaitBalance(providerId, PRICE_CENTS - COMMISSION_CENTS - PRICE_CENTS);
+        // The refund's REFUNDED event drives the debit that mirrors the
+        // credit AND (A2 — ADR-0013 D3 §3) reverses the commission mirror:
+        // the provider's balance returns to its pre-settlement ZERO, never
+        // to the commission-sized negative the pre-fix code left.
+        awaitBalance(providerId, 0L);
 
         // Acceptance 1 — idempotent: the repeated decision is a 409 BEFORE
         // any refund attempt, and nothing moves a second time.
@@ -184,7 +187,9 @@ class DisputeFinancialResolutionIntegrationTest {
                 DisputeResolution.REFUND_CONSUMER,
                 SecurityContextHolder.getContext().getAuthentication()))
                 .isInstanceOf(ConflictException.class);
-        awaitBalance(providerId, PRICE_CENTS - COMMISSION_CENTS - PRICE_CENTS);
+        // A2: the replay's no-op leaves the ZERO in place (the mirror pair
+        // landed exactly once — the 409 moved nothing).
+        awaitBalance(providerId, 0L);
 
         // The movement is recorded on the dispute: the linkage and the
         // cumulative refunded total.

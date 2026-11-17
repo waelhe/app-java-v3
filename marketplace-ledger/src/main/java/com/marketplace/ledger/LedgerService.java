@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -88,6 +89,105 @@ public class LedgerService {
         entryRepository.save(LedgerEntry.commissionDebit(providerId, sourceId, amountCents, normalized));
         ProviderBalance balance = balanceOf(providerId, normalized);
         balance.debit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
+    /**
+     * A2 + CodeRabbit round 1 (major — data integrity): the posted
+     * commission the refund's mirror must reverse — read from the ledger's
+     * OWN COMMISSION_DEBIT row (the deterministic
+     * {@code commission-<intentId>} source key {@link #debitFromCommission}
+     * wrote), never recomputed from a live rate. The legacy pre-freeze rows
+     * (a null {@code commission_rate}) settle AND refund against the live
+     * {@code app.commission.rate}: if the operator changes the rate between
+     * settlement and refund, a recomputed mirror would reverse a DIFFERENT
+     * number than the debit actually posted — the balance would end at
+     * minus or plus the drift. The posted ENTRY is the ledger's own truth
+     * (the ADR's D2 discipline: the posted value is the disclosure of
+     * record); the mirror reads it, and an intent whose commission was
+     * never posted answers empty (the caller skips the mirror — nothing
+     * posted, nothing to reverse).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> postedCommissionCents(UUID paymentIntentId) {
+        UUID sourceId = UUID.nameUUIDFromBytes(("commission-" + paymentIntentId.toString()).getBytes());
+        return entryRepository.findBySourceId(sourceId)
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.COMMISSION_DEBIT)
+                .map(LedgerEntry::getAmountCents);
+    }
+
+    /**
+     * A2 + CodeRabbit round 3 (major — data integrity): the DURABLE signal
+     * that the settlement's own listener transaction LANDED — the
+     * {@code PAYMENT_CREDIT} row keyed by the intent id itself. The credit
+     * and the commission debit are written in ONE settlement transaction
+     * (the listener's own atomicity), so once the credit row exists the
+     * commission row either exists (a positive commission) or was
+     * deliberately skipped: a ZERO commission — rate {@code 0.00}, or a
+     * computed zero (an amount whose HALF_UP fee rounds to nothing) —
+     * writes NO row at all (the zero-amount rule
+     * {@link #debitFromCommission} keeps). The refund guard needs exactly
+     * this separation: no credit row means the settlement has NOT posted
+     * yet (the refund outran it — fail closed and let the registry replay);
+     * a credit row with no commission row means the settlement completed
+     * at a legitimate zero and the refund must proceed with the debit alone
+     * (the reversal credit at zero is the documented no-op). Without this
+     * signal the guard could only see "no commission row" and would retry a
+     * zero-commission refund forever — a permanent deadlock the round-3
+     * review measured.
+     */
+    @Transactional(readOnly = true)
+    public boolean paymentCreditPosted(UUID paymentIntentId) {
+        return entryRepository.findBySourceId(paymentIntentId)
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.PAYMENT_CREDIT)
+                .isPresent();
+    }
+
+    /**
+     * A2 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * ADR-0013 D3 §3 mirror rule): the full refund's commission REVERSAL
+     * credit — the exact mirror image of {@link #debitFromCommission},
+     * posted in the SAME refund transaction {@link #debitFromRefund}
+     * runs in, so a full refund returns the provider's balance to its
+     * pre-settlement zero instead of a commission-sized negative. The
+     * ADR's own words: «a full REFUND reverses the credit and its
+     * commission mirror» — the pre-fix code executed only the credit
+     * reversal (the ledger's own finding A2: every full refund on the
+     * three commission-carrying origins over-debited the seller by
+     * exactly the commission).
+     *
+     * <p>The deterministic
+     * {@code nameUUIDFromBytes("commission-reversal-<intentId>")} source
+     * id never collides with the commission debit's own
+     * {@code "commission-<intentId>"} key and makes replayed listeners
+     * no-ops — the reversal lands exactly once per refunded intent,
+     * {@link #debitFromCommission}'s own idempotent shape verbatim (the
+     * pre-check is the optimization, the V19 {@code source_id UNIQUE}
+     * backstop the guarantee — the #252 concurrent-delivery contract
+     * rides here too). B2 amount guard: negative amounts are rejected
+     * with VALIDATION (400); zero amounts return the current balance
+     * without writing an entry.</p>
+     *
+     * <p><b>R9:</b> the reversal is credited in the payment's own
+     * currency — the same currency the settlement's commission debit
+     * moved — so the mirror lands on the same
+     * {@code (provider, currency)} balance.</p>
+     */
+    @Observed(name = "ledger.credit.commission_reversal")
+    public ProviderBalance creditFromCommissionReversal(UUID providerId, UUID paymentIntentId,
+                                                          long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceOf(providerId, normalized);
+        }
+        UUID sourceId = UUID.nameUUIDFromBytes(("commission-reversal-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceOf(providerId, normalized);
+        }
+        entryRepository.save(LedgerEntry.commissionReversalCredit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
+        balance.credit(amountCents);
         return balanceRepository.save(balance);
     }
 

@@ -298,7 +298,7 @@ class ObservationCoverageFilesTest {
                     "job.application.create", "job.application.move",
                     "job.application.withdraw", "job.close", "job.create")),
             Map.entry("marketplace-ledger", List.of(
-                    "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund", "ledger.delivery.payment.capture", "ledger.delivery.payment.refund", "ledger.delivery.revenue.recognize")),
+                    "ledger.credit.commission_reversal", "ledger.credit.payment", "ledger.debit.ads", "ledger.debit.commission", "ledger.debit.refund", "ledger.delivery.payment.capture", "ledger.delivery.payment.refund", "ledger.delivery.revenue.recognize")),
             // ADR-0009 (stage 8): the lending workflow's four commands —
             // offer.publish is the owner's terms write, request/approve/cancel
             // are the loan machine's gates (alphabetical — the scan's order).
