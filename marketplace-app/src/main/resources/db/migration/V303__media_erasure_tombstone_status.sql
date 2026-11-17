@@ -41,4 +41,4 @@ ALTER TABLE media_assets
 ALTER TABLE review_media DROP CONSTRAINT review_media_status_check;
 ALTER TABLE review_media
     ADD CONSTRAINT review_media_status_check
-        CHECK (status IN ('PENDING_UPLOAD', 'UPLOADED', 'PURGED')) NOT VALID;
+        CHECK (status IN ('PENDING_UPLOAD', 'UPLOADED', 'PURGE_PENDING', 'PURGED')) NOT VALID;
