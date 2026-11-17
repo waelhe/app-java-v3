@@ -14,6 +14,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class LedgerServiceTest {
@@ -397,6 +398,114 @@ class LedgerServiceTest {
         assertThat(result.getAvailableCents()).isEqualTo(9000L);
         // the SAR row was never touched by the USD commission
         verify(balanceRepository, never()).findById(new ProviderBalance.ProviderBalanceId(providerId, SAR));
+    }
+
+    // ---- A2 (owner-gate batch 6a — the ADR-0013 D3 §3 mirror rule) ----
+
+    /**
+     * A2: the commission reversal credit lands an entry and CREDITS the
+     * balance — the exact mirror image of the settlement's commission
+     * debit, on the same (provider, currency) balance the debit moved.
+     */
+    @Test
+    void creditFromCommissionReversalCreatesEntryAndCreditsBalance() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId =
+                UUID.nameUUIDFromBytes(("commission-reversal-" + paymentIntentId.toString()).getBytes());
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.empty());
+        ProviderBalance existing = ProviderBalance.empty(providerId, SAR);
+        existing.credit(5000L);
+        existing.debit(500L); // the settlement's commission debit (10%)
+        when(balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, SAR)))
+                .thenReturn(Optional.of(existing));
+        when(balanceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ProviderBalance result = service.creditFromCommissionReversal(providerId, paymentIntentId, 500L, SAR);
+
+        assertThat(result.getAvailableCents()).isEqualTo(5000L); // back to the pre-debit hold
+        verify(entryRepository).save(any(LedgerEntry.class));
+        verify(balanceRepository).save(any(ProviderBalance.class));
+    }
+
+    /**
+     * A2: the reversal's idempotent shape — the same replayed-listener
+     * no-op contract debitFromCommission carries (the pre-check is the
+     * optimization, the UNIQUE backstop the guarantee). The reversal key
+     * never collides with the commission debit's own
+     * "commission-&lt;intentId&gt;" key.
+     */
+    @Test
+    void creditFromCommissionReversalSkipsOnDuplicate() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID expectedSourceId =
+                UUID.nameUUIDFromBytes(("commission-reversal-" + paymentIntentId.toString()).getBytes());
+        UUID commissionDebitKey =
+                UUID.nameUUIDFromBytes(("commission-" + paymentIntentId.toString()).getBytes());
+        assertThat(expectedSourceId).isNotEqualTo(commissionDebitKey);
+        when(entryRepository.findBySourceId(expectedSourceId)).thenReturn(Optional.of(mock(LedgerEntry.class)));
+        ProviderBalance balance = ProviderBalance.empty(providerId, SAR);
+        balance.credit(5000L);
+        when(balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, SAR)))
+                .thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.creditFromCommissionReversal(providerId, paymentIntentId, 500L, SAR);
+
+        assertThat(result.getAvailableCents()).isEqualTo(5000L);
+        verify(entryRepository, never()).save(any());
+    }
+
+    /**
+     * A2 + B2: a negative reversal amount fails fast with VALIDATION (400)
+     * — the shared precondition every ledger money path carries.
+     */
+    @Test
+    void creditFromCommissionReversalRejectsNegativeAmount() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.creditFromCommissionReversal(providerId, paymentIntentId, -1L, SAR))
+                .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+        verify(entryRepository, never()).save(any());
+        verifyNoInteractions(balanceRepository);
+    }
+
+    /**
+     * A2: a zero reversal writes no entry — the zero-commission refund
+     * (an amount whose posted commission rounded to zero) is a no-op, the
+     * shared zero-shape every money path carries.
+     */
+    @Test
+    void creditFromCommissionReversalZeroAmountReturnsBalanceWithoutEntry() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        ProviderBalance balance = ProviderBalance.empty(providerId, USD);
+        balance.credit(5000L);
+        when(balanceRepository.findById(new ProviderBalance.ProviderBalanceId(providerId, USD)))
+                .thenReturn(Optional.of(balance));
+
+        ProviderBalance result = service.creditFromCommissionReversal(providerId, paymentIntentId, 0L, USD);
+
+        assertThat(result.getAvailableCents()).isEqualTo(5000L);
+        verify(entryRepository, never()).save(any());
+        verify(balanceRepository, never()).save(any());
     }
 
     @Test
