@@ -4,7 +4,7 @@
 -- media module's two status vocabularies. The account-erasure flow's
 -- media adapter (MediaPurgeAdapter — the AuthoredContentPurgePort
 -- contract the eleven free-text adapters already carry) writes
--- status = 'PURGED' on the erased subject's rows: a state no read rail
+-- status = 'PURGE_PENDING' before object-store work and 'PURGED' only after verified deletion on the erased subject's rows: a state no read rail
 -- presigns from (every rail filters status = 'UPLOADED'), closing the
 -- forever-renewed signed links for erased subjects (the ledger's own
 -- finding G3: «الوسائط بلا ساق محو أصلاً» — the pseudonymization plan
@@ -13,8 +13,8 @@
 -- The two inline CHECKs the V32/V87 waves pinned widen with the member:
 --   * media_assets_status_check (V32's CREATE TABLE inline CHECK),
 --   * review_media_status_check (V87's, the same vocabulary).
--- The enum stays the authority (MediaAssetStatus.PURGED — terminal,
--- written only by the purge adapter's native SQL); the CHECKs are the
+-- The enum stays the authority (PURGE_PENDING is the committed, retryable read tombstone;
+-- PURGED is terminal and is written only after object-store deletion succeeds); the CHECKs are the
 -- backstop (the discipline that governed V44, V56, V103, V296, V298).
 --
 -- The route is the house precedent verbatim (V187's own header
@@ -30,13 +30,13 @@
 -- creation order.
 --
 -- Both CHECKs validate clean by construction: the live rows carry only
--- PENDING_UPLOAD/UPLOADED — PURGED enters with this wave's purge
--- adapter alone.
+-- PENDING_UPLOAD/UPLOADED — PURGE_PENDING and PURGED are entered only by
+-- this wave's erasure state machine.
 
 ALTER TABLE media_assets DROP CONSTRAINT media_assets_status_check;
 ALTER TABLE media_assets
     ADD CONSTRAINT media_assets_status_check
-        CHECK (status IN ('PENDING_UPLOAD', 'UPLOADED', 'PURGED')) NOT VALID;
+        CHECK (status IN ('PENDING_UPLOAD', 'UPLOADED', 'PURGE_PENDING', 'PURGED')) NOT VALID;
 
 ALTER TABLE review_media DROP CONSTRAINT review_media_status_check;
 ALTER TABLE review_media
