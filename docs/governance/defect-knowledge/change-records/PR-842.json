@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "pullRequest": 842,
+  "governingFiles": [
+    ".ci/check_coderabbit_review_coverage.py",
+    ".ci/tests/test_coderabbit_review_coverage.py",
+    ".github/workflows/coderabbit-gate.yml",
+    "docs/governance/adversarial-behavioral-review-2026-11-12-owner-gate-recommendations.md",
+    "AGENTS.md",
+    "docs/governance/defect-knowledge/change-protocol.md",
+    "docs/governance/defect-knowledge/rulebook.md",
+    "docs/governance/defect-knowledge/pattern-catalog.md"
+  ],
+  "rulesTriggered": [
+    "A1",
+    "A3",
+    "A5",
+    "A6",
+    "B6"
+  ],
+  "patternsReviewed": [
+    "P2",
+    "P6",
+    "P9"
+  ],
+  "historicalCasesReviewed": [
+    "E-13",
+    "E-20"
+  ],
+  "invariants": [
+    "The declaration, not the chronology, is the coverage evidence: an empty-bodied approval (a good state) never hides a complete declaration on the same head, and a malformed declaration never falls back to an older one.",
+    "The newest review's state gates the evidence before any declaration is accepted: GOOD_STATES membership (APPROVED, COMMENTED) — a newest CHANGES_REQUESTED or DISMISSED review rejects coverage.",
+    "Every newest-review selection (latest_review verdict selector, declaring_review) breaks submitted_at ties by the later response position, mirroring the API's submission order.",
+    "A CHANGES_REQUESTED declaration is deliberately not coverage evidence even when followed by an empty approval on the same head (documented decision on PR #842's review)."
+  ],
+  "doors": [
+    ".ci/check_coderabbit_review_coverage.py run() — the candidate-head verdict door (newest state gate + declaring pair)",
+    "declaring_review / latest_review selectors — the two newest-selection doors the tie fixes close",
+    ".ci/tests/test_coderabbit_review_coverage.py — the pin door: 84 tests including the declaring-pair, malformed, CHANGES_REQUESTED/DISMISSED newest, and the two tie families",
+    "The gate workflow's poll step (coderabbit-gate.yml from main) — the verdict model this verifier must never contradict"
+  ],
+  "siblingSearch": [
+    {
+      "family": "Newest-item selection with submitted_at keys",
+      "pathsSearched": [
+        ".ci/check_coderabbit_review_coverage.py",
+        ".github/workflows/coderabbit-gate.yml",
+        ".ci/defect_knowledge_intake.py"
+      ],
+      "result": "declaring_review (round 12) and latest_review (round 13) were the two max()/stable-sort selections in the verifier; the gate workflow's own poll uses max() over its fetched list but reads the PR head at execution time and its re-run semantics are documented separately (the verifier's comment records the consistency doctrine); defect_knowledge_intake deduplicates by source ID, not by timestamp ordering, so no other member of the family carries the tie flaw."
+    }
+  ],
+  "tests": [
+    {
+      "name": "test_coderabbit_review_coverage.py (84 tests)",
+      "command": "python3 -m unittest discover -s .ci/tests -p 'test_coderabbit_review_coverage.py'",
+      "verification": "Measured locally on head 03e71780 before push: Ran 84 tests in 0.010s — OK; the required GitHub CI run ('Test CodeRabbit coverage verifier' step in ci.yml) executes on the PR head"
+    }
+  ],
+  "findings": [
+    {
+      "key": "W-842-1",
+      "domain": "ci.coderabbit-review-coverage",
+      "scenario": "CodeRabbit's request_changes_workflow posts a substantive COMMENTED review (Files selected for processing: N) and then an empty-bodied APPROVED review once findings resolve; the verifier's chronologically-newest selection read the empty body and failed the gate on a fully-declared head, while submitted_at ties resolved to the earlier review position and could pass a newer blocking review",
+      "invariant": "The coverage verifier reads the CodeRabbit processed-file declaration from the newest declaring review on the exact candidate head, and every newest-review selection (verdict or declaration) breaks submitted_at ties by the later response position — the API's submission order",
+      "fingerprint": "sha256:41b21feaf71017ccd8d7748b241311501b5565dcb5ba0a4f09b3c70cae59fa9c",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/842"
+      ],
+      "classification": "confirmed_defect",
+      "severity": "high",
+      "status": "fixed",
+      "note": "The verifier failed open-or-closed wrongly on fully-declared heads (the W8 mechanism measured live on #819/#820) and resolved submitted_at ties to the earlier review position.",
+      "fix": {
+        "commitSha": "03e717805fd778a7ba8524db6bb1fad99797f900",
+        "regressionTest": "test_coderabbit_review_coverage.py (84 tests)",
+        "verification": {
+          "status": "passed",
+          "testedHeadSha": "03e717805fd778a7ba8524db6bb1fad99797f900",
+          "workflowRunUrl": ""
+        }
+      }
+    }
+  ]
+}
