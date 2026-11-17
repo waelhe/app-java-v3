@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "pullRequest": 839,
+  "governingFiles": [
+    "Dockerfile",
+    ".github/workflows/railway-deploy.yml",
+    "docs/railway-deployment-reference.md",
+    "AGENTS.md",
+    "docs/governance/defect-knowledge/change-protocol.md",
+    "docs/governance/defect-knowledge/rulebook.md",
+    "docs/governance/defect-knowledge/pattern-catalog.md"
+  ],
+  "rulesTriggered": [
+    "A1",
+    "A3",
+    "A5",
+    "A6",
+    "B6"
+  ],
+  "patternsReviewed": [
+    "P1",
+    "P6",
+    "P9"
+  ],
+  "historicalCasesReviewed": [
+    "E-02",
+    "E-13",
+    "E-16"
+  ],
+  "invariants": [
+    "The Dockerfile builds on the live production service: the cache mount id s/<live service id>-<target> matches Railway's documented cache-mount form.",
+    "The manual deploy workflow posts to the live production project/environment/service, not the retired project.",
+    "No application code, database, runtime variables, secrets, or data resources change."
+  ],
+  "doors": [
+    "GitHub Actions railway-deploy.yml manual dispatch (workflow_dispatch) — the only door the workflow ids serve",
+    "Railway BUILD_IMAGE Dockerfile validation — the cache-mount id door",
+    "Auto-deploy on merge to main (GitHub-connected Railway binding) — unaffected: no Dockerfile cache-mount semantics change"
+  ],
+  "siblingSearch": [
+    {
+      "family": "Hard-coded deployment resource identifiers",
+      "pathsSearched": [
+        "Dockerfile",
+        "Dockerfile.staging",
+        ".github/workflows/railway-deploy.yml",
+        ".railway/railway.ts",
+        "docs/railway-deployment-reference.md"
+      ],
+      "result": "Dockerfile.staging does not carry a cache mount (verified — no --mount=type=cache in the staging file); .railway/railway.ts declares variables not service ids; the only other service-id literal was the comment block removed with the retired id. No other file carries the retired production service id."
+    }
+  ],
+  "tests": [
+    {
+      "name": "Railway read-back of live production resources",
+      "command": "Railway GraphQL/API read-back (documented in the PR body: project/environment/service ids, GitHub source waelhe/app-java-v3@main, domain target port 8080)",
+      "verification": "PR #839 body 'Verification' section — measured 2026-11-15 before the change"
+    },
+    {
+      "name": "Required GitHub CI on PR #839 head",
+      "command": "GitHub Actions: Build & Test (JDK 25), Full Integration Test (JDK 25), CodeQL, container scan, contract gates",
+      "verification": "CI on the PR head; the production redeploy executes only after merge per the auto-deploy binding"
+    }
+  ],
+  "findings": [
+    {
+      "key": "W-839-1",
+      "domain": "ci.railway-deploy",
+      "scenario": "A production deployment runs after the Railway service migration while the Dockerfile cache mount and railway-deploy.yml still carry the retired project/service ids, so Railway rejects the Dockerfile at BUILD_IMAGE validation",
+      "invariant": "The manual Railway deployment workflow targets the live production project, environment, and service; the Dockerfile cache mount id embeds the live production service id in Railway's documented cache-mount form",
+      "fingerprint": "sha256:b867c0a1a13e8c705a09a209092cd90b165875c09abfe741bc64f54a69fbbf2b",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/839"
+      ],
+      "classification": "environmental",
+      "severity": "high",
+      "status": "registered",
+      "note": "Provider-side resource migration (Railway service/account move) invalidated hard-coded deployment identifiers; fixed in this PR by re-targeting the live production resources (Dockerfile cache mount + railway-deploy.yml ids). Status registered because the production redeploy itself executes only after merge (auto-deploy on main), and the RAILWAY_TOKEN secret's access to the new project is a provider-side control the repository cannot read back — the PR body documents the distinction and the owner-gated production verification.",
+      "decision": {
+        "owner": "waelhe",
+        "url": "https://github.com/waelhe/app-java-v3/pull/839"
+      }
+    }
+  ]
+}
