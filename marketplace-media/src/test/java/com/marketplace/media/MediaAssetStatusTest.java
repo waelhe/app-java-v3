@@ -21,6 +21,16 @@ class MediaAssetStatusTest {
     // ---- G3 (owner-gate batch 6a — the erasure tombstone) ----
 
     @Test
+    void g3_pendingPurgeIsNotAnOwnerTransitionAndRemainsTerminalToPublicWrites() {
+        assertThrows(com.marketplace.shared.api.ConflictException.class,
+                () -> MediaAssetStatus.UPLOADED.validateTransitionTo(MediaAssetStatus.PURGE_PENDING));
+        assertThrows(com.marketplace.shared.api.ConflictException.class,
+                () -> MediaAssetStatus.PURGE_PENDING.validateTransitionTo(MediaAssetStatus.UPLOADED));
+        assertThrows(com.marketplace.shared.api.ConflictException.class,
+                () -> MediaAssetStatus.PURGE_PENDING.validateTransitionTo(MediaAssetStatus.PURGED));
+    }
+
+    @Test
     void g3_purgedIsTerminalAndNeverReachedThroughTheStateMachine() {
         // The tombstone is written ONLY by the purge adapter's native SQL
         // (the administrative erasure overwrite, the AuthoredContentPurgePort
