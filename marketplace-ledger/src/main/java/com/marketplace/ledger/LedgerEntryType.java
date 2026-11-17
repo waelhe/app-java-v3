@@ -13,5 +13,20 @@ public enum LedgerEntryType {
      * {@code chk_ledger_entries_entry_type} (V103/V104 — the §7 hard
      * rule: «نوع القيد تعداد Java مُغلق، لا صفًا في جدول إعدادات»).
      */
-    AD_DEBIT
+    AD_DEBIT,
+    /**
+     * A2 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * ADR-0013 D3 §3 mirror rule): the full refund's commission
+     * REVERSAL credit — the mirror image of the settlement's
+     * COMMISSION_DEBIT, posted in the SAME refund transaction the
+     * debitFromRefund mirror runs in. The ADR's own words: «a full
+     * REFUND reverses the credit and its commission mirror» — the
+     * pre-fix code executed only the credit reversal, so every full
+     * refund left the provider's balance negative by exactly the
+     * commission (the ledger's own finding A2). The database's closed
+     * set widens with this member through the V296/V297 pair (the
+     * V103/V104 + V290/V291 house shape: DROP/ADD NOT VALID, then the
+     * VALIDATE under its own SHARE UPDATE EXCLUSIVE scan).
+     */
+    COMMISSION_REVERSAL_CREDIT
 }
