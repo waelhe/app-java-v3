@@ -101,6 +101,15 @@ class RefundCarrierPoisoningIntegrationTest {
                     throw new UnsupportedOperationException(
                             "the A4 replay never verifies provider signatures");
                 }
+
+                @Override
+                public Long readRemoteRefundTotalCents(String pspIntentId) {
+                    // Round 10's live cumulative read: the A4 replay never
+                    // rides the refund.updated identity vehicle, so no
+                    // charge-backed cumulative exists to read — the null
+                    // contract (never an invented zero).
+                    return null;
+                }
             };
         }
     }
