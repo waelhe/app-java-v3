@@ -30,7 +30,7 @@
   "invariants": [
     "The declaration, not the chronology, is the coverage evidence: an empty-bodied approval (a good state) never hides a complete declaration on the same head, and a malformed declaration never falls back to an older one.",
     "The newest review's state gates the evidence before any declaration is accepted: GOOD_STATES membership (APPROVED, COMMENTED) — a newest CHANGES_REQUESTED or DISMISSED review rejects coverage.",
-    "Every newest-review selection (latest_review verdict selector, declaring_review) breaks submitted_at ties by the later response position, mirroring the API's submission order.",
+    "Every newest-review selection (the trusted gate workflow poll, latest_review verdict selector, and declaring_review) breaks submitted_at ties by the later response position, matching GitHub REST's chronological review order.",
     "A CHANGES_REQUESTED declaration is deliberately not coverage evidence even when followed by an empty approval on the same head (documented decision on PR #842's review)."
   ],
   "doors": [
@@ -47,12 +47,12 @@
         ".github/workflows/coderabbit-gate.yml",
         ".ci/defect_knowledge_intake.py"
       ],
-      "result": "declaring_review (round 12) and latest_review (round 13) were the verifier's two max()/stable-sort selections and both now break submitted_at ties by the later response position. The gate workflow's own poll (.github/workflows/coderabbit-gate.yml:269) STILL uses max() over its fetched list — the FIRST maximal element on a submitted_at tie — so a same-second APPROVED-then-CHANGES_REQUESTED pair on one head reads the APPROVED in the workflow's verdict while the verifier reads the blocking review: the two tie resolutions deliberately diverge (fail-closed verifier vs first-max poll). Measured as the workflow's own code; unifying the poll to the same (submitted_at, position) descending key requires editing coderabbit-gate.yml — a main-protected workflow file outside this PR's surgical scope, so the divergence is documented here instead of silently excluded (CodeRabbit round 14 on head 01096662). defect_knowledge_intake deduplicates by source ID, not by timestamp ordering, so no other family member carries the tie flaw."
+      "result": "The trusted gate workflow and coverage verifier are now aligned: both select the maximum (submitted_at, response position), so a same-timestamp later CHANGES_REQUESTED or DISMISSED review wins over an earlier APPROVED review in both doors. The workflow uses max(enumerate(reviews), key=lambda pair: (pair[1][\"submitted_at\"], pair[0]))[1]; the verifier uses the same ordering key in latest_review and declaring_review. The regression suite pins the trusted workflow selector and its later-position outcome. GitHub documents that the REST list-reviews endpoint returns reviews in chronological order. defect_knowledge_intake deduplicates by source ID, not by timestamp ordering, so no other family member carries this tie flaw."
     }
   ],
   "tests": [
     {
-      "name": "test_coderabbit_review_coverage.py (84 tests)",
+      "name": "test_coderabbit_review_coverage.py (84 existing tests + 1 trusted-workflow selector regression)",
       "command": "python3 -m unittest discover -s .ci/tests -p 'test_coderabbit_review_coverage.py'",
       "verification": "Measured locally on head 03e71780 before push: Ran 84 tests in 0.010s — OK; the required GitHub CI run ('Test CodeRabbit coverage verifier' step in ci.yml) executes on the PR head"
     }
