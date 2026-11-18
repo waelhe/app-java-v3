@@ -71,6 +71,9 @@ class RefundCarrierPoisoningIntegrationTest {
      * paid intent is planted directly, the real journey's process step
      * stays the PSP suite's own subject).
      */
+    /** The failing-once channel's refund-call counter (round 13's assertion hook). */
+    static volatile AtomicInteger REFUND_CALLS;
+
     @TestConfiguration
     static class FailingOnceChannelConfig {
 
@@ -78,6 +81,12 @@ class RefundCarrierPoisoningIntegrationTest {
         @Primary
         PspChannel failingOnceChannel() {
             AtomicInteger refundCalls = new AtomicInteger();
+            // Round 13: the channel's own call counter, exposed to the test
+            // so the poisoning replay asserts the channel was actually
+            // consulted TWICE — first attempt failed transiently, retry
+            // succeeded — instead of proving only the books' outcome (which
+            // a NO_CHANNEL bypass could also satisfy).
+            REFUND_CALLS = refundCalls;
             return new PspChannel() {
                 @Override
                 public RemoteIntent createRemoteIntent(UUID marketplaceIntentId, long amountCents,
@@ -175,5 +184,12 @@ class RefundCarrierPoisoningIntegrationTest {
                 .getRefundedAmountCents()).isEqualTo(1500L);
         assertThat(paymentIntentRepository.findById(plantedIntent.getId()).orElseThrow().getStatus())
                 .isEqualTo(PaymentIntentStatus.PARTIALLY_REFUNDED);
+
+        // CodeRabbit round 13: the books' numbers alone could also pass with
+        // the refund routed around the channel (NO_CHANNEL) — the counter
+        // proves the carrier's refund overload actually consulted the
+        // channel exactly twice: the first attempt failed transiently and
+        // the retry succeeded (the A4 replay's own shape).
+        assertThat(REFUND_CALLS.get()).isEqualTo(2);
     }
 }

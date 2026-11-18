@@ -142,6 +142,54 @@ class StripePspChannel implements PspChannel {
     }
 
     /**
+     * CodeRabbit round 13 (unified pagination-error contract): the SDK's
+     * {@code PagingIterator.next()} (v33.4.2 sources, line 58) wraps EVERY
+     * failed page fetch — {@code StripeException} included — in a raw
+     * {@code RuntimeException("Unable to lazy-load stripe objects", e)}
+     * that would escape this channel's {@code PspChannelException} contract.
+     * Every auto-pagination loop routes its iterable through this helper so
+     * a page failure mid-scan surfaces as {@code PspChannelException} with
+     * the cause preserved — never a partial total, never a refund created
+     * on an incomplete scan, never a foreign RuntimeException at the
+     * caller's retry boundary.
+     */
+    private static <T> Iterable<T> safePagination(Iterable<T> pages, String what) {
+        return () -> new java.util.Iterator<>() {
+            private final java.util.Iterator<T> delegate = pages.iterator();
+
+            @Override
+            public boolean hasNext() {
+                try {
+                    return delegate.hasNext();
+                } catch (RuntimeException e) {
+                    throw paged(e, what);
+                }
+            }
+
+            @Override
+            public T next() {
+                try {
+                    return delegate.next();
+                } catch (RuntimeException e) {
+                    throw paged(e, what);
+                }
+            }
+        };
+    }
+
+    /**
+     * The wrap itself: unwrap the SDK's own RuntimeException envelope down
+     * to its {@code StripeException} cause when present (the same channel
+     * contract the direct API calls use), and wrap anything else as the
+     * channel's own exception with the cause preserved.
+     */
+    private static PspChannelException paged(RuntimeException e, String what) {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        return new PspChannelException("Stripe pagination failed while " + what + ": "
+                + cause.getMessage(), cause);
+    }
+
+    /**
      * The operation's existing refund, matched by its provider metadata —
      * null when none exists. The list is filtered by the payment intent and
      * rides the documented auto-pagination. A matching refund whose provider
@@ -161,7 +209,8 @@ class StripePspChannel implements PspChannel {
             // every subsequent page fetch — an explicit params map would
             // RESET them and fetch unfiltered pages. The collection came from
             // the API response, so its response getter is attached.
-            for (com.stripe.model.Refund refund : refunds.autoPagingIterable()) {
+            for (com.stripe.model.Refund refund : safePagination(
+                    refunds.autoPagingIterable(), "listing refunds for intent " + pspIntentId)) {
                 if (!operationKey.equals(refund.getMetadata() == null
                         ? null : refund.getMetadata().get(OPERATION_KEY_METADATA))) {
                     continue;
@@ -225,7 +274,11 @@ class StripePspChannel implements PspChannel {
                     RequestOptions.builder().setApiKey(apiKey).build());
             long cumulative = 0L;
             boolean anyCharge = false;
-            for (Charge charge : charges.autoPagingIterable()) {
+            // Round 13: the pagination rides the unified error contract — a
+            // mid-scan page failure never answers a PARTIAL cumulative (the
+            // books-sync grounds reconciliation answers on this number).
+            for (Charge charge : safePagination(charges.autoPagingIterable(),
+                    "listing charges for the refund total read (intent " + pspIntentId + ")")) {
                 anyCharge = true;
                 if (charge.getAmountRefunded() != null) {
                     cumulative += charge.getAmountRefunded();
@@ -279,6 +332,14 @@ class StripePspChannel implements PspChannel {
             // the V33 link and its amount_refunded is the remote actual.
             Charge charge = extractCharge(event);
             if (charge != null) {
+                // CodeRabbit round 13: the refund identities are fetched ONLY
+                // for the one event type the dispatch consumes them under —
+                // charge.refunded. Every other charge-carrying event (e.g.
+                // charge.succeeded, charge.failed) answers its snapshot from
+                // the payload alone (cumulative only, no identity retrieval,
+                // no refunds fetch); the ignore path for unsubscribed events
+                // below stays exactly as it was.
+                boolean wantsIdentities = "charge.refunded".equals(event.getType());
                 // The identities are resolved only for a USABLE event (one
                 // carrying the payment_intent the dispatch resolves); an
                 // unusable one never reads its snapshot, so no retrieval
@@ -288,7 +349,7 @@ class StripePspChannel implements PspChannel {
                 // round 4): it is the fresher number from the same API
                 // snapshot the identities came from, never the event's stale
                 // one.
-                RefundIdentities identities = charge.getPaymentIntent() == null
+                RefundIdentities identities = charge.getPaymentIntent() == null || !wantsIdentities
                         ? new RefundIdentities(
                                 charge.getAmountRefunded() == null ? 0L : charge.getAmountRefunded(),
                                 List.of())
@@ -430,8 +491,12 @@ class StripePspChannel implements PspChannel {
         // TOP-LEVEL Refund.list collection carries its options and params,
         // so the no-arg overload is the correct call there).
         List<PspChannel.ExecutedRefund> executed = new ArrayList<>();
-        for (com.stripe.model.Refund refund : refunds.autoPagingIterable(
-                Map.of(), RequestOptions.builder().setApiKey(apiKey).build())) {
+        // Round 13: the nested multi-page collection rides the SAME unified
+        // pagination-error contract (a page failure here would strand a
+        // half-settled identity list outside PspChannelException).
+        for (com.stripe.model.Refund refund : safePagination(
+                refunds.autoPagingIterable(Map.of(), RequestOptions.builder().setApiKey(apiKey).build()),
+                "listing the charge's refunds")) {
             if ("succeeded".equals(refund.getStatus())) {
                 executed.add(toExecutedRefund(refund));
             }

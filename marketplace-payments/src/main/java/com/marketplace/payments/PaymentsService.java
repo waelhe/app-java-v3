@@ -330,7 +330,7 @@ public class PaymentsService implements PaymentsSpi {
                 if (refund != null && paymentIntentId != null && !refund.executedRefunds().isEmpty()) {
                     log.info("Webhook dispatch: {} for intent {} carrying {} executed refund identity/identities",
                             eventType, paymentIntentId, refund.executedRefunds().size());
-                    boolean settledAny = settleRefundOperations(paymentIntentId, refund.executedRefunds(), false);
+                    boolean settledAny = settleRefundOperations(paymentIntentId, refund.executedRefunds());
                     // CodeRabbit round 10 (data integrity — the books-sync
                     // precondition): a Refund object carries its OWN amount,
                     // never the charge's cumulative, and Stripe does not
@@ -1187,19 +1187,22 @@ public class PaymentsService implements PaymentsSpi {
      * the arithmetic already held); false keeps the caller's original
      * wait-for-webhook answer. A null read (no charge yet) changes nothing.
      */
-    private boolean refreshBooksThroughLiveRead(PaymentIntent intent, PaymentRefundOperation operation,
+    private Boolean refreshBooksThroughLiveRead(PaymentIntent intent, PaymentRefundOperation operation,
             String scopeKind) {
         PspChannel channel = pspChannel.getIfAvailable();
         if (channel == null || intent.getPspIntentId() == null) {
-            return false;
+            return null;
         }
         Long remoteTotal = channel.readRemoteRefundTotalCents(intent.getPspIntentId());
         if (remoteTotal == null) {
-            return false;
+            // The documented null contract (round 10): the provider has no
+            // charge yet — nothing refundable to ground on, so the caller's
+            // arithmetic keeps its own verdict.
+            return null;
         }
         Payment payment = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);
         if (payment == null) {
-            return false;
+            return null;
         }
         log.info("The {} refund operation {} is EXECUTED and the books' arithmetic alone passed — refreshing"
                 + " the books through the live remote cumulative {} cents before the reconciled answer",
@@ -1258,8 +1261,18 @@ public class PaymentsService implements PaymentsSpi {
                 // round 10 added (never a re-submission; a null or missing
                 // channel keeps the arithmetic's own verdict — the inert
                 // deployment's books follow the webhook vehicle only).
-                boolean groundedOnLiveRead = refreshBooksThroughLiveRead(intent, operation, scopeKind);
-                if (!booksSynced && !groundedOnLiveRead) {
+                Boolean liveGrounding = refreshBooksThroughLiveRead(intent, operation, scopeKind);
+                // CodeRabbit round 13 (the channel-backed gate): an ANSWERED
+                // live read is the only authority that THIS operation's money
+                // is in the books — the arithmetic's own pass (satisfiable by
+                // an independent refund's saturation) no longer grounds the
+                // gate while the provider can be consulted. A null live read
+                // (no charge yet at the provider) or a missing channel keeps
+                // the arithmetic's own verdict: the channel-less deployment's
+                // books follow the webhook vehicle only, and a charge-less
+                // intent has nothing refundable to ground on.
+                boolean reconciled = liveGrounding != null ? liveGrounding : booksSynced;
+                if (!reconciled) {
                     throw new ConflictException("The " + scopeKind + "'s refund operation already EXECUTED at the"
                             + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
                             + " but the local books await the charge.refunded sync — retry after the"
@@ -1317,8 +1330,11 @@ public class PaymentsService implements PaymentsSpi {
      * by the books' cumulative arithmetic. Keyless refunds (the dashboard)
      * and foreign payments are skipped.
      */
-    void settleRefundOperations(UUID paymentIntentId, List<PspChannel.ExecutedRefund> executedRefunds) {
-        settleRefundOperations(paymentIntentId, executedRefunds, false);
+    void settleRefundOperationsVoid(UUID paymentIntentId, List<PspChannel.ExecutedRefund> executedRefunds) {
+        // The void wrapper keeps the package's original no-op contract for the
+        // charge.refunded settle (round 13: the unused-marker overload was
+        // collapsed into the boolean form; its return is simply ignored).
+        settleRefundOperations(paymentIntentId, executedRefunds);
     }
 
     /**
@@ -1331,12 +1347,13 @@ public class PaymentsService implements PaymentsSpi {
      * returned boolean drives the live remote-total fetch that syncs the
      * books BEFORE any reconciliation answer reads them.
      *
-     * @return whether at least one SUBMITTED operation was settled EXECUTED
-     *         by THIS call (an already-EXECUTED or foreign record settles
-     *         nothing new — false, exactly like the pre-round-10 no-op).
+     * @return whether at least one identity matched THIS delivery's settle
+     *         path — a SUBMITTED → EXECUTED transition OR an already-EXECUTED
+     *         record's redelivery (round 11) — so the caller's live-read +
+     *         books re-sync rides either vehicle; a foreign or keyless record
+     *         settles nothing — false, exactly like the pre-round-10 no-op.
      */
-    boolean settleRefundOperations(UUID paymentIntentId, List<PspChannel.ExecutedRefund> executedRefunds,
-                                   boolean unusedMarker) {
+    boolean settleRefundOperations(UUID paymentIntentId, List<PspChannel.ExecutedRefund> executedRefunds) {
         Payment payment = paymentRepository.findByPaymentIntentId(paymentIntentId).orElse(null);
         if (payment == null) {
             log.warn("executed refund identities for intent {} without a local payment row — nothing to settle",
@@ -1427,7 +1444,7 @@ public class PaymentsService implements PaymentsSpi {
         // already carries its own cumulative (this sync applies it below) —
         // the round-10 live fetch is the refund.updated vehicle's need,
         // never this one's.
-        settleRefundOperations(paymentIntentId, executedRefunds, false);
+        settleRefundOperationsVoid(paymentIntentId, executedRefunds);
         // CodeRabbit #249 round 1: Stripe does not guarantee webhook delivery
         // order (official docs), and amount_refunded only grows — a snapshot
         // BELOW the synced local totals is a stale, out-of-order event and is
