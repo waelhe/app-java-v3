@@ -3,11 +3,13 @@ package com.marketplace.payments;
 import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Charge;
+import com.stripe.model.ChargeCollection;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.RefundCollection;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
+import com.stripe.param.ChargeListParams;
 import com.stripe.param.ChargeRetrieveParams;
 import com.stripe.param.RefundListParams;
 import com.stripe.param.PaymentIntentCreateParams;
@@ -201,6 +203,38 @@ class StripePspChannel implements PspChannel {
         } catch (StripeException e) {
             throw new PspChannelException("Stripe charge retrieval failed for refund "
                     + refund.getId() + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Round 10 — the live cumulative read the refund.updated settle needs
+     * ({@link PspChannel#readRemoteRefundTotalCents}): the intent's charges,
+     * each with its own {@code amount_refunded}, taken from the provider's
+     * own API — the same authoritative Charge retrieval
+     * {@code toRemoteRefund} performs for a single refund. The sum over the
+     * intent's charges is the provider's own model ("A PaymentIntent ...
+     * tracks the charge"), never a locally computed refund ledger. Returns
+     * {@code null} when the intent has no charge yet (nothing refunded, and
+     * nothing this contract may invent).
+     */
+    @Override
+    public Long readRemoteRefundTotalCents(String pspIntentId) {
+        try {
+            ChargeCollection charges = Charge.list(
+                    ChargeListParams.builder().setPaymentIntent(pspIntentId).setLimit(100L).build(),
+                    RequestOptions.builder().setApiKey(apiKey).build());
+            long cumulative = 0L;
+            boolean anyCharge = false;
+            for (Charge charge : charges.autoPagingIterable()) {
+                anyCharge = true;
+                if (charge.getAmountRefunded() != null) {
+                    cumulative += charge.getAmountRefunded();
+                }
+            }
+            return anyCharge ? cumulative : null;
+        } catch (StripeException e) {
+            throw new PspChannelException("Stripe charge listing failed for the refund total read (intent "
+                    + pspIntentId + "): " + e.getMessage(), e);
         }
     }
 

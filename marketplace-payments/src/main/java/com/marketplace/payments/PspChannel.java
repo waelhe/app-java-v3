@@ -69,6 +69,28 @@ public interface PspChannel {
      */
     VerifiedWebhook verifyWebhook(String rawPayload, String signatureHeader);
 
+    /**
+     * Reads the charge's CURRENT cumulative refunded amount through the
+     * provider's own API — the same authoritative cumulative read
+     * {@code createRemoteRefund} answers with (the retrieved
+     * {@code charge.amount_refunded}), not a sum the caller computes.
+     *
+     * <p><b>CodeRabbit round 10 on #828 (the refund.updated settle):</b> the
+     * {@code refund.updated}/{@code refund.created} identity vehicle carries
+     * NO cumulative (a Refund object knows its own amount, never the
+     * charge's total), and Stripe does not guarantee webhook delivery order
+     * (official webhooks documentation) — the identity event can arrive
+     * BEFORE the {@code charge.refunded} event whose cumulative would sync
+     * the books. Settling the journal EXECUTED on that arrival therefore
+     * needs the remote total fetched live from the provider before the
+     * caller's reconciliation answer reads the local books; otherwise an
+     * independent earlier refund satisfies the books' arithmetic alone
+     * while this operation's own money is missing from the synced total.
+     * Returns {@code null} when no charge-backed refund total is
+     * resolvable for the intent (never invented).</p>
+     */
+    Long readRemoteRefundTotalCents(String pspIntentId);
+
     /** Remote intent identifiers handed back to the calling client. */
     record RemoteIntent(String pspIntentId, String clientSecret) {}
 

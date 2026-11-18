@@ -330,7 +330,37 @@ public class PaymentsService implements PaymentsSpi {
                 if (refund != null && paymentIntentId != null && !refund.executedRefunds().isEmpty()) {
                     log.info("Webhook dispatch: {} for intent {} carrying {} executed refund identity/identities",
                             eventType, paymentIntentId, refund.executedRefunds().size());
-                    settleRefundOperations(paymentIntentId, refund.executedRefunds());
+                    boolean settledAny = settleRefundOperations(paymentIntentId, refund.executedRefunds(), false);
+                    // CodeRabbit round 10 (data integrity — the books-sync
+                    // precondition): a Refund object carries its OWN amount,
+                    // never the charge's cumulative, and Stripe does not
+                    // guarantee webhook delivery order — this identity event
+                    // can land BEFORE the charge.refunded cumulative whose
+                    // books-sync it assumed. Settling EXECUTED on that
+                    // arrival while the books still lag would let a caller's
+                    // reconciliation answer pass on an independent earlier
+                    // refund's arithmetic alone (the round-10 inline finding:
+                    // books 1000 satisfied 1000 >= 0 + 500 while the true
+                    // total including this operation's refund is 1500). The
+                    // remote cumulative is therefore fetched LIVE from the
+                    // channel — the same authoritative read the charge.refunded
+                    // sync applies — and the books sync to it HERE, before any
+                    // re-completion reads them. The old (no-channel or
+                    // unlinked) paths keep their no-op contract; a null read
+                    // means the provider answered no charge yet (nothing
+                    // refundable to invent).
+                    if (settledAny && externalId != null) {
+                        PspChannel channel = pspChannel.getIfAvailable();
+                        if (channel != null) {
+                            Long remoteTotal = channel.readRemoteRefundTotalCents(externalId);
+                            if (remoteTotal != null) {
+                                log.info("Webhook {} settled an operation for intent {} — syncing the books"
+                                        + " to the live remote cumulative {} cents before any reconciliation",
+                                        eventType, paymentIntentId, remoteTotal);
+                                syncRemoteRefund(paymentIntentId, remoteTotal);
+                            }
+                        }
+                    }
                 } else {
                     log.debug("Webhook {} without an executed refund identity or resolvable intent: "
                             + "nothing to settle", eventType);
@@ -1224,12 +1254,32 @@ public class PaymentsService implements PaymentsSpi {
      * and foreign payments are skipped.
      */
     void settleRefundOperations(UUID paymentIntentId, List<PspChannel.ExecutedRefund> executedRefunds) {
+        settleRefundOperations(paymentIntentId, executedRefunds, false);
+    }
+
+    /**
+     * CodeRabbit round 10 on #828 (the refund.updated settle): the caller
+     * must know whether THIS dispatch transitioned a journal record
+     * SUBMITTED → EXECUTED — that transition is the moment the operation's
+     * money is now provably at the provider while the local books may still
+     * lag (the charge.refunded cumulative event can arrive later; Stripe
+     * does not guarantee webhook delivery order — official docs). The
+     * returned boolean drives the live remote-total fetch that syncs the
+     * books BEFORE any reconciliation answer reads them.
+     *
+     * @return whether at least one SUBMITTED operation was settled EXECUTED
+     *         by THIS call (an already-EXECUTED or foreign record settles
+     *         nothing new — false, exactly like the pre-round-10 no-op).
+     */
+    boolean settleRefundOperations(UUID paymentIntentId, List<PspChannel.ExecutedRefund> executedRefunds,
+                                   boolean unusedMarker) {
         Payment payment = paymentRepository.findByPaymentIntentId(paymentIntentId).orElse(null);
         if (payment == null) {
             log.warn("executed refund identities for intent {} without a local payment row — nothing to settle",
                     paymentIntentId);
-            return;
+            return false;
         }
+        boolean settledAny = false;
         for (PspChannel.ExecutedRefund executed : executedRefunds == null
                 ? List.<PspChannel.ExecutedRefund>of() : executedRefunds) {
             if (executed.operationKey() == null) {
@@ -1244,10 +1294,12 @@ public class PaymentsService implements PaymentsSpi {
                 continue;
             }
             refundOperationJournal.markExecuted(executed.operationKey(), executed.refundId());
+            settledAny = true;
             log.info("Webhook settled refund operation {} as EXECUTED (remote refund {}) — "
                             + "identity-matched through the refund's provider metadata",
                     executed.operationKey(), executed.refundId());
         }
+        return settledAny;
     }
 
     /**
@@ -1293,8 +1345,11 @@ public class PaymentsService implements PaymentsSpi {
         // The identity settle runs BEFORE the out-of-order books guard: a
         // stale cumulative snapshot still carries REAL refund identities, and
         // the journal's EXECUTED record is a fact about the provider, not
-        // about the local books' ordering.
-        settleRefundOperations(paymentIntentId, executedRefunds);
+        // about the local books' ordering. The charge.refunded vehicle
+        // already carries its own cumulative (this sync applies it below) —
+        // the round-10 live fetch is the refund.updated vehicle's need,
+        // never this one's.
+        settleRefundOperations(paymentIntentId, executedRefunds, false);
         // CodeRabbit #249 round 1: Stripe does not guarantee webhook delivery
         // order (official docs), and amount_refunded only grows — a snapshot
         // BELOW the synced local totals is a stale, out-of-order event and is

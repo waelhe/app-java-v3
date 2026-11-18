@@ -615,4 +615,68 @@ class StripePspChannelTest {
             throw new IllegalStateException(e);
         }
     }
+
+    /**
+     * CodeRabbit round 10 — the live cumulative read the refund.updated
+     * settle path fetches ({@link StripePspChannel#readRemoteRefundTotalCents}):
+     * the intent's charges through the documented list API (payment_intent
+     * filter + auto-pagination), each contributing its OWN amount_refunded —
+     * the provider's cumulative per charge, never a locally computed refund
+     * ledger. Two charges on the intent (an original charge and its
+     * re-authorization) sum their refunded totals.
+     */
+    @Test
+    void readRemoteRefundTotalCents_sumsTheIntentChargesOwnCumulatives() {
+        Charge first = chargeFromSignedEvent("{\"id\":\"evt_c1\",\"object\":\"event\","
+                + "\"type\":\"charge.refunded\",\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{\"id\":\"ch_c1\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_tot\",\"amount_refunded\":1000}}}");
+        Charge second = chargeFromSignedEvent("{\"id\":\"evt_c2\",\"object\":\"event\","
+                + "\"type\":\"charge.refunded\",\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{\"id\":\"ch_c2\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_tot\",\"amount_refunded\":500}}}");
+        com.stripe.model.ChargeCollection charges =
+                Mockito.mock(com.stripe.model.ChargeCollection.class);
+        Mockito.when(charges.autoPagingIterable()).thenReturn(java.util.List.of(first, second));
+
+        try (MockedStatic<com.stripe.model.Charge> chargeMock = mockStatic(Charge.class)) {
+            chargeMock.when(() -> Charge.list(
+                            org.mockito.ArgumentMatchers.any(com.stripe.param.ChargeListParams.class),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)))
+                    .thenReturn(charges);
+
+            Long total = channel.readRemoteRefundTotalCents("pi_tot");
+
+            org.assertj.core.api.Assertions.assertThat(total).isEqualTo(1500L);
+            chargeMock.verify(() -> Charge.list(
+                            org.mockito.ArgumentMatchers.argThat(
+                                    (com.stripe.param.ChargeListParams params) -> params != null
+                                            && "pi_tot".equals(params.getPaymentIntent())),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)));
+        }
+    }
+
+    /**
+     * Round 10 — the null contract: an intent with no charge yet answers
+     * {@code null} (nothing refundable, never an invented zero from an empty
+     * page — the caller distinguishes "provider has no charge" from
+     * "provider says nothing refunded").
+     */
+    @Test
+    void readRemoteRefundTotalCents_intentWithoutCharges_answersNull() {
+        com.stripe.model.ChargeCollection charges =
+                Mockito.mock(com.stripe.model.ChargeCollection.class);
+        Mockito.when(charges.autoPagingIterable()).thenReturn(java.util.List.of());
+
+        try (MockedStatic<com.stripe.model.Charge> chargeMock = mockStatic(Charge.class)) {
+            chargeMock.when(() -> Charge.list(
+                            org.mockito.ArgumentMatchers.any(com.stripe.param.ChargeListParams.class),
+                            org.mockito.ArgumentMatchers.any(RequestOptions.class)))
+                    .thenReturn(charges);
+
+            Long total = channel.readRemoteRefundTotalCents("pi_empty");
+
+            org.assertj.core.api.Assertions.assertThat(total).isNull();
+        }
+    }
 }
