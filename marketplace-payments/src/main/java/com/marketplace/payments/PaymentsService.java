@@ -349,6 +349,13 @@ public class PaymentsService implements PaymentsSpi {
                     // unlinked) paths keep their no-op contract; a null read
                     // means the provider answered no charge yet (nothing
                     // refundable to invent).
+                    // Round 11 (the redelivery-after-read-failure window):
+                    // settledAny ALSO covers an identity matching an
+                    // already-EXECUTED record — markExecuted commits in its own
+                    // REQUIRES_NEW journal before a failing live read rolls the
+                    // carrier back and deletes the inbox row, so the redelivery
+                    // is the one vehicle that can finally sync the books; it
+                    // must not be skipped for lacking a NEW transition.
                     if (settledAny && externalId != null) {
                         PspChannel channel = pspChannel.getIfAvailable();
                         if (channel != null) {
@@ -1288,9 +1295,23 @@ public class PaymentsService implements PaymentsSpi {
             PaymentRefundOperation operation = refundOperationJournal.findSubmitted(executed.operationKey());
             // CodeRabbit round 7: an already-EXECUTED record needs no
             // delegation — the skip keeps the call sites' contract explicit
-            // instead of leaning on the journal's internal idempotence
-            if (operation == null || "EXECUTED".equals(operation.getStatus())
-                    || !payment.getId().equals(operation.getPaymentId())) {
+            // instead of leaning on the journal's internal idempotence.
+            // CodeRabbit round 11 (the redelivery-after-read-failure window):
+            // an already-EXECUTED record whose identity matches THIS delivery
+            // still reports true — markExecuted committed in its own
+            // REQUIRES_NEW journal before a failing readRemoteRefundTotalCents
+            // rolled the carrier back and deleted the inbox row, so the
+            // redelivery is the one vehicle that can finally sync the books.
+            // Reporting true drives the caller's live-read + books-sync; the
+            // mark itself stays idempotent under the journal's own key.
+            if (operation == null || !payment.getId().equals(operation.getPaymentId())) {
+                continue;
+            }
+            if ("EXECUTED".equals(operation.getStatus())) {
+                settledAny = true;
+                log.debug("Webhook redelivers the executed identity of operation {} (remote refund {}) — the"
+                        + " books re-sync rides the live read (the round-10 settle path)",
+                        executed.operationKey(), executed.refundId());
                 continue;
             }
             refundOperationJournal.markExecuted(executed.operationKey(), executed.refundId());

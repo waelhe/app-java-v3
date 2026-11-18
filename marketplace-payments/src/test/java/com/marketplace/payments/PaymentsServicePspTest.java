@@ -588,6 +588,68 @@ class PaymentsServicePspTest {
         assertEquals(0L, payment.getRefundedAmountCents());
     }
 
+    /**
+     * Round 11 — the redelivery-after-read-failure window the inline finding
+     * proved: markExecuted COMMITS in its own REQUIRES_NEW journal, then the
+     * live read throws (PspChannelException), the carrier rolls back and the
+     * compensating delete removes the inbox row — so the provider (or the
+     * recovery sweep) REDELIVERS the event. The redelivery's identity matches
+     * the now-already-EXECUTED record; the settle must NOT skip it as a no-new
+     * transition: the books re-sync rides the live read (succeeding this
+     * time), the journal is never re-marked, and no new refund is created.
+     * Without the fix the redelivery settled nothing (settledAny=false), the
+     * books stayed at the lagging 1000, and a re-completion passed
+     * 1000 >= 0 + 500 against the stale arithmetic.
+     */
+    @Test
+    void handleStripeWebhook_refundUpdated_redeliveryAfterReadFailure_reSyncsTheBooksForTheExecutedIdentity() {
+        when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_ru4")).thenReturn(Optional.empty());
+        when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        PaymentIntent intent = PaymentIntent.create(UUID.randomUUID(), UUID.randomUUID(), 3000L, null, null, null);
+        UUID intentId = intent.getId();
+        intent.markProcessing();
+        intent.markSucceeded();
+        Payment payment = Payment.create(intentId, 3000L);
+        payment.markCompleted("ch_ru4");
+        // the independent dashboard refund landed earlier: books at 1000
+        payment.markPartiallyRefunded(1000L);
+        intent.markPartiallyRefunded(1000L);
+        // the operation whose identity the event carries — ALREADY EXECUTED
+        // (the first delivery committed markExecuted in the journal's own
+        // REQUIRES_NEW, then the live read threw and the carrier rolled back)
+        String key = "marketplace-refund-" + payment.getId() + "-return-rU4-500";
+        PaymentRefundOperation executedAlready = new PaymentRefundOperation(key, payment.getId(), 500L, 0L);
+        executedAlready.markExecuted("re_late4");
+        when(intentRepository.findById(intentId)).thenReturn(Optional.of(intent));
+        when(paymentRepository.findByPaymentIntentId(intentId)).thenReturn(Optional.of(payment));
+        when(pspChannel.verifyWebhook("payloadU4", "t=1,v1=sig"))
+                .thenReturn(new PspChannel.VerifiedWebhook("evt_ru4", "refund.updated",
+                        intentId, "pi_remote_ru4", new PspChannel.RefundSnapshot(0L,
+                        java.util.List.of(new PspChannel.ExecutedRefund("re_late4", key)))));
+        when(refundOperationJournal.findSubmitted(key)).thenReturn(executedAlready);
+        // the live read answers the TRUE cumulative this time (the first
+        // delivery's read failed; the redelivery's succeeds)
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_ru4")).thenReturn(1500L);
+
+        boolean created = service(boundChannel).handleStripeWebhook("payloadU4", "t=1,v1=sig");
+
+        assertTrue(created);
+        // the journal is NOT re-marked (the record was already EXECUTED —
+        // the mark stays idempotent under its own key; no delegation ran)
+        verify(refundOperationJournal, never()).markExecuted(anyString(), anyString());
+        // the books re-synced to the live remote cumulative: 1500, not the
+        // lagging 1000 — the re-completion's gate reads the operation's own
+        // money IN the books
+        assertEquals(1500L, payment.getRefundedAmountCents());
+        assertEquals(1500L, intent.getRefundedAmountCents());
+        assertEquals(PaymentStatus.PARTIALLY_REFUNDED, payment.getStatus());
+        verify(intentRepository).save(any());
+        // no new refund was created anywhere on this path
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+    }
+
     /** Same snapshot redelivered under a new event id: no-op, no state-machine violation. */
     @Test
     void handleStripeWebhook_chargeRefunded_alreadySynced_isANoOp() {
