@@ -1171,6 +1171,52 @@ public class PaymentsService implements PaymentsSpi {
      * order, the gates, the messages (modulo the scope label) — is the two
      * blocks' shared discipline verbatim.</p>
      */
+    /**
+     * CodeRabbit round 12 on #828 (the live-read refresh under the executed
+     * answer): the books-sync gate's cumulative arithmetic alone cannot prove
+     * THIS operation's money reached the books — an INDEPENDENT event can
+     * saturate it while the operation's own settle is still pending (a failed
+     * live read rolled the carrier back after the journal's REQUIRES_NEW
+     * commit). When the arithmetic passes while the record is EXECUTED, the
+     * reconciled answer must stand on books that provably contain the
+     * operation's own money, so the LIVE remote cumulative is fetched and
+     * applied to the books HERE (the charge.refunded-equivalent sync, through
+     * the same {@code readRemoteRefundTotalCents} contract round 10 added) —
+     * never a re-submission and never a second remote refund. Returns true
+     * when the books NOW satisfy the gate (the live read converged them or
+     * the arithmetic already held); false keeps the caller's original
+     * wait-for-webhook answer. A null read (no charge yet) changes nothing.
+     */
+    private boolean refreshBooksThroughLiveRead(PaymentIntent intent, PaymentRefundOperation operation,
+            String scopeKind) {
+        PspChannel channel = pspChannel.getIfAvailable();
+        if (channel == null || intent.getPspIntentId() == null) {
+            return false;
+        }
+        Long remoteTotal = channel.readRemoteRefundTotalCents(intent.getPspIntentId());
+        if (remoteTotal == null) {
+            return false;
+        }
+        Payment payment = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);
+        if (payment == null) {
+            return false;
+        }
+        log.info("The {} refund operation {} is EXECUTED and the books' arithmetic alone passed — refreshing"
+                + " the books through the live remote cumulative {} cents before the reconciled answer",
+                scopeKind, operation.getIdempotencyKey(), remoteTotal);
+        syncRemoteRefund(intent.getId(), remoteTotal);
+        // re-read the row the sync just mutated (the caller's payment handle
+        // is stale for the re-check)
+        Payment refreshed = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);
+        if (refreshed == null) {
+            return false;
+        }
+        return operation.getAmountCents() == null
+                ? refreshed.getStatus() == PaymentStatus.REFUNDED
+                : refreshed.getRefundedAmountCents()
+                        >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
+    }
+
     private ScopedJournalRide rideScopedRefundJournal(Payment payment, PaymentIntent intent,
             String operationKey, Long amountCents, String scopeKind, boolean rejectFrozenAmountMismatch) {
         // read WITHOUT creating (the freeze-order rule): the record is
@@ -1202,7 +1248,18 @@ public class PaymentsService implements PaymentsSpi {
                         ? payment.getStatus() == PaymentStatus.REFUNDED
                         : payment.getRefundedAmountCents()
                                 >= operation.getBooksAtSubmitCents() + operation.getAmountCents();
-                if (!booksSynced) {
+                // CodeRabbit round 12: when the arithmetic passes, the pass
+                // itself is not proof THIS operation's money is in the books —
+                // an INDEPENDENT event (a dashboard refund's charge.refunded)
+                // can saturate the arithmetic alone. A channel-backed intent
+                // therefore re-grounds the answer on the provider's LIVE
+                // cumulative before the reconciled state returns: the books
+                // refresh through the same readRemoteRefundTotalCents contract
+                // round 10 added (never a re-submission; a null or missing
+                // channel keeps the arithmetic's own verdict — the inert
+                // deployment's books follow the webhook vehicle only).
+                boolean groundedOnLiveRead = refreshBooksThroughLiveRead(intent, operation, scopeKind);
+                if (!booksSynced && !groundedOnLiveRead) {
                     throw new ConflictException("The " + scopeKind + "'s refund operation already EXECUTED at the"
                             + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
                             + " but the local books await the charge.refunded sync — retry after the"

@@ -204,4 +204,50 @@ class PaymentsServiceReturnRefundJournalTest {
         // and markExecuted (the provider answer's durable recording).
         verify(journalRepository, org.mockito.Mockito.times(3)).findById(operationKey);
     }
+
+    /**
+     * CodeRabbit round 12 (the live-read refresh under the executed answer):
+     * the books' cumulative arithmetic ALONE passed (an INDEPENDENT event
+     * saturated it — 1000 of the 3000 charge) while THIS operation's own
+     * settle's live read had failed (the round-10 path: markExecuted committed
+     * in REQUIRES_NEW, the carrier rolled back, the inbox row deleted). The
+     * re-completion arriving NOW must not answer the reconciled state on the
+     * arithmetic alone: the live remote cumulative (1500 — the independent
+     * refund PLUS this operation's money) is fetched and applied to the books
+     * BEFORE the answer, and the reconciled state stands on books that
+     * provably contain the operation's own money. No re-submission, no
+     * re-marking.
+     */
+    @Test
+    void anIndependentEventSaturatingTheArithmetic_refreshesTheBooksThroughTheLiveReadBeforeTheAnswer() {
+        PaymentsService svc = service();
+        // the books carry an INDEPENDENT refund (1000) that saturated the
+        // gate's arithmetic: 1000 >= 0 + 500 for this operation's frozen 500
+        Payment payment = collectedPayment(1000L);
+        when(paymentRepository.findByPaymentIntentId(payment.getPaymentIntentId()))
+                .thenReturn(Optional.of(payment));
+        UUID returnId = UUID.randomUUID();
+        String operationKey = PaymentsService.StableRefundScope.forReturn(returnId)
+                .idempotencyKey(payment.getId(), 500L);
+        // the operation EXECUTED (its settle's journal commit survived the
+        // read failure and the carrier rollback); its own money (500) is at
+        // the provider but NOT provably in the books
+        when(journalRepository.findById(operationKey))
+                .thenReturn(Optional.of(executedOperation(payment.getId(), 500L, 0L)));
+        // the live remote cumulative: the independent 1000 PLUS this
+        // operation's 500 — the provider's own charge total right now
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_return")).thenReturn(1500L);
+
+        PaymentsService.RefundedPayment result =
+                svc.refundPayment(payment.getId(), 500L, PaymentsService.StableRefundScope.forReturn(returnId));
+
+        // the reconciled answer stands — no re-submission, no re-marking
+        assertThat(result).isNotNull();
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+        // and the books now carry the operation's own money: the live read
+        // (1500) was fetched and applied before the answer
+        verify(pspChannel).readRemoteRefundTotalCents("pi_remote_return");
+        assertThat(payment.getRefundedAmountCents()).isEqualTo(1500L);
+        assertThat(payment.getStatus()).isEqualTo(com.marketplace.payments.PaymentStatus.PARTIALLY_REFUNDED);
+    }
 }
