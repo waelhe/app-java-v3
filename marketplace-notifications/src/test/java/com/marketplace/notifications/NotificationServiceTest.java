@@ -152,9 +152,9 @@ class NotificationServiceTest {
         assertThat(saved.getAllValues().get(1).getMessage())
                 .isEqualTo("طلب حجز جديد: " + bookingId);
         verify(emailService).send(eq(CONSUMER_EMAIL), eq("تم إنشاء الحجز"),
-                eq("email/notification"), eq(java.util.Map.of("message", "تم إنشاء حجزك " + bookingId + ".")));
+                eq("email/notification"), eq(java.util.Map.of("message", "تم إنشاء حجزك " + bookingId + ".")), any());
         verify(emailService).send(eq(PROVIDER_EMAIL), eq("طلب حجز جديد"),
-                eq("email/notification"), eq(java.util.Map.of("message", "طلب حجز جديد " + bookingId + " لخدمتك.")));
+                eq("email/notification"), eq(java.util.Map.of("message", "طلب حجز جديد " + bookingId + " لخدمتك.")), any());
     }
 
     @Test
@@ -174,7 +174,7 @@ class NotificationServiceTest {
 
         service.onBookingCreated(bookingId);
 
-        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
 
@@ -221,8 +221,8 @@ class NotificationServiceTest {
         service.onBookingConfirmed(bookingId);
 
         // One email and one WS push, both addressed to the consumer alone.
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), eq("Booking Confirmed"), anyString(), anyMap());
-        verify(emailService, never()).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), eq("Booking Confirmed"), anyString(), anyMap(), any());
+        verify(emailService, never()).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
         verify(messagingTemplate, times(1))
                 .convertAndSend(eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
     }
@@ -251,7 +251,7 @@ class NotificationServiceTest {
 
         service.onBookingConfirmed(bookingId);
 
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, times(1)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
@@ -332,8 +332,8 @@ class NotificationServiceTest {
 
         service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
 
-        verify(emailService, never()).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
         verify(repository, times(2)).save(any(Notification.class));
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
@@ -363,7 +363,7 @@ class NotificationServiceTest {
         service.onBookingCreated(bookingId);
 
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(repository, times(2)).save(any(Notification.class));
     }
 
@@ -575,7 +575,7 @@ class NotificationServiceTest {
 
         service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
 
-        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
 
@@ -603,7 +603,7 @@ class NotificationServiceTest {
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -633,7 +633,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getType()).isEqualTo("POST_COMMENTED");
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -665,7 +665,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(listingId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -701,7 +701,7 @@ class NotificationServiceTest {
                 .isEqualTo("تمت مراجعة منشور الخاص بك: " + targetId);
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -733,7 +733,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(postId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -765,7 +765,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(listingId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -795,7 +795,7 @@ class NotificationServiceTest {
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -913,7 +913,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(conversationId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -944,7 +944,7 @@ class NotificationServiceTest {
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -980,7 +980,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains("تم توثيق عضويتك");
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -1011,7 +1011,7 @@ class NotificationServiceTest {
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -1049,7 +1049,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(targetId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -1085,6 +1085,6 @@ class NotificationServiceTest {
         verify(repository, times(1)).save(saved.capture());
         assertThat(saved.getValue().getMessage()).contains("تم رفض البلاغ");
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 }

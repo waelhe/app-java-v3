@@ -63,6 +63,9 @@ spring:
     # production (auth + TLS) — staging mail is submitted for real into a
     # dedicated mailbox, never silently dropped, so the mail journey's
     # production path is what gets measured.
+    # CodeRabbit round 1: this STAGING path is SMTP (the spring.mail block
+    # below) — it does not exercise the Resend HTTPS transport, which only
+    # the production profile (MARKETPLACE_MAIL_PROVIDER=resend) activates.
     host: ${MAIL_HOST}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME}

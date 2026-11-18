@@ -83,13 +83,15 @@ public class NotificationService {
             emailNotificationService.sendEmail(info.consumerId(),
                     text.compose("email.BOOKING_CREATED.consumer.subject", platform),
                     "email/notification",
-                    Map.of("message", text.compose("email.BOOKING_CREATED.consumer.body", platform, bookingId)));
+                    Map.of("message", text.compose("email.BOOKING_CREATED.consumer.body", platform, bookingId)),
+                    deliveryKey("BOOKING_CREATED", info.consumerId(), bookingId));
         }
         if (preferences.isChannelEffectivelyEnabled(info.providerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(info.providerId(),
                     text.compose("email.BOOKING_CREATED.provider.subject", platform),
                     "email/notification",
-                    Map.of("message", text.compose("email.BOOKING_CREATED.provider.body", platform, bookingId)));
+                    Map.of("message", text.compose("email.BOOKING_CREATED.provider.body", platform, bookingId)),
+                    deliveryKey("BOOKING_CREATED", info.providerId(), bookingId));
         }
         sendWebSocket(info.consumerId(), NotificationType.BOOKING_CREATED, consumerMessage);
         sendPush(info.consumerId(), NotificationType.BOOKING_CREATED, consumerMessage);
@@ -117,7 +119,8 @@ public class NotificationService {
                 NotificationType.BOOKING_CONFIRMED.name(), "Booking confirmed: " + bookingId));
         if (preferences.isChannelEffectivelyEnabled(info.consumerId(), NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(info.consumerId(), "Booking Confirmed", "email/notification",
-                    Map.of("message", "Your booking " + bookingId + " has been confirmed."));
+                    Map.of("message", "Your booking " + bookingId + " has been confirmed."),
+                    deliveryKey("BOOKING_CONFIRMED", info.consumerId(), bookingId));
         }
         sendWebSocket(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
         sendPush(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
@@ -475,7 +478,13 @@ public class NotificationService {
         emailNotificationService.sendEmail(userId, "Reset Your Password", "email/password-reset",
                 Map.of("name", displayName == null ? "" : displayName,
                         "resetLink", resetLink,
-                        "expirationMinutes", expirationMinutes));
+                        "expirationMinutes", expirationMinutes),
+                // round 1: the reset REQUEST's own occurrence — the link the
+                // token minted, stable across the registry's resubmission of
+                // this SAME event. The time-varying remaining-minutes stays in
+                // the payload only: a resubmission re-derives the SAME key
+                // (a replay), never a second email for one link.
+                deliveryKey("PASSWORD_RESET", userId, resetLink));
     }
 
     /**
@@ -491,7 +500,11 @@ public class NotificationService {
         emailNotificationService.sendEmail(userId, "Welcome to Marketplace — verify your email",
                 "email/welcome",
                 Map.of("name", displayName == null ? "" : displayName,
-                        "verificationLink", verificationLink));
+                        "verificationLink", verificationLink),
+                // round 1: the verification REQUEST's own occurrence — the
+                // one-time link the token minted; a resubmission of the same
+                // event replays, a fresh request mints a fresh link and sends.
+                deliveryKey("EMAIL_VERIFICATION", userId, verificationLink));
     }
 
     /**
@@ -693,7 +706,8 @@ public class NotificationService {
                 NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.MESSAGE_RECEIVED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("MESSAGE_RECEIVED", recipientId, conversationId));
         }
         sendWebSocket(recipientId, NotificationType.MESSAGE_RECEIVED, message);
         sendPush(recipientId, NotificationType.MESSAGE_RECEIVED, message);
@@ -959,5 +973,24 @@ public class NotificationService {
     public int markAllAsRead(Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         return repository.markAllAsReadByRecipientId(userId);
+    }
+
+    /**
+     * CodeRabbit round 1 on #840 (the delivery identity): the notification's
+     * OCCURRENCE key for the email transport's idempotency — the type plus
+     * the occurrence-bearing identifiers the event already carries. Two
+     * distinct occurrences that render identically (two messages of one
+     * conversation) stay distinct by construction; a registry resubmission of
+     * the SAME event re-derives the SAME key (a replay, never a
+     * double-send). The recipient's id rides the key too — one event
+     * delivering to two participants (the booking pair, the payment pair)
+     * sends two emails, one per recipient, each with its own record.
+     */
+    private static String deliveryKey(String type, UUID recipientId, Object... occurrenceIds) {
+        StringBuilder key = new StringBuilder("marketplace-email-").append(type).append('-').append(recipientId);
+        for (Object id : occurrenceIds) {
+            key.append('-').append(id);
+        }
+        return key.toString();
     }
 }

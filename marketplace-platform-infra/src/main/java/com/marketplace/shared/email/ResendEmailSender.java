@@ -21,11 +21,16 @@ import org.thymeleaf.context.Context;
 /**
  * Resend HTTPS implementation of the platform's transactional email contract.
  *
- * <p>The idempotency key is a SHA-256 fingerprint of the rendered request.
- * It remains stable across retries of an unchanged payload. Resend retains
- * keys for 24 hours; this is a bounded retry safeguard, not a claim of
- * permanent exactly-once delivery. A durable event/delivery identifier is
- * still required for stronger long-term deduplication.
+ * <p>The idempotency key rides the caller's DELIVERY KEY — the
+ * notification's occurrence identity (CodeRabbit round 1: two distinct
+ * occurrences that render identically must never collapse into one provider
+ * idempotency record). Callers without an occurrence key fall back to a
+ * SHA-256 fingerprint of the STABLE request shape (the rendered HTML
+ * excluded — its time-varying fragments must not turn a resubmission into a
+ * double-send). Resend retains keys for 24 hours; this is a bounded retry
+ * safeguard, not a claim of permanent exactly-once delivery. A durable
+ * event/delivery identifier is still required for stronger long-term
+ * deduplication.
  */
 public class ResendEmailSender implements EmailSender {
 
@@ -43,18 +48,44 @@ public class ResendEmailSender implements EmailSender {
     }
 
     @Override
+    public void send(String to, String subject, String template, Map<String, Object> variables) {
+        send(to, subject, template, variables, null);
+    }
+
+    /**
+     * CodeRabbit round 1 (major — the delivery identity): the idempotency
+     * key rides the notification's OCCURRENCE identity when the caller
+     * carries one, never the rendered-content fingerprint. Two distinct
+     * occurrences that render identically (two messages of one
+     * conversation: same subject, same template, same composed text) kept
+     * collapsing into one provider idempotency record — the second email
+     * silently never went out while its event completed as delivered. With
+     * no caller key the content fingerprint remains the fallback (the
+     * legacy callers' own contract), EXCLUDING the time-varying payload
+     * fragments so a registry resubmission of the SAME event replays the
+     * same key instead of double-sending a fresh one (the password-reset's
+     * remaining-minutes rendered 29 then 28 across a resubmission — the
+     * round-1 Minor finding). The resilience annotations live HERE (the
+     * once-annotated legacy overload simply delegates into this method, so
+     * the retry/circuit/observation wrap the actual network call exactly
+     * once per send).
+     */
+    @Override
     @Retry(name = "mailSend")
     @CircuitBreaker(name = "mailSend")
     @ConcurrencyLimit(3)
     @Observed(name = "email.send")
-    public void send(String to, String subject, String template, Map<String, Object> variables) {
+    public void send(String to, String subject, String template, Map<String, Object> variables,
+                     String deliveryKey) {
         try {
             Context context = new Context();
             context.setVariables(variables);
             String html = templateEngine.process(template, context);
 
             SendEmailRequest request = new SendEmailRequest(from, List.of(to), subject, html);
-            String idempotencyKey = idempotencyKey(from, to, subject, template, html);
+            String idempotencyKey = deliveryKey != null && !deliveryKey.isBlank()
+                    ? deliveryKey
+                    : idempotencyKey(from, to, subject, template, variables);
 
             SendEmailResponse response = restClient.post()
                     .uri("/emails")
@@ -76,9 +107,18 @@ public class ResendEmailSender implements EmailSender {
         }
     }
 
+    /**
+     * The fallback fingerprint WITHOUT the rendered HTML: the stable
+     * request shape (from, to, subject, template, the template's OWN
+     * variables map). The rendered HTML is deliberately excluded — it
+     * embeds time-varying fragments (the reset mail's remaining-minutes),
+     * and a registry resubmission of the SAME event must re-derive the
+     * SAME key to replay, not a fresh one to double-send.
+     */
     private static String idempotencyKey(String from, String to, String subject,
-            String template, String html) {
-        String fingerprint = String.join("\n", from, to, subject, template, html);
+            String template, Map<String, Object> variables) {
+        String fingerprint = String.join("\n", from, to, subject, template,
+                String.valueOf(variables));
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(fingerprint.getBytes(StandardCharsets.UTF_8));

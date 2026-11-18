@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyMap;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -42,7 +43,7 @@ class EmailNotificationServiceTest {
 
         service.sendEmail(USER_ID, "Test Subject", "email/template", Map.of("key", "value"));
 
-        verify(emailService).send(eq(USER_EMAIL), eq("Test Subject"), eq("email/template"), anyMap());
+        verify(emailService).send(eq(USER_EMAIL), eq("Test Subject"), eq("email/template"), anyMap(), any());
     }
 
     @Test
@@ -64,14 +65,14 @@ class EmailNotificationServiceTest {
 
         service.sendEmail(USER_ID, "Test Subject", "email/template", Map.of("key", "value"));
 
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
     void sendEmailPropagatesExceptionOnFailure() {
         EmailSender emailService = mock(EmailSender.class);
         doThrow(new EmailSendException("SMTP error", new RuntimeException()))
-                .when(emailService).send(anyString(), anyString(), anyString(), anyMap());
+                .when(emailService).send(anyString(), anyString(), anyString(), anyMap(), any());
         UserLookupPort userLookupPort = mockUserLookup();
         EmailNotificationService service = new EmailNotificationService(Optional.of(emailService), userLookupPort);
 
