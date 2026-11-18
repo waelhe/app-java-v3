@@ -1024,5 +1024,20 @@ class RunPathTests(ManifestTests):
             self.run_gate(client)
 
 
+class GateWorkflowTests(unittest.TestCase):
+    def test_trusted_gate_breaks_equal_timestamps_by_later_api_position(self):
+        workflow = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "coderabbit-gate.yml"
+        source = workflow.read_text(encoding="utf-8")
+        selector = 'latest = max(enumerate(reviews), key=lambda pair: (pair[1]["submitted_at"], pair[0]))[1] if reviews else None'
+        self.assertIn(selector, source)
+        self.assertNotIn('latest = max(reviews, key=lambda r: r["submitted_at"]) if reviews else None', source)
+
+        earlier = {"id": 1, "state": "APPROVED", "submitted_at": "2026-11-18T10:00:00Z"}
+        later = {"id": 2, "state": "CHANGES_REQUESTED", "submitted_at": "2026-11-18T10:00:00Z"}
+        selected = max(enumerate([earlier, later]),
+                       key=lambda pair: (pair[1]["submitted_at"], pair[0]))[1]
+        self.assertIs(selected, later)
+
+
 if __name__ == "__main__":
     unittest.main()
