@@ -20,8 +20,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *
  * <p>The listener deliberately suspends transaction resources after commit.
  * {@link AuthoredContentPurgeService} fans out to module-owned adapters, each
- * of which commits independently. A failed adapter leaves its own work
- * retryable; the failed event publication is recovered by the existing
+ * of which commits independently. It runs before {@link AuditHistoryPurgeService}
+ * because b-4 must recover the original subject closure from {@code users_aud}
+ * before scrubbing audit columns and deleting that mirror. Both stages are
+ * idempotent; a failed stage leaves completed statements committed and the
+ * failed event publication is recovered by the existing
  * {@code EventPublicationResubmission} sweep. The administrator's
  * {@code POST /users/{id}/purge-content} surface remains available as an
  * explicit idempotent repair/retry operation.</p>
@@ -43,9 +46,11 @@ public class AccountIdentityContentPurger {
     }
 
     /**
-     * Purges the identity's authored content only after pseudonymization is
-     * committed. The service itself rejects a live account and each module
-     * adapter is idempotent, so a resubmitted publication safely resumes.
+     * Completes b-3 authored-content purge and b-4 audit-identity purge only
+     * after pseudonymization is committed. The content stage runs first so the
+     * audit stage can recover the original subject closure from users_aud
+     * before deleting the mirror. Both services reject a live account and
+     * both stages are idempotent, so a resubmitted publication safely resumes.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
