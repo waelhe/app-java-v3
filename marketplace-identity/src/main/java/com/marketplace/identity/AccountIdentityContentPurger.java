@@ -34,9 +34,12 @@ public class AccountIdentityContentPurger {
     private static final String ACTOR = "system";
 
     private final AuthoredContentPurgeService authoredContentPurgeService;
+    private final AuditHistoryPurgeService auditHistoryPurgeService;
 
-    public AccountIdentityContentPurger(AuthoredContentPurgeService authoredContentPurgeService) {
+    public AccountIdentityContentPurger(AuthoredContentPurgeService authoredContentPurgeService,
+                                        AuditHistoryPurgeService auditHistoryPurgeService) {
         this.authoredContentPurgeService = authoredContentPurgeService;
+        this.auditHistoryPurgeService = auditHistoryPurgeService;
     }
 
     /**
@@ -47,8 +50,14 @@ public class AccountIdentityContentPurger {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void onAccountIdentityErased(AccountIdentityErased event) {
-        int purgedRows = authoredContentPurgeService.purge(event.userId(), REASON, ACTOR);
-        log.info("Account erasure content purge completed: userId={}, rowsPurged={}",
-                event.userId(), purgedRows);
+        int contentRowsPurged = authoredContentPurgeService.purge(event.userId(), REASON, ACTOR);
+        // b-4 is deliberately second: its closure is recovered from users_aud
+        // before deleting that mirror, and its scrub must include every audit
+        // column left by the b-3 authored-content adapters.
+        var auditResult = auditHistoryPurgeService.purge(event.userId(), REASON, ACTOR);
+        log.info("Account erasure purge completed: userId={}, contentRowsPurged={}, "
+                        + "auditCellsScrubbed={}, userAuditRowsDeleted={}",
+                event.userId(), contentRowsPurged, auditResult.scrubbedRows(),
+                auditResult.usersAudRowsDeleted());
     }
 }
