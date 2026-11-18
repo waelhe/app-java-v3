@@ -174,17 +174,9 @@ class AuthoredContentPurgeIntegrationTest {
 
         GateResult admin = adminGate();
 
-        // The purge's own guard: it completes an erasure flow — Phase 1's
-        // surface must run first (the plan's §5-أ, the real HTTP path).
-        HttpResponse<String> pseudonymize = postJsonWithBearer(
-                "/api/v1/admin/users/" + subjectId + "/pseudonymize", admin.accessToken(),
-                "{\"reason\":\"data-subject erasure request\"}");
-        assertThat(pseudonymize.statusCode())
-                .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
-
-        // The cache guard's warm-up (CodeRabbit #318 round 1, adopted):
-        // the un-purged persona enters the real "providers" cache through
-        // the real read path BEFORE the purge runs.
+        // Warm the real provider cache BEFORE identity erasure. The
+        // AFTER_COMMIT consumer must evict this stale entry after its JDBC
+        // adapter clears the authored persona fields.
         com.marketplace.provider.ProviderProfile prePurge =
                 providerService.getById(f.subjectProfileId());
         assertThat(prePurge.getDisplayName()).isEqualTo("Subject The Provider");
@@ -192,26 +184,27 @@ class AuthoredContentPurgeIntegrationTest {
         assertThat(prePurge.getAgencyName()).isEqualTo("Subject Agency LLC");
         assertThat(prePurge.getLicenseNumber()).isEqualTo("BR-2026-0001");
 
-        // The action — real HTTP through the administrative surface.
-        HttpResponse<String> purge = postJsonWithBearer(
-                "/api/v1/admin/users/" + subjectId + "/purge-content", admin.accessToken(),
+        // The real pseudonymization command publishes AccountIdentityErased
+        // in its database transaction. AccountIdentityContentPurger consumes
+        // it synchronously AFTER_COMMIT and runs all module adapters through
+        // the existing idempotent orchestrator; no second admin request is
+        // needed to complete the authored-content erasure.
+        HttpResponse<String> pseudonymize = postJsonWithBearer(
+                "/api/v1/admin/users/" + subjectId + "/pseudonymize", admin.accessToken(),
                 "{\"reason\":\"data-subject erasure request\"}");
-        assertThat(purge.statusCode())
-                .as("purge call: %s", body(purge)).isEqualTo(200);
-        JsonNode purgeBody = objectMapper.readTree(purge.body());
-        assertThat(purgeBody.path("purgedRows").asInt())
-                .as("the exact fan-out count, measured against the seeded "
-                        + "fixture (CodeRabbit's round-1 arithmetic, adopted; "
-                        + "extended by the §9 listings row's eighth converter "
-                        + "and the L36 persona fields): "
-                        + "2 bookings (1+1) + 3 messaging (2 base + 1 mirror — "
-                        + "the seed plants ONE subject message mirror) + 4 review "
-                        + "comments + 4 review replies (2 base + 2 mirror each) "
-                        + "6 profile fields (name+bio+agency+license, base+mirror) "
-                        + "+ 4 listing "
-                        + "fields (title+description, base+mirror — the catalog "
-                        + "adapter) + 2 disputes + 2 notifications")
-                .isEqualTo(27);
+        assertThat(pseudonymize.statusCode())
+                .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
+
+        // The provider read must now return the erased profile, not the
+        // pre-erasure Redis value warmed above. This verifies the adapter's
+        // existing targeted AFTER_COMMIT cache invalidation as part of the
+        // complete account-erasure event path.
+        com.marketplace.provider.ProviderProfile postPurge =
+                providerService.getById(f.subjectProfileId());
+        assertThat(postPurge.getDisplayName()).isEqualTo(PURGED_MARKER);
+        assertThat(postPurge.getBio()).isNull();
+        assertThat(postPurge.getAgencyName()).isNull();
+        assertThat(postPurge.getLicenseNumber()).isNull();
 
         // -- bookings (V3: notes is nullable -> NULL) ---------------------
         assertThat(jdbcTemplate.queryForObject(
