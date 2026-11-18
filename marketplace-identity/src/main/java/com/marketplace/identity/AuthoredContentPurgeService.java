@@ -14,8 +14,10 @@ import org.springframework.stereotype.Service;
 /**
  * I7 Phase 3 (account-pseudonymization-plan §2 gate b-3 + §7 Phase 3
  * row — the extended purges, executed on the user's gate-opening word):
- * the identity module's orchestration of the free-text purge. Official
- * basis: the plan's purge option, verbatim — "تطهير نصوص مرسلها
+ * the identity module's orchestration of the free-text purge. The ordinary
+ * account-erasure path invokes this service from the durable
+ * {@code AccountIdentityErased} AFTER_COMMIT consumer; the administrative
+ * endpoint remains an explicit repair/retry surface. Official basis: the plan's purge option, verbatim — "تطهير نصوص مرسلها
  * ({@code messages.content}/{@code bookings.notes}…) — UPDATE عبر
  * الجداول — يُمسّ تاريخ الطرف المقابل؛ يُقيَّد بحقوق الآخرين (Art.
  * 20(4))".
