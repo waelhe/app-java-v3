@@ -234,25 +234,21 @@ class AuditHistoryPurgeIntegrationTest {
         assertThat(pseudonymize.statusCode())
                 .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
 
-        // The action — real HTTP through the administrative surface.
+        // AccountIdentityContentPurger has already run b-3 and b-4 from
+        // the durable AFTER_COMMIT publication. The administrative surface
+        // remains the explicit repair path; replaying it must now be a no-op.
         HttpResponse<String> purge = postJsonWithBearer(
                 "/api/v1/admin/users/" + subjectId + "/purge-audit-history", admin.accessToken(),
-                "{\"reason\":\"data-subject erasure request\"}");
+                "{\"reason\":\"retry after automatic account erasure\"}");
         assertThat(purge.statusCode())
-                .as("purge call: %s", body(purge)).isEqualTo(200);
+                .as("audit purge replay: %s", body(purge)).isEqualTo(200);
         JsonNode purgeBody = objectMapper.readTree(purge.body());
-        int scrubbed = purgeBody.path("scrubbedRows").asInt();
-        int deleted = purgeBody.path("usersAudRowsDeleted").asInt();
-        // The measured floor: the target's booking (created_by + updated_by)
-        // + the mirror row (created_by + updated_by) + his own users row's
-        // created_by (the real sync wrote it) — every cell the closure
-        // touches, counted per statement.
-        assertThat(scrubbed).as("the scrub's exact floor (target booking 2 + mirror 2 + users 1)")
-                .isGreaterThanOrEqualTo(5);
-        // The real Envers path wrote the ADD revision + the
-        // pseudonymization MOD revision.
-        assertThat(deleted).as("the mirror deletion's floor (ADD + MOD revisions)")
-                .isGreaterThanOrEqualTo(2);
+        assertThat(purgeBody.path("scrubbedRows").asInt())
+                .as("AFTER_COMMIT audit scrub already completed")
+                .isZero();
+        assertThat(purgeBody.path("usersAudRowsDeleted").asInt())
+                .as("AFTER_COMMIT users_aud deletion already completed")
+                .isZero();
 
         // The target's audit identity died in the seeded cells...
         assertThat(jdbcTemplate.queryForMap(
