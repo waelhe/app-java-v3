@@ -47,7 +47,7 @@
         ".github/workflows/coderabbit-gate.yml",
         ".ci/defect_knowledge_intake.py"
       ],
-      "result": "declaring_review (round 12) and latest_review (round 13) were the two max()/stable-sort selections in the verifier; the gate workflow's own poll uses max() over its fetched list but reads the PR head at execution time and its re-run semantics are documented separately (the verifier's comment records the consistency doctrine); defect_knowledge_intake deduplicates by source ID, not by timestamp ordering, so no other member of the family carries the tie flaw."
+      "result": "declaring_review (round 12) and latest_review (round 13) were the verifier's two max()/stable-sort selections and both now break submitted_at ties by the later response position. The gate workflow's own poll (.github/workflows/coderabbit-gate.yml:269) STILL uses max() over its fetched list — the FIRST maximal element on a submitted_at tie — so a same-second APPROVED-then-CHANGES_REQUESTED pair on one head reads the APPROVED in the workflow's verdict while the verifier reads the blocking review: the two tie resolutions deliberately diverge (fail-closed verifier vs first-max poll). Measured as the workflow's own code; unifying the poll to the same (submitted_at, position) descending key requires editing coderabbit-gate.yml — a main-protected workflow file outside this PR's surgical scope, so the divergence is documented here instead of silently excluded (CodeRabbit round 14 on head 01096662). defect_knowledge_intake deduplicates by source ID, not by timestamp ordering, so no other family member carries the tie flaw."
     }
   ],
   "tests": [
