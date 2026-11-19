@@ -801,8 +801,11 @@ class LedgerPaymentEventListenerTest {
         UUID orderId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        // the frozen ZERO rate is the settlement's own premise (the
+        // commission-freeze shape): the round-7 debit-legs gate reads it
+        // and admits without a facts lookup — no row was ever expected.
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
-                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, null);
+                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, BigDecimal.ZERO);
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         // The settlement landed (its credit row exists); its commission is
