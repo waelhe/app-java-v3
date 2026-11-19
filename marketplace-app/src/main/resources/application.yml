@@ -654,6 +654,17 @@ resilience4j:
           - com.marketplace.shared.api.ResourceNotFoundException
           - org.springframework.security.access.AccessDeniedException
           - com.marketplace.shared.api.ConflictException
+          # CodeRabbit round 15 on #828 (2026-11-19T14:40Z review): the
+          # live-grounding read's deliberate 503 is the CALLER's retry
+          # vehicle — the books-sync wait's ConflictException precedent,
+          # verbatim. An internal @Retry loop would re-run the live read up
+          # to three times while holding the refundCarriers bulkhead permit
+          # and the carrier transaction open, saturating the shared
+          # semaphore for every other refund caller during a provider
+          # outage. The 503 reaches the caller after exactly ONE read
+          # (RefundLiveReadFailureNoInternalRetryIntegrationTest pins the
+          # count through the real aspect stack).
+          - com.marketplace.shared.api.ServiceUnavailableException
         # Review round 2 on #741's part 4 (2026-10-29): the dispute
         # refund's books-sync WAIT deliberately rides ConflictException
         # (non-retryable) — the gate fires only on the synchronous

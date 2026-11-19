@@ -118,8 +118,14 @@ public interface PspChannel {
      */
     record RefundSnapshot(long refundedAmountCents, java.util.List<ExecutedRefund> executedRefunds) {
 
-        /** Books-sync only: no refund identities carried (legacy callers). */
-        RefundSnapshot(long refundedAmountCents) {
+        /**
+         * Books-sync only: no refund identities carried (legacy callers).
+         * CodeRabbit round 15 (2026-11-19T14:40Z review): stays PUBLIC —
+         * the record's implicit canonical constructor always was, and this
+         * convenience twin must keep the same reach for out-of-package
+         * callers assembling the books-sync shape.
+         */
+        public RefundSnapshot(long refundedAmountCents) {
             this(refundedAmountCents, java.util.List.of());
         }
     }
