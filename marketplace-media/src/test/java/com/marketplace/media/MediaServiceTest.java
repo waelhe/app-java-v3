@@ -513,6 +513,36 @@ class MediaServiceTest {
     }
 
     @Test
+    void confirmUpload_defersStagingDeletionUntilAfterCommit() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        String finalKey = "listings/" + listingId + "/commit.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        MediaAsset asset = MediaAsset.create(listingId, providerId, finalKey, stagingKey,
+                "image/jpeg", 2048L, 1);
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+        mockOwner();
+        when(storage.verifyUploaded(stagingKey, "image/jpeg", 2048L)).thenReturn(true);
+        when(storage.presignDownload(finalKey)).thenReturn("https://storage.example/committed");
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.confirmUpload(asset.getId(), authentication);
+
+            // The final object exists, but the only retry source is retained
+            // until the database has committed UPLOADED.
+            verify(storage, never()).deleteObjects(List.of(stagingKey));
+            var synchronizations = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations();
+            assertEquals(1, synchronizations.size());
+            synchronizations.forEach(
+                    org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+            verify(storage).deleteObjects(List.of(stagingKey));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void confirmUpload_byNonOwner_isDenied() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
