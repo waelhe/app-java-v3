@@ -167,13 +167,15 @@ class MediaUploadFlowIntegrationTest {
         // 1) request: row persisted PENDING with server-generated key
         var view = mediaService.requestUpload(listingId, "image/jpeg", 2048L, null);
         assertThat(view.uploadUrl()).isEqualTo("https://storage.example/signed-put");
-        assertThat(view.objectKey()).startsWith("listings/" + listingId + "/").endsWith(".jpg");
+        assertThat(view.objectKey()).startsWith("media-upload-staging/");
         assertThat(view.urlLifetime()).isEqualTo(Duration.ofMinutes(15));
 
         var persisted = mediaAssetRepository.findById(view.mediaId()).orElseThrow();
         assertThat(persisted.getStatus()).isEqualTo(MediaAssetStatus.PENDING_UPLOAD);
         assertThat(persisted.getListingId()).isEqualTo(listingId);
         assertThat(persisted.getPosition()).isEqualTo(1);
+        assertThat(persisted.getObjectKey()).startsWith("listings/" + listingId + "/").endsWith(".jpg");
+        assertThat(persisted.getUploadObjectKey()).isEqualTo(view.objectKey());
 
         // 2) confirm: verified by storage, transitions to UPLOADED — the
         // response's thumbUrl is null by contract (the listener runs AFTER_COMMIT)
@@ -181,8 +183,10 @@ class MediaUploadFlowIntegrationTest {
         assertThat(confirmed.status()).isEqualTo("UPLOADED");
         assertThat(confirmed.downloadUrl()).isEqualTo("https://storage.example/signed-get");
         assertThat(confirmed.thumbUrl()).isNull();
-        assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow().getStatus())
-                .isEqualTo(MediaAssetStatus.UPLOADED);
+        var uploadedAsset = mediaAssetRepository.findById(view.mediaId()).orElseThrow();
+        assertThat(uploadedAsset.getStatus()).isEqualTo(MediaAssetStatus.UPLOADED);
+        assertThat(uploadedAsset.getUploadObjectKey()).isNull();
+        assertThat(uploadedAsset.getObjectKey()).startsWith("listings/" + listingId + "/");
 
         // 3) read path: only UPLOADED assets, presigned per call — thumbUrl
         // still null until processing runs (L28)
@@ -199,7 +203,7 @@ class MediaUploadFlowIntegrationTest {
         assertThat(afterProcessing.get(0).thumbUrl())
                 .isEqualTo("https://storage.example/signed-get");
         assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow()
-                .getThumbObjectKey()).isEqualTo(view.objectKey());
+                .getThumbObjectKey()).isEqualTo(uploadedAsset.getObjectKey());
 
         // 4) delete: soft-deleted record, storage object removed best-effort
         mediaService.delete(view.mediaId(), null);
