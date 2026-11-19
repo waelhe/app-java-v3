@@ -38,10 +38,12 @@ class MediaPurgeStateServiceTest {
             if (sql.contains("media_assets")) {
                 when(row.getString(1)).thenReturn("listings/1/a.jpg", "posts/2/b.jpg");
                 when(row.getString(2)).thenReturn("listings/1/a.jpg/thumb").thenReturn((String) null);
+                when(row.getString(3)).thenReturn("media-upload-staging/asset-a").thenReturn(null);
                 handler.processRow(row);
                 handler.processRow(row);
             } else {
                 when(row.getString(1)).thenReturn("review-media/3/c.jpg");
+                when(row.getString(2)).thenReturn("media-upload-staging/review-c");
                 handler.processRow(row);
             }
             return null;
@@ -51,7 +53,8 @@ class MediaPurgeStateServiceTest {
         var keys = new MediaPurgeStateService(jdbcTemplate).markPendingAndCollectKeys(userId);
 
         assertThat(keys).containsExactly(
-                "listings/1/a.jpg", "listings/1/a.jpg/thumb", "posts/2/b.jpg", "review-media/3/c.jpg");
+                "listings/1/a.jpg", "listings/1/a.jpg/thumb", "media-upload-staging/asset-a",
+                "posts/2/b.jpg", "review-media/3/c.jpg", "media-upload-staging/review-c");
         verify(jdbcTemplate).update(
                 "UPDATE media_assets SET status = 'PURGE_PENDING', version = version + 1 "
                         + "WHERE provider_id = ? AND status NOT IN ('PURGED', 'PURGE_PENDING')",
@@ -73,8 +76,10 @@ class MediaPurgeStateServiceTest {
             if (sql.contains("media_assets")) {
                 when(row.getString(1)).thenReturn("listings/retry.jpg");
                 when(row.getString(2)).thenReturn(null);
+                when(row.getString(3)).thenReturn("media-upload-staging/retry-asset");
             } else {
                 when(row.getString(1)).thenReturn("review-media/retry.jpg");
+                when(row.getString(2)).thenReturn("media-upload-staging/retry-review");
             }
             handler.processRow(row);
             return null;
@@ -83,7 +88,8 @@ class MediaPurgeStateServiceTest {
 
         var keys = new MediaPurgeStateService(jdbcTemplate).markPendingAndCollectKeys(userId);
 
-        assertThat(keys).containsExactly("listings/retry.jpg", "review-media/retry.jpg");
+        assertThat(keys).containsExactly("listings/retry.jpg", "media-upload-staging/retry-asset",
+                "review-media/retry.jpg", "media-upload-staging/retry-review");
     }
 
     @Test
