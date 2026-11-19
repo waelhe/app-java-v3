@@ -153,8 +153,11 @@ class MediaServiceTest {
 
         assertEquals("https://storage.example/signed-put", view.uploadUrl());
         assertEquals(Duration.ofMinutes(15), view.urlLifetime());
-        assertTrue(view.objectKey().startsWith("posts/" + postId + "/"));
-        assertEquals("jpg", view.objectKey().split("/")[2].split("\\.")[1]);
+        assertTrue(view.objectKey().startsWith("media-upload-staging/"));
+        var saved = org.mockito.ArgumentCaptor.forClass(MediaAsset.class);
+        verify(repository).save(saved.capture());
+        assertTrue(saved.getValue().getObjectKey().startsWith("posts/" + postId + "/"));
+        assertEquals(view.objectKey(), saved.getValue().getUploadObjectKey());
         verify(repository).lockPostPositionAllocation(postId.toString());
         verify(storage).presignUpload(view.objectKey(), "image/jpeg");
     }
@@ -217,7 +220,7 @@ class MediaServiceTest {
     void confirmUpload_postAsset_byAuthor_directUserCompare() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingPostAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
         // The #484 review round: the confirm path re-resolves the post fresh
@@ -245,7 +248,7 @@ class MediaServiceTest {
     void confirmUpload_postAsset_whenAuthorRejected_refusesAndStaysPending() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingPostAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
         when(postLookupPort.getPostInfo(postId))
@@ -269,7 +272,7 @@ class MediaServiceTest {
     void confirmUpload_postAsset_whenPostHidden_answersTheHonest404() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingPostAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
         when(postLookupPort.getPostInfo(postId))
@@ -291,7 +294,7 @@ class MediaServiceTest {
     void confirmUpload_postAsset_byAdmin_passesForModeration() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingPostAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 2048L)).thenReturn(true);
 
@@ -431,9 +434,13 @@ class MediaServiceTest {
 
         assertEquals("https://storage.example/signed-put", view.uploadUrl());
         assertEquals(Duration.ofMinutes(15), view.urlLifetime());
-        // server-generated key: listings/{listingId}/{uuid}.jpg — extension from the normalized type
-        assertEquals("jpg", view.objectKey().split("/")[2].split("\\.")[1]);
-        assertTrue(view.objectKey().startsWith("listings/" + listingId + "/"));
+        // The signed destination is temporary; the published key stays on the
+        // persisted asset and cannot be recreated through the old PUT URL.
+        assertTrue(view.objectKey().startsWith("media-upload-staging/"));
+        var saved = org.mockito.ArgumentCaptor.forClass(MediaAsset.class);
+        verify(repository).save(saved.capture());
+        assertTrue(saved.getValue().getObjectKey().startsWith("listings/" + listingId + "/"));
+        assertEquals(view.objectKey(), saved.getValue().getUploadObjectKey());
         verify(storage).presignUpload(view.objectKey(), "image/jpeg");
     }
 
@@ -451,7 +458,7 @@ class MediaServiceTest {
     void confirmUpload_whenStorageVerifyFails_staysPending() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         mockOwner();
         when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 2048L)).thenReturn(false);
 
@@ -468,7 +475,7 @@ class MediaServiceTest {
     void confirmUpload_whenVerified_marksUploaded() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         mockOwner();
         when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 2048L)).thenReturn(true);
         when(storage.presignDownload(asset.getObjectKey())).thenReturn("https://storage.example/signed-get");
@@ -484,10 +491,32 @@ class MediaServiceTest {
      * confirmation (A1 lookup).
      */
     @Test
+    void confirmUpload_promotesStagingObjectToPermanentKeyBeforePublishing() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        String finalKey = "listings/" + listingId + "/photo.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        MediaAsset asset = MediaAsset.create(listingId, providerId, finalKey, stagingKey,
+                "image/jpeg", 2048L, 1);
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+        mockOwner();
+        when(storage.verifyUploaded(stagingKey, "image/jpeg", 2048L)).thenReturn(true);
+        when(storage.presignDownload(finalKey)).thenReturn("https://storage.example/signed-get");
+
+        var view = service.confirmUpload(asset.getId(), authentication);
+
+        assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
+        assertNull(asset.getUploadObjectKey());
+        assertEquals(finalKey, view.downloadUrl() == null ? null : finalKey);
+        verify(storage).verifyUploaded(stagingKey, "image/jpeg", 2048L);
+        verify(storage).copyObject(stagingKey, finalKey);
+        verify(storage).deleteObjects(List.of(stagingKey));
+    }
+
+    @Test
     void confirmUpload_byNonOwner_isDenied() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(false);
         when(providerLookupPort.findByUserId(providerId))
@@ -502,7 +531,7 @@ class MediaServiceTest {
     void confirmUpload_byAdmin_bypassesOwnership() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         lenient().when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(userId);
         when(currentUserProvider.isAdmin(authentication)).thenReturn(true);
         when(storage.verifyUploaded(asset.getObjectKey(), "image/jpeg", 2048L)).thenReturn(true);
