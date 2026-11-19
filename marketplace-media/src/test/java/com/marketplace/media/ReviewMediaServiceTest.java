@@ -199,6 +199,35 @@ class ReviewMediaServiceTest {
     }
 
     @Test
+    void confirmUpload_defersReviewStagingDeletionUntilAfterCommit() {
+        UUID reviewId = UUID.randomUUID();
+        UUID uploaderId = UUID.randomUUID();
+        String finalKey = "review-media/" + reviewId + "/commit.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
+        ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
+                "image/jpeg", 2048L, 1);
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+        when(s3.verifyUploaded(stagingKey, "image/jpeg", 2048L)).thenReturn(true);
+        when(s3.presignDownload(finalKey)).thenReturn("https://download.test/committed");
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.confirmUpload(asset.getId(), authentication);
+
+            verify(s3, never()).deleteObjects(List.of(stagingKey));
+            var synchronizations = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations();
+            assertEquals(1, synchronizations.size());
+            synchronizations.forEach(
+                    org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+            verify(s3).deleteObjects(List.of(stagingKey));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void confirmUpload_rejectsAnObjectStorageDoesNotHave() {
         UUID uploaderId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
