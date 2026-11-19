@@ -67,6 +67,10 @@ public class MediaAsset extends BaseEntity {
     @Column(name = "object_key", nullable = false, length = 500)
     private String objectKey;
 
+    /** Temporary destination of the presigned PUT; null after promotion to objectKey. */
+    @Column(name = "upload_object_key", length = 500)
+    private String uploadObjectKey;
+
     @Column(name = "content_type", nullable = false, length = 100)
     private String contentType;
 
@@ -100,8 +104,8 @@ public class MediaAsset extends BaseEntity {
     }
 
     private MediaAsset(UUID id, MediaOwnerKind ownerKind, UUID listingId, UUID postId,
-                       UUID productId, UUID providerId, String objectKey, String contentType,
-                       Long sizeBytes, Integer position) {
+                       UUID productId, UUID providerId, String objectKey, String uploadObjectKey,
+                       String contentType, Long sizeBytes, Integer position) {
         this.id = id;
         this.ownerKind = ownerKind;
         this.listingId = listingId;
@@ -109,6 +113,7 @@ public class MediaAsset extends BaseEntity {
         this.productId = productId;
         this.providerId = providerId;
         this.objectKey = objectKey;
+        this.uploadObjectKey = uploadObjectKey;
         this.contentType = contentType;
         this.sizeBytes = sizeBytes;
         this.position = position;
@@ -121,8 +126,13 @@ public class MediaAsset extends BaseEntity {
      */
     public static MediaAsset create(UUID listingId, UUID providerId, String objectKey,
                                     String contentType, Long sizeBytes, Integer position) {
+        return create(listingId, providerId, objectKey, objectKey, contentType, sizeBytes, position);
+    }
+
+    public static MediaAsset create(UUID listingId, UUID providerId, String objectKey, String uploadObjectKey,
+                                    String contentType, Long sizeBytes, Integer position) {
         return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.LISTING, listingId, null, null,
-                providerId, objectKey, contentType, sizeBytes, position);
+                providerId, objectKey, uploadObjectKey, contentType, sizeBytes, position);
     }
 
     /**
@@ -134,8 +144,13 @@ public class MediaAsset extends BaseEntity {
      */
     public static MediaAsset createForPost(UUID postId, UUID authorId, String objectKey,
                                            String contentType, Long sizeBytes, Integer position) {
+        return createForPost(postId, authorId, objectKey, objectKey, contentType, sizeBytes, position);
+    }
+
+    public static MediaAsset createForPost(UUID postId, UUID authorId, String objectKey, String uploadObjectKey,
+                                           String contentType, Long sizeBytes, Integer position) {
         return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.POST, null, postId, null,
-                authorId, objectKey, contentType, sizeBytes, position);
+                authorId, objectKey, uploadObjectKey, contentType, sizeBytes, position);
     }
 
     /**
@@ -148,8 +163,13 @@ public class MediaAsset extends BaseEntity {
      */
     public static MediaAsset createForProduct(UUID productId, UUID providerId, String objectKey,
                                               String contentType, Long sizeBytes, Integer position) {
+        return createForProduct(productId, providerId, objectKey, objectKey, contentType, sizeBytes, position);
+    }
+
+    public static MediaAsset createForProduct(UUID productId, UUID providerId, String objectKey, String uploadObjectKey,
+                                              String contentType, Long sizeBytes, Integer position) {
         return new MediaAsset(UUID.randomUUID(), MediaOwnerKind.PRODUCT, null, null, productId,
-                providerId, objectKey, contentType, sizeBytes, position);
+                providerId, objectKey, uploadObjectKey, contentType, sizeBytes, position);
     }
 
     /**
@@ -159,6 +179,7 @@ public class MediaAsset extends BaseEntity {
     public void markUploaded() {
         this.status.validateTransitionTo(MediaAssetStatus.UPLOADED);
         this.status = MediaAssetStatus.UPLOADED;
+        this.uploadObjectKey = null;
     }
 
     /**
@@ -178,6 +199,7 @@ public class MediaAsset extends BaseEntity {
     public UUID getProductId() { return productId; }
     public UUID getProviderId() { return providerId; }
     public String getObjectKey() { return objectKey; }
+    public String getUploadObjectKey() { return uploadObjectKey; }
     public String getContentType() { return contentType; }
     public Long getSizeBytes() { return sizeBytes; }
     public MediaAssetStatus getStatus() { return status; }
