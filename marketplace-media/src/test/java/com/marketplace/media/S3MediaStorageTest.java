@@ -168,6 +168,27 @@ class S3MediaStorageTest {
     }
 
     @Test
+    void copyObjectPromotesTheStagingObjectToThePermanentKey() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
+                    Duration.ofMinutes(15), neverOpens());
+
+            storage.copyObject("media-upload-staging/random", "listings/abc/photo.jpg");
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.CopyObjectRequest.class);
+            verify(client).copyObject(captor.capture());
+            var request = captor.getValue();
+            org.assertj.core.api.Assertions.assertThat(request.bucket()).isEqualTo(BUCKET);
+            org.assertj.core.api.Assertions.assertThat(request.key()).isEqualTo("listings/abc/photo.jpg");
+            org.assertj.core.api.Assertions.assertThat(request.copySource())
+                    .isEqualTo(BUCKET + "/media-upload-staging/random");
+            org.assertj.core.api.Assertions.assertThat(request.metadataDirective())
+                    .isEqualTo(software.amazon.awssdk.services.s3.model.MetadataDirective.COPY);
+        }
+    }
+
+    @Test
     void g3_deleteObjects_sendsTheExactKnownKeysInOneBatchCall() {
         // G3 (owner-gate batch 6a — the erasure flow's storage leg): the
         // documented batch API carries the purge's KNOWN keys in ONE wire
