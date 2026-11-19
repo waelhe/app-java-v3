@@ -26,9 +26,26 @@ public record ResendProperties(String apiKey) {
                     "marketplace.mail.resend.api-key is required when MARKETPLACE_MAIL_PROVIDER=resend; "
                             + "provision RESEND_API_KEY in the deployment secret store"
                             + (apiKey != null && apiKey.startsWith("${")
-                                    ? " (the binding received the unresolved placeholder '" + apiKey
+                                    ? " (the binding received the unresolved placeholder '"
+                                    + apiKey
                                     + "' — the variable was NOT resolved by any source)"
                                     : "") + ".");
+        }
+        // CodeRabbit round 2 (major — security): a key carrying an ISO
+        // control character (e.g. a trailing line feed from a copy-pasted
+        // secret) passes isBlank() yet the HTTP header builder rejects it
+        // when composing Authorization — and the thrown
+        // IllegalArgumentException's message embeds the FULL header value,
+        // so the key would reach the application logs through the send
+        // path's error logging. Control characters are rejected HERE, at
+        // binding time, and this message NEVER echoes the value.
+        if (apiKey.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException(
+                    "marketplace.mail.resend.api-key contains ISO control characters — "
+                            + "rejected at binding time (a control character in the "
+                            + "Authorization header makes the HTTP client's error message "
+                            + "embed the full key, leaking the secret into logs). Fix the "
+                            + "RESEND_API_KEY value in the deployment secret store.");
         }
     }
 }

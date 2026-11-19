@@ -40,7 +40,7 @@
     "Retry, circuit-breaker, concurrency-limit, and observation annotations ride the Resend send path exactly as the SMTP path carried them."
   ],
   "doors": [
-    "EmailSender.send (the new transport-neutral contract) — every notifications caller reaches it through EmailService unchanged",
+    "EmailSender.send (the transport-neutral contract) — the notifications path calls the EmailSender INTERFACE directly (EmailNotificationService holds Optional<EmailSender>, never the EmailService SMTP class); the provider configuration selects which implementation binds",
     "EmailServiceAutoConfiguration (SMTP path, provider=smtp or missing) and ResendEmailSenderAutoConfiguration (provider=resend) — mutually exclusive by ConditionalOnProperty",
     "marketplace-app application.yml / application-prod.yml / application-dev.yml / application-test.yml profiles",
     ".railway/railway.ts variable declaration (RESEND_API_KEY preserve) — the deployment-composition door (B6/D10 matrix)",
@@ -75,7 +75,7 @@
     {
       "name": "EmailNotificationServiceTest / NotificationServiceTest",
       "command": "./mvnw verify -pl marketplace-notifications",
-      "verification": "Required GitHub CI run on PR #840 head — the two updated suites pin the SMTP development/test channel unchanged"
+      "verification": "Required GitHub CI run on PR #840 head — the two suites exercise a MOCKED EmailSender: they pin the DELEGATION to the EmailSender seam only, never SMTP registration or SMTP delivery. The SMTP compatibility claim is carried by EmailServiceGreenMailTest (marketplace-platform-infra), which loads the real SMTP configuration and delivers to GreenMail"
     }
   ],
   "findings": [
