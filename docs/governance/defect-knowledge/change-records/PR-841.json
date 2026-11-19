@@ -61,7 +61,7 @@
   },
   {
    "name": "OperatorActuatorSurfaceSmokeIntegrationTest.eventPublicationDiagnosticsReadRawMetadataWithoutDeserializingOrMutatingRows",
-   "command": "./mvnw verify -pl marketplace-app",
+   "command": "./mvnw verify -pl marketplace-app -am",
    "verification": "Required GitHub CI run on PR #841 head — pins read-only rows, no event/payload fields, LEGACY_UNCLASSIFIED status, age bounds, and fixture cleanup"
   },
   {
