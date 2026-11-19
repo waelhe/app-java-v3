@@ -187,16 +187,36 @@ class PrivacyAccountJourneyIntegrationTest {
         assertThat(row.get("pseudonymized_at")).isNotNull();
 
         // (5) The erasure chain, step two — the free-text purge across the
-        // owning modules (the authored post's text is purged in place).
+        // owning modules. The branch's two-stage orchestration: the
+        // ORDINARY path purges through the durable AccountIdentityErased
+        // AFTER_COMMIT consumer (post-commit, asynchronous), and the
+        // administrative purge-content endpoint remains the explicit
+        // repair/retry surface. The journey therefore waits for the
+        // ordinary path's own effect first (the authored post's text is
+        // purged in place — a bounded poll, the LedgerModuleIntegrationTest
+        // awaitBalance pattern: 30s / 200ms), then proves the admin
+        // surface's idempotent answer: nothing left to purge.
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        String purgedTitle = "J34 authored title";
+        while (System.nanoTime() < deadline) {
+            purgedTitle = jdbcTemplate.queryForObject(
+                    "SELECT title FROM neighborhood_posts WHERE author_id = ?", String.class, userId);
+            if (!"J34 authored title".equals(purgedTitle)) {
+                break;
+            }
+            Thread.sleep(200);
+        }
+        assertThat(purgedTitle)
+                .as("the ordinary AFTER_COMMIT purge consumer cleared the authored title")
+                .isNotEqualTo("J34 authored title");
         HttpResponse<String> purgeContent = postJsonWithBearer(
                 "/api/v1/admin/users/" + userId + "/purge-content", admin.accessToken(),
                 "{\"reason\":\"the member's erasure request\"}");
         assertThat(purgeContent.statusCode()).as("purge-content: %s", body(purgeContent)).isEqualTo(200);
         int purgedRows = objectMapper.readTree(purgeContent.body()).path("purgedRows").asInt();
-        assertThat(purgedRows).as("the authored free text was purged (>= the post's two text columns)").isPositive();
-        String purgedTitle = jdbcTemplate.queryForObject(
-                "SELECT title FROM neighborhood_posts WHERE author_id = ?", String.class, userId);
-        assertThat(purgedTitle).as("the authored title is no longer the member's words").isNotEqualTo("J34 authored title");
+        assertThat(purgedRows)
+                .as("the admin surface is the idempotent repair — the ordinary path already purged")
+                .isZero();
 
         // Idempotence — a re-run purges zero.
         HttpResponse<String> purgeAgain = postJsonWithBearer(
