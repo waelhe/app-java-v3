@@ -505,6 +505,65 @@ class LedgerPaymentEventListenerTest {
         verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
     }
 
+    /**
+     * CodeRabbit round 7 (the 2026-11-19T13:33Z review, minor — the refund
+     * gate's settlement proof): the exact ordering the review prescribed —
+     * a MANUAL credit first (the foreign write: the PAYMENT_CREDIT row
+     * alone, no debit legs), THEN the refund (it must NOT admit on the
+     * credit row alone: it would debit the full amount while the reversals
+     * read the still-absent posted rows — a negative balance until the
+     * reconciliation sweep repaired it), THEN the settlement (the round-4
+     * foreign-writer rule posts the legs under the pre-existing credit),
+     * THEN the refund REPLAY (the legs exist now — the mirror admits and
+     * reverses the POSTED amounts).
+     */
+    @Test
+    void cr7_aRefundThatOvertakesTheSettlementsDebitLegsWaitsForThem() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // the manual credit landed the credit row ALONE — no commission
+        // row, no fee row (the foreign write's exact shape)
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId)).thenReturn(Optional.empty());
+        // the commission IS due (the live 0.10 rate on the goods base of a
+        // PICKUP shape: fee 0, goods 17400, due 1740) — so the debit-legs
+        // gate cannot admit on the credit row alone
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new com.marketplace.shared.api.OrderSettlementFacts(sellerId, 0L, false));
+
+        var refund = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> listener.onPaymentCompleted(refund))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no debit legs yet");
+
+        // no ledger movement at all — the publication stays recoverable
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromDeliveryFeeReversal(any(), any(), anyLong(), any());
+
+        // the settlement arrives: the round-4 foreign-writer rule posts the
+        // commission leg under the pre-existing credit
+        when(ledgerService.creditFromPaymentPosting(any(), any(), anyLong(), any()))
+                .thenReturn(new LedgerService.PaymentCreditPosting(null, false));
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId, 1740L, "SAR");
+
+        // the refund REPLAY: the legs exist now — the mirror admits and
+        // reverses the POSTED amount
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.of(1740L));
+        listener.onPaymentCompleted(refund);
+
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
+                1740L, "SAR");
+    }
+
     // ---- Stage 8 (ADR-0004): the loan-origin branches ----
 
     @Test
@@ -894,6 +953,29 @@ class LedgerPaymentEventListenerTest {
 
         listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
         verifyNoInteractions(orderSellerPort);
+    }
+
+    @Test
+    void cr7_theGuardFailsOpenForTheLegacyNoSellerOrder() {
+        // Round 7 (2026-11-19T13:33Z review, major): a legacy order without
+        // a seller answers settlementFactsOf's documented 404 — that shape
+        // is NOT fee-bearing (the placement invariant: "a fee-bearing
+        // seller-less row cannot exist"), so the guard's refusal rule cannot
+        // apply and the manual credit keeps its main-branch availability.
+        // The guard fails OPEN on the facts lookup's 404: an accidental
+        // not-found from the converter must never decide the credit path.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null, "COMPLETED",
+                "ORDER", 17400L, "SAR", orderId, null, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenThrow(new com.marketplace.shared.api.ResourceNotFoundException("Order seller", orderId));
+
+        listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
+        // no throw — the legacy no-seller shape keeps the credit available,
+        // exactly as the main-branch path (which never consulted the facts)
+        // always did
     }
 
 }

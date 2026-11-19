@@ -8,6 +8,7 @@ import com.marketplace.shared.api.OrderSettlementFacts;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -307,6 +308,35 @@ public class LedgerPaymentEventListener {
                                 + ") — no ledger movement was booked; the publication stays "
                                 + "recoverable for replay after the settlement lands");
             }
+            // CodeRabbit round 7 (minor — the refund gate's settlement proof,
+            // 2026-11-19T13:33Z review): the credit row ALONE is not proof the
+            // settlement's debit legs completed. A manual controller credit
+            // (the foreign write) posts the identical PAYMENT_CREDIT row
+            // WITHOUT the commission/fee debits, and a refund admitted on the
+            // credit row alone debited the full amount while the reversals
+            // read the still-absent posted rows — a negative balance until the
+            // reconciliation sweep repaired it. The durable admission evidence
+            // mirrors the settlement's own round-4 disambiguator: the refund
+            // waits until a debit leg's row exists (a posted COMMISSION_DEBIT
+            // or a posted DELIVERY_FEE_DEBIT — either leg proves the
+            // settlement's transaction ran) OR the commission is provably not
+            // due (a frozen zero rate, or a computed zero on the goods base —
+            // the documented zero-commission settlement whose credit row is
+            // the only row it ever posts). Redeliveries stay safe: a completed
+            // settlement's leg rows persist, so a replayed refund re-admits;
+            // the manual-credit → refund → settlement → refund-replay ordering
+            // is pinned by the round-7 ordering test.
+            if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()
+                    && ledgerService.postedDeliveryFeeCents(intent.paymentIntentId()).isEmpty()
+                    && !commissionNotDue(intent)) {
+                throw new IllegalStateException(
+                        "Order refund's settlement posting carries no debit legs yet (intent "
+                                + intent.paymentIntentId() + "): the PAYMENT_CREDIT row exists but neither "
+                                + "the commission nor the delivery-fee debit landed — a manual credit that "
+                                + "outran the settlement (its refund must wait for the settlement's own "
+                                + "legs) — no ledger movement was booked; the publication stays recoverable "
+                                + "for replay after the settlement's debit legs land");
+            }
             ledgerService.debitFromRefund(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
             // CodeRabbit round 1 (major — data integrity): the mirror reverses
@@ -444,6 +474,27 @@ public class LedgerPaymentEventListener {
     }
 
     /**
+     * CodeRabbit round 7 (the refund gate's settlement proof,
+     * 2026-11-19T13:33Z review): whether a commission debit leg is EVER
+     * expected for this intent — the zero-commission shapes whose
+     * settlement deliberately posts no COMMISSION_DEBIT row (the round-2
+     * law), so the refund's debit-legs gate cannot wait for a row that
+     * will never exist. A frozen zero rate needs no facts (no goods base
+     * can make it due); otherwise the due is computed on the goods base
+     * exactly as the settlement computed it (the fee from the order's
+     * settlement facts — safe here: the refund path resolved the seller
+     * first, so the facts lookup cannot hit the legacy no-seller 404).
+     */
+    private boolean commissionNotDue(PaymentIntentDetails intent) {
+        if (BigDecimal.ZERO.compareTo(effectiveCommissionRate(intent)) == 0) {
+            return true;
+        }
+        OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
+        long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
+        return commissionCents(intent.amountCents() - feeCents, intent) == 0L;
+    }
+
+    /**
      * CodeRabbit round 5 (2026-11-15T08:27Z review): the ONE state a manual
      * credit must never create — an ORDER intent whose due commission is
      * ZERO while a delivery fee is DUE. The round-4 disambiguator reads the
@@ -475,7 +526,26 @@ public class LedgerPaymentEventListener {
                     if (ledgerService.paymentCreditPosted(paymentIntentId)) {
                         return;
                     }
-                    OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
+                    // CodeRabbit round 7 (major — the legacy no-seller
+                    // shape, 2026-11-19T13:33Z review): the facts lookup is
+                    // THIS guard's own input, never the credit path's gate.
+                    // A legacy order without a seller
+                    // (settlementFactsOf's documented 404 — "a fee-bearing
+                    // seller-less row cannot exist", the placement
+                    // invariant) is NOT the ambiguous shape this guard
+                    // refuses: its fee is zero by invariant, so the
+                    // zero-commission-fee-bearing rule cannot apply, and the
+                    // manual credit keeps its main-branch availability. The
+                    // lookup's failure therefore fails OPEN — this guard
+                    // narrows one specific ambiguous shape only, and an
+                    // accidental 404 from the facts converter must never
+                    // decide the credit path's behavior.
+                    OrderSettlementFacts facts;
+                    try {
+                        facts = orderSellerPort.settlementFactsOf(intent.orderId());
+                    } catch (ResourceNotFoundException e) {
+                        return;
+                    }
                     long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
                     long goodsCents = intent.amountCents() - feeCents;
                     if (feeCents > 0 && commissionCents(goodsCents, intent) == 0L) {
