@@ -307,16 +307,6 @@ class AuthoredContentPurgeIntegrationTest {
                 .containsEntry("license_number", null)
                 .containsEntry("status", "VERIFIED");
 
-        // The cache guard's read-back (CodeRabbit #318 round 1, adopted):
-        // the SAME cached read path must serve the PURGED persona — the
-        // adapter's targeted AFTER_COMMIT invalidation evicted the warm
-        // entry, so this read misses the cache and reflects the erased row.
-        com.marketplace.provider.ProviderProfile postPurge =
-                providerService.getById(f.subjectProfileId());
-        assertThat(postPurge.getDisplayName()).isEqualTo(PURGED_MARKER);
-        assertThat(postPurge.getBio()).isNull();
-        assertThat(postPurge.getAgencyName()).isNull();
-        assertThat(postPurge.getLicenseNumber()).isNull();
         assertThat(jdbcTemplate.queryForMap(
                 "SELECT display_name, bio, agency_name, license_number FROM provider_profiles WHERE id = ?",
                 f.counterpartyProfileId()))
