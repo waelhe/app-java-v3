@@ -42,6 +42,16 @@ class PaymentProcessingResilienceFilesTest {
             "org.springframework.security.access.AccessDeniedException",
             "com.marketplace.shared.api.ConflictException");
 
+    // A provider live-read 503 is the caller's retry signal, not an internal
+    // retry invitation. It remains a circuit-breaker failure so provider health
+    // is measured honestly, but Resilience4j retry must surface it after one
+    // attempt and release the carrier bulkhead/transaction promptly.
+    private static final List<String> RETRY_IGNORED_FAILURES = List.of(
+            "com.marketplace.shared.api.ResourceNotFoundException",
+            "org.springframework.security.access.AccessDeniedException",
+            "com.marketplace.shared.api.ConflictException",
+            "com.marketplace.shared.api.ServiceUnavailableException");
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> loadResilience4j() throws IOException {
         Path yml = Paths.get("src/main/resources/application.yml");
@@ -72,6 +82,6 @@ class PaymentProcessingResilienceFilesTest {
     void theSharedPaymentRetryLeavesTheExpectedFailuresUnRetried() throws IOException {
         List<String> ignored = ignoreListOf("retry");
         assertThat(ignored).isNotNull();
-        assertThat(ignored).containsExactlyElementsOf(CALLER_CONTROLLED_FAILURES);
+        assertThat(ignored).containsExactlyElementsOf(RETRY_IGNORED_FAILURES);
     }
 }
