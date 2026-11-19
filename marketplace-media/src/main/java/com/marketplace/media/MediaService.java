@@ -303,16 +303,47 @@ public class MediaService {
             throw new BadRequestException(
                     "Object not found in storage (or type/size mismatch) for media: " + mediaId);
         }
-        if (!uploadObjectKey.equals(asset.getObjectKey())) {
+        boolean promotedFromStaging = !uploadObjectKey.equals(asset.getObjectKey());
+        if (promotedFromStaging) {
+            // This copy is idempotent: if the DB transaction rolls back, the
+            // staging object remains and a retry safely overwrites the final key.
             s3.copyObject(uploadObjectKey, asset.getObjectKey());
-            // Delete every staging version before marking the row UPLOADED.
-            // If cleanup fails the transaction rolls back and confirmation is
-            // retryable; the final copy is safe to overwrite on retry.
-            s3.deleteObjects(List.of(uploadObjectKey));
         }
         asset.markUploaded();
+        if (promotedFromStaging) {
+            // Never delete the only retry source before the DB commit. A failed
+            // commit must leave the row PENDING_UPLOAD and the staging bytes
+            // available. After commit, cleanup is best-effort; the bucket's
+            // staging-prefix lifecycle is the durable orphan backstop.
+            deleteStagingObjectAfterCommit(s3, uploadObjectKey);
+        }
         eventPublisher.publishEvent(new MediaUploadedEvent(asset.getId()));
         return toView(asset, s3.presignDownload(asset.getObjectKey()));
+    }
+
+    private void deleteStagingObjectAfterCommit(S3MediaStorage s3, String stagingKey) {
+        Runnable cleanup = () -> {
+            try {
+                // deleteObjects removes all known versions where supported.
+                s3.deleteObjects(List.of(stagingKey));
+            } catch (RuntimeException ex) {
+                // The lifecycle rule on media-upload-staging/ is authoritative
+                // for late/failed cleanup; do not undo an already committed upload.
+                log.warn("Staging media cleanup failed for key {} (bucket lifecycle will own it): {}",
+                        stagingKey, ex.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+        } else {
+            // Plain unit tests/direct calls do not have a transaction boundary.
+            cleanup.run();
+        }
     }
 
     /**
