@@ -600,6 +600,87 @@ class StripePspChannelTest {
                 .containsExactlyInAnyOrderEntriesOf(java.util.Map.of("starting_after", "re_p1"));
     }
 
+    /**
+     * CodeRabbit round 13 follow-up (the nitpick closed): the refund
+     * search's SECOND-page fetch failure. Page 1 carries one NON-matching
+     * refund and has_more=true; the page-2 request fails AT THE PAGE
+     * RESPONDER (the SDK's PagingIterator.next() wraps every failed page
+     * fetch — StripeException included — in a raw
+     * RuntimeException("Unable to lazy-load stripe objects", e); v33.4.2
+     * sources line 58) — never by mocking the iterable itself. The failure
+     * must surface as the channel's PspChannelException through the
+     * safePagination/paged contract (the cause unwrapped and preserved),
+     * and Refund.create must NEVER run: a refund is never created on an
+     * incomplete scan.
+     */
+    @Test
+    void createRemoteRefund_aSecondPageFetchFailureAnswersTheChannelExceptionAndNeverCreates() throws Exception {
+        // page 1: a REAL deserialized collection (has_more=true) carrying
+        // one refund whose metadata does NOT match the operation's key —
+        // the scan reaches the page boundary and fetches page 2
+        String page1Payload = "{\"id\":\"evt_pfx\",\"object\":\"event\",\"type\":\"charge.refunded\","
+                + "\"livemode\":false,\"api_version\":\"2026-01-01\","
+                + "\"data\":{\"object\":{"
+                + "\"id\":\"ch_fx\",\"object\":\"charge\","
+                + "\"payment_intent\":\"pi_fx\",\"amount_refunded\":0,"
+                + "\"refunds\":{\"object\":\"list\",\"has_more\":true,"
+                + "\"url\":\"/v1/charges/ch_fx/refunds\",\"data\":["
+                + "{\"id\":\"re_p1fx\",\"object\":\"refund\",\"status\":\"succeeded\","
+                + "\"metadata\":{\"marketplace_refund_operation_key\":\"someone-elses-key\"}}"
+                + "]}}}}";
+        RefundCollection firstPage = chargeFromSignedEvent(page1Payload).getRefunds();
+        org.assertj.core.api.Assertions.assertThat(firstPage.getHasMore()).isTrue();
+
+        // the page-2 responder FAILS with a checked StripeException — the
+        // shape LiveStripeResponseGetter answers on a transport/API
+        // failure; PagingIterator wraps it and paged() unwraps the cause
+        StripeResponseGetter failingGetter = new StripeResponseGetter() {
+            @Override
+            public <T extends StripeObject> T request(BaseAddress baseAddress,
+                    ApiResource.RequestMethod method, String path,
+                    java.util.Map<String, Object> params, Type typeToken,
+                    RequestOptions options, ApiMode apiMode)
+                    throws com.stripe.exception.StripeException {
+                throw new com.stripe.exception.ApiConnectionException(
+                        "page-2 fetch failed (simulated outage)");
+            }
+
+            @Override
+            public InputStream requestStream(BaseAddress baseAddress,
+                    ApiResource.RequestMethod method, String path,
+                    java.util.Map<String, Object> params, RequestOptions options,
+                    ApiMode apiMode) {
+                throw new UnsupportedOperationException("no stream requests in this test");
+            }
+
+            @Override
+            public void validateRequestOptions(RequestOptions options) {
+                // this test pins the FETCH-failure contract; the options
+                // discipline is the round-9 test's own pin above
+            }
+        };
+        firstPage.setResponseGetter(failingGetter);
+
+        try (MockedStatic<com.stripe.model.Refund> refundMock = mockStatic(com.stripe.model.Refund.class)) {
+            refundMock.when(() -> com.stripe.model.Refund.list(
+                            any(RefundListParams.class), any(RequestOptions.class)))
+                    .thenReturn(firstPage);
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> channel.createRemoteRefund("pi_fx", 1500L, "op-key-fx"))
+                    .isInstanceOf(PspChannelException.class)
+                    .hasMessageContaining("pagination failed")
+                    .hasMessageContaining("listing refunds for intent pi_fx")
+                    .hasMessageContaining("page-2 fetch failed");
+
+            // and the create NEVER ran — a refund is never created on an
+            // incomplete scan
+            refundMock.verify(() -> com.stripe.model.Refund.create(
+                            any(RefundCreateParams.class), any(RequestOptions.class)),
+                    org.mockito.Mockito.never());
+        }
+    }
+
     /** A Charge extracted through the channel's own tolerant pattern. */
     private static Charge chargeFromSignedEvent(String payload) {
         try {

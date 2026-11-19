@@ -1186,6 +1186,22 @@ public class PaymentsService implements PaymentsSpi {
      * when the books NOW satisfy the gate (the live read converged them or
      * the arithmetic already held); false keeps the caller's original
      * wait-for-webhook answer. A null read (no charge yet) changes nothing.
+     *
+     * <p><b>CodeRabbit round 13 follow-up (the deliberate failure
+     * surface):</b> a FAILED read is never a bypass back to the arithmetic —
+     * an independent refund can satisfy the arithmetic while THIS
+     * operation's money is not in the books, so the gate holds. The
+     * operation's EXECUTED record is durable (the journal's own
+     * REQUIRES_NEW survives the carrier's rollback by construction): the
+     * money is safe, only the PROOF is temporarily unreadable. The read
+     * failure therefore surfaces to the {@code refundPayment} caller as the
+     * house {@link ServiceUnavailableException} (503 SERVICE_UNAVAILABLE —
+     * the same taxonomy the bulkhead-saturation and the unbound-channel
+     * precedents use): retryable, told apart from a 500 defect by callers
+     * and monitors, and prescribing the retry vehicle — the caller's FRESH
+     * re-invocation, the same vehicle the books-sync wait's 409 prescribes.
+     * The raw {@code PspChannelException} (a provider outage indistinguishable
+     * from a defect at the HTTP layer) never escapes on this path.
      */
     private Boolean refreshBooksThroughLiveRead(PaymentIntent intent, PaymentRefundOperation operation,
             String scopeKind) {
@@ -1193,7 +1209,22 @@ public class PaymentsService implements PaymentsSpi {
         if (channel == null || intent.getPspIntentId() == null) {
             return null;
         }
-        Long remoteTotal = channel.readRemoteRefundTotalCents(intent.getPspIntentId());
+        Long remoteTotal;
+        try {
+            remoteTotal = channel.readRemoteRefundTotalCents(intent.getPspIntentId());
+        } catch (PspChannelException e) {
+            // the grounding gate HOLDS on a failed read (never the
+            // arithmetic's own verdict), and the failure answers the
+            // deliberate 503 — the dispute's completion retries, the
+            // EXECUTED record stays durable, nothing re-submits
+            throw new ServiceUnavailableException(
+                    "The " + scopeKind + "'s refund operation " + operation.getIdempotencyKey()
+                            + " is EXECUTED and durable at the provider (remote refund "
+                            + operation.getRemoteRefundId() + " recorded), but the live books-grounding read failed: "
+                            + e.getMessage() + ". The reconciled answer stands on the provider's live"
+                            + " cumulative — never the books' arithmetic alone — so retry the resolution;"
+                            + " the read is transient and the operation never re-submits.");
+        }
         if (remoteTotal == null) {
             // The documented null contract (round 10): the provider has no
             // charge yet — nothing refundable to ground on, so the caller's

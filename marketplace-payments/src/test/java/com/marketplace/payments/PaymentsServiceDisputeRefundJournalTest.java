@@ -194,6 +194,49 @@ class PaymentsServiceDisputeRefundJournalTest {
         verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
     }
 
+    /**
+     * CodeRabbit round 13 follow-up (the deliberate failure surface): the
+     * dispute re-completion's live grounding read FAILS — the books'
+     * arithmetic alone passed (3000 >= 0 + 3000), but the gate must NOT
+     * answer on it (an independent refund can saturate the arithmetic while
+     * this operation's money is not in the books), and the raw
+     * PspChannelException must NOT escape refundPayment as an undefined 500.
+     * The surface is the house 503 SERVICE_UNAVAILABLE: the message states
+     * the operation is EXECUTED and durable, that the reconciled answer
+     * stands on the provider's live cumulative — never the arithmetic alone
+     * — and prescribes the retry vehicle (the caller's fresh re-invocation,
+     * the same vehicle the books-sync wait's 409 prescribes). Nothing
+     * re-submits, nothing re-marks.
+     */
+    @Test
+    void aFailedLiveGroundingRead_surfacesTheDeliberate503_neverTheArithmeticNorARaw500() {
+        UUID disputeId = UUID.randomUUID();
+        // the books' arithmetic alone passes: 3000 >= 0 + 3000
+        Payment payment = collectedPayment(3000L);
+        PaymentRefundOperation executed =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(executed));
+        // the live grounding read FAILS — a transient provider outage
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute"))
+                .thenThrow(new PspChannelException("Stripe charge listing failed (simulated outage)"));
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ServiceUnavailableException.class)
+                .hasMessageContaining("EXECUTED and durable")
+                .hasMessageContaining("re_dispute_prior")
+                .hasMessageContaining("live books-grounding read failed")
+                .hasMessageContaining("never the books' arithmetic alone")
+                .hasMessageContaining("retry the resolution");
+
+        // the gate held: no re-submission, no re-marking — the EXECUTED
+        // record stays the operation's own execution fact
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+        verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
+    }
+
     @Test
     void aSubmittedOperationIsNotExecutedByTheBooksAlone() {
         // Review round 2, the executed-proof finding: a SUBMITTED operation
