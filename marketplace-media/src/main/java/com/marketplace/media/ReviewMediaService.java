@@ -219,16 +219,17 @@ public class ReviewMediaService {
 
         reviewMediaRepository.delete(asset);
         String objectKey = asset.getObjectKey();
+        String uploadKey = asset.getUploadObjectKey();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    removeStorageObject(s3, objectKey);
+                    removeStorageObjects(s3, objectKey, uploadKey);
                 }
             });
         } else {
             // No active transaction (unit tests) — remove immediately.
-            removeStorageObject(s3, objectKey);
+            removeStorageObjects(s3, objectKey, uploadKey);
         }
     }
 
@@ -248,6 +249,13 @@ public class ReviewMediaService {
      * Storage-side removal failure is logged, never fatal — bucket
      * lifecycle rules own orphans (the MediaService D3 contract).
      */
+    private void removeStorageObjects(S3MediaStorage s3, String objectKey, String uploadKey) {
+        removeStorageObject(s3, objectKey);
+        if (uploadKey != null && !uploadKey.equals(objectKey)) {
+            removeStorageObject(s3, uploadKey);
+        }
+    }
+
     private void removeStorageObject(S3MediaStorage s3, String objectKey) {
         try {
             s3.deleteObject(objectKey);
