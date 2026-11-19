@@ -313,7 +313,8 @@ class ReviewMediaServiceTest {
         verify(s3).deleteObject(stagingKey);
     }
 
-
+    @Test
+    void delete_survivesAStorageFailure() {
         UUID uploaderId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
         ReviewMedia asset = asset(UUID.randomUUID(), uploaderId, MediaAssetStatus.UPLOADED);
