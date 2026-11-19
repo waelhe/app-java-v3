@@ -1,14 +1,22 @@
 package com.marketplace.media;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
+
+    /** Serializes confirmUpload with the erasure tombstone UPDATE for this row. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from MediaAsset a where a.id = :id")
+    Optional<MediaAsset> findByIdForUpdate(@Param("id") UUID id);
 
     List<MediaAsset> findByListingIdAndStatusOrderByPositionAsc(UUID listingId, MediaAssetStatus status);
 
