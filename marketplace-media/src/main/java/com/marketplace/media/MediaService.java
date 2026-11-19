@@ -1,6 +1,7 @@
 package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPublicStatePort;
 import com.marketplace.shared.api.MediaLookupPort;
@@ -121,15 +122,16 @@ public class MediaService {
         mediaAssetRepository.lockListingPositionAllocation(listingId.toString());
 
         String objectKey = buildObjectKey(listingId, normalizedType);
+        String uploadObjectKey = buildUploadStagingKey();
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.create(
-                listingId, listing.providerId(), objectKey, normalizedType,
+                listingId, listing.providerId(), objectKey, uploadObjectKey, normalizedType,
                 // The highest allocated live position plus one — a soft deletion
                 // never re-opens a slot a remaining row still holds (greptile W1
                 // r10, adopted from the root; same root fix as the review channel).
                 sizeBytes, mediaAssetRepository.findMaxPositionByListingId(listingId) + 1));
 
-        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
-        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+        String uploadUrl = s3.presignUpload(uploadObjectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), uploadObjectKey, uploadUrl, properties.limits().presignTtl());
     }
 
     /**
@@ -173,14 +175,15 @@ public class MediaService {
         mediaAssetRepository.lockPostPositionAllocation(postId.toString());
 
         String objectKey = buildPostObjectKey(postId, normalizedType);
+        String uploadObjectKey = buildUploadStagingKey();
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForPost(
-                postId, post.authorId(), objectKey, normalizedType,
+                postId, post.authorId(), objectKey, uploadObjectKey, normalizedType,
                 // Greptile W1 r10 (adopted): max-based allocation — the post twin
                 // of the listing fix above.
                 sizeBytes, mediaAssetRepository.findMaxPositionByPostId(postId) + 1));
 
-        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
-        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+        String uploadUrl = s3.presignUpload(uploadObjectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), uploadObjectKey, uploadUrl, properties.limits().presignTtl());
     }
 
     /**
@@ -211,12 +214,13 @@ public class MediaService {
         mediaAssetRepository.lockProductPositionAllocation(productId.toString());
 
         String objectKey = buildProductObjectKey(productId, normalizedType);
+        String uploadObjectKey = buildUploadStagingKey();
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForProduct(
-                productId, product.providerId(), objectKey, normalizedType,
+                productId, product.providerId(), objectKey, uploadObjectKey, normalizedType,
                 sizeBytes, mediaAssetRepository.findMaxPositionByProductId(productId) + 1));
 
-        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
-        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+        String uploadUrl = s3.presignUpload(uploadObjectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), uploadObjectKey, uploadUrl, properties.limits().presignTtl());
     }
 
     /**
@@ -276,18 +280,35 @@ public class MediaService {
     @PreAuthorize("isAuthenticated()")
     public MediaAssetView confirmUpload(UUID mediaId, Authentication authentication) {
         S3MediaStorage s3 = requireStorage();
-        MediaAsset asset = getById(mediaId);
+        MediaAsset asset = mediaAssetRepository.findByIdForUpdate(mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media not found: " + mediaId));
         verifyAssetOwnership(asset, authentication);
+        if (asset.getStatus() != MediaAssetStatus.PENDING_UPLOAD) {
+            throw new ConflictException("Media upload is not pending confirmation: " + mediaId);
+        }
         if (asset.getPostId() != null && !currentUserProvider.isAdmin(authentication)) {
             PostLookupPort.PostInfo post = postLookupPort.getPostInfo(asset.getPostId());
             verifyPostAuthorship(post.authorId(), authentication);
             verifyPostWriteRight(post);
         }
 
-        boolean verified = s3.verifyUploaded(asset.getObjectKey(), asset.getContentType(), asset.getSizeBytes());
+        // The presigned PUT targets only the temporary staging prefix. Holding
+        // the row write lock serializes promotion with the erasure tombstone:
+        // either this copy commits first and the purge deletes the final key,
+        // or the purge commits first and this confirmation is rejected.
+        String uploadObjectKey = asset.getUploadObjectKey() == null
+                ? asset.getObjectKey() : asset.getUploadObjectKey();
+        boolean verified = s3.verifyUploaded(uploadObjectKey, asset.getContentType(), asset.getSizeBytes());
         if (!verified) {
             throw new BadRequestException(
                     "Object not found in storage (or type/size mismatch) for media: " + mediaId);
+        }
+        if (!uploadObjectKey.equals(asset.getObjectKey())) {
+            s3.copyObject(uploadObjectKey, asset.getObjectKey());
+            // Delete every staging version before marking the row UPLOADED.
+            // If cleanup fails the transaction rolls back and confirmation is
+            // retryable; the final copy is safe to overwrite on retry.
+            s3.deleteObjects(List.of(uploadObjectKey));
         }
         asset.markUploaded();
         eventPublisher.publishEvent(new MediaUploadedEvent(asset.getId()));
@@ -702,6 +723,10 @@ public class MediaService {
         verifyOwnership(asset.getProviderId(), authentication, "You do not own this media asset");
     }
 
+    private String buildUploadStagingKey() {
+        return "media-upload-staging/" + UUID.randomUUID();
+    }
+
     private String buildObjectKey(UUID listingId, String contentType) {
         return MediaUploadRules.buildObjectKey("listings", listingId, contentType);
     }
@@ -762,11 +787,11 @@ public class MediaService {
             @io.swagger.v3.oas.annotations.media.Schema(description = "The persisted media asset id",
                     example = "f47ac10b-58cc-4372-a567-0e02b2c3d479")
             UUID mediaId,
-            @io.swagger.v3.oas.annotations.media.Schema(description = "Server-generated object key",
-                    example = "listings/7c9e6679-7425-40de-944b-e07fc1f90ae7/1b2c3d4e-....jpg")
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Temporary server-generated staging key accepted only by the presigned PUT",
+                    example = "media-upload-staging/1b2c3d4e-....")
             String objectKey,
             @io.swagger.v3.oas.annotations.media.Schema(description = "Presigned PUT URL (the TTL is urlLifetime)",
-                    example = "https://bucket.r2.cloudflarestorage.com/listings/...?X-Amz-Signature=...")
+                    example = "https://bucket.r2.cloudflarestorage.com/media-upload-staging/...?X-Amz-Signature=...")
             String uploadUrl,
             @io.swagger.v3.oas.annotations.media.Schema(description = "How long the presigned URL stays valid",
                     example = "PT15M")
