@@ -169,12 +169,36 @@ public class ReviewMediaService {
             throw new BadRequestException(
                     "Object not found in storage (or type/size mismatch) for media: " + mediaId);
         }
-        if (!uploadObjectKey.equals(asset.getObjectKey())) {
+        boolean promotedFromStaging = !uploadObjectKey.equals(asset.getObjectKey());
+        if (promotedFromStaging) {
             s3.copyObject(uploadObjectKey, asset.getObjectKey());
-            s3.deleteObjects(List.of(uploadObjectKey));
         }
         asset.markUploaded();
+        if (promotedFromStaging) {
+            deleteStagingObjectAfterCommit(s3, uploadObjectKey);
+        }
         return toView(asset, s3.presignDownload(asset.getObjectKey()));
+    }
+
+    private void deleteStagingObjectAfterCommit(S3MediaStorage s3, String stagingKey) {
+        Runnable cleanup = () -> {
+            try {
+                s3.deleteObjects(List.of(stagingKey));
+            } catch (RuntimeException ex) {
+                log.warn("Review staging cleanup failed for key {} (bucket lifecycle will own it): {}",
+                        stagingKey, ex.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+        } else {
+            cleanup.run();
+        }
     }
 
     /**
