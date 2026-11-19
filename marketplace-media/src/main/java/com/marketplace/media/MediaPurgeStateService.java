@@ -35,18 +35,22 @@ public class MediaPurgeStateService {
             if (objectKey != null) keys.add(objectKey);
             String thumbKey = rs.getString(2);
             if (thumbKey != null) keys.add(thumbKey);
+            String uploadKey = rs.getString(3);
+            if (uploadKey != null) keys.add(uploadKey);
         };
         jdbcTemplate.query(
-                "SELECT object_key, thumb_object_key FROM media_assets "
+                "SELECT object_key, thumb_object_key, upload_object_key FROM media_assets "
                         + "WHERE provider_id = ? AND status <> 'PURGED'",
                 assetKeys, userId);
 
         RowCallbackHandler reviewKeys = rs -> {
             String objectKey = rs.getString(1);
             if (objectKey != null) keys.add(objectKey);
+            String uploadKey = rs.getString(2);
+            if (uploadKey != null) keys.add(uploadKey);
         };
         jdbcTemplate.query(
-                "SELECT object_key FROM review_media "
+                "SELECT object_key, upload_object_key FROM review_media "
                         + "WHERE uploader_id = ? AND status <> 'PURGED'",
                 reviewKeys, userId);
 
