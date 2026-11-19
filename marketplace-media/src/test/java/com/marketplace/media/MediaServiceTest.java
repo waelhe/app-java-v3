@@ -653,6 +653,23 @@ class MediaServiceTest {
     }
 
     @Test
+    void delete_pendingUploadAlsoRemovesItsStagingObject() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        String finalKey = "listings/" + listingId + "/pending.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        MediaAsset asset = MediaAsset.create(listingId, providerId, finalKey, stagingKey,
+                "image/jpeg", 1024L, 1);
+        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        mockOwner();
+
+        service.delete(asset.getId(), authentication);
+
+        verify(repository).delete(asset);
+        verify(storage).deleteObject(finalKey);
+        verify(storage).deleteObject(stagingKey);
+    }
+
+    @Test
     void delete_whenStorageRemovalFails_isStillAcknowledged() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
