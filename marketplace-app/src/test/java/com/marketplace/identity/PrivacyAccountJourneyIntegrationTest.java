@@ -225,17 +225,23 @@ class PrivacyAccountJourneyIntegrationTest {
         assertThat(purgeAgain.statusCode()).isEqualTo(200);
         assertThat(objectMapper.readTree(purgeAgain.body()).path("purgedRows").asInt()).isZero();
 
-        // (6) The erasure chain, step three — the audit identity purge.
+        // (6) b-4 is part of the same durable AFTER_COMMIT erasure consumer:
+        // the audit mirror is already gone after the ordinary identity request.
+        Integer remainingAudRows = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, userId);
+        assertThat(remainingAudRows)
+                .as("the automatic b-4 stage deleted the user's audit mirror").isZero();
+
+        // The administrative endpoint remains an idempotent repair surface.
         HttpResponse<String> purgeAudit = postJsonWithBearer(
                 "/api/v1/admin/users/" + userId + "/purge-audit-history", admin.accessToken(),
-                "{\"reason\":\"the member's erasure request\"}");
+                "{\"reason\":\"replay after automatic erasure\"}");
         assertThat(purgeAudit.statusCode()).as("purge-audit-history: %s", body(purgeAudit)).isEqualTo(200);
         JsonNode auditResult = objectMapper.readTree(purgeAudit.body());
         assertThat(auditResult.path("usersAudRowsDeleted").asInt())
-                .as("the user's audit rows are deleted").isPositive();
-        Integer remainingAudRows = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, userId);
-        assertThat(remainingAudRows).isZero();
+                .as("the b-4 replay must be a no-op").isZero();
+        assertThat(auditResult.path("scrubbedRows").asInt())
+                .as("the audit columns were already scrubbed by b-4").isZero();
     }
 
     /**
