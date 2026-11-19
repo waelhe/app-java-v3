@@ -86,8 +86,11 @@ class ReviewMediaServiceTest {
         ReviewMediaService.ReviewMediaUploadView view =
                 service.requestUpload(reviewId, "IMAGE/JPEG", 1024L, authentication);
 
-        assertTrue(view.objectKey().startsWith("review-media/" + reviewId + "/"));
-        assertTrue(view.objectKey().endsWith(".jpg"));
+        assertTrue(view.objectKey().startsWith("media-upload-staging/"));
+        var saved = org.mockito.ArgumentCaptor.forClass(ReviewMedia.class);
+        verify(reviewMediaRepository).save(saved.capture());
+        assertTrue(saved.getValue().getObjectKey().startsWith("review-media/" + reviewId + "/"));
+        assertEquals(view.objectKey(), saved.getValue().getUploadObjectKey());
         assertEquals("https://upload.test", view.uploadUrl());
         assertEquals(Duration.ofMinutes(15), view.urlLifetime());
         // the position serializes per review (the #241 advisory-lock shape)
@@ -162,7 +165,7 @@ class ReviewMediaServiceTest {
         UUID uploaderId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
         ReviewMedia asset = asset(reviewId, uploaderId, MediaAssetStatus.PENDING_UPLOAD);
-        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(s3.verifyUploaded(anyString(), eq("image/jpeg"), anyLong())).thenReturn(true);
         when(s3.presignDownload(anyString())).thenReturn("https://download.test");
 
@@ -174,11 +177,32 @@ class ReviewMediaServiceTest {
     }
 
     @Test
+    void confirmUpload_promotesTheStagingKeyAndDeletesTheTemporaryObject() {
+        UUID reviewId = UUID.randomUUID();
+        UUID uploaderId = UUID.randomUUID();
+        String finalKey = "review-media/" + reviewId + "/photo.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
+        ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
+                "image/jpeg", 1024L, 1);
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+        when(s3.verifyUploaded(stagingKey, "image/jpeg", 1024L)).thenReturn(true);
+        when(s3.presignDownload(finalKey)).thenReturn("https://download.test");
+
+        service.confirmUpload(asset.getId(), authentication);
+
+        assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
+        assertEquals(null, asset.getUploadObjectKey());
+        verify(s3).copyObject(stagingKey, finalKey);
+        verify(s3).deleteObjects(List.of(stagingKey));
+    }
+
+    @Test
     void confirmUpload_rejectsAnObjectStorageDoesNotHave() {
         UUID uploaderId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
         ReviewMedia asset = asset(UUID.randomUUID(), uploaderId, MediaAssetStatus.PENDING_UPLOAD);
-        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(s3.verifyUploaded(anyString(), anyString(), anyLong())).thenReturn(false);
 
         assertThrows(BadRequestException.class,
@@ -189,7 +213,7 @@ class ReviewMediaServiceTest {
     @Test
     void confirmUpload_rejectsAnUnknownAsset() {
         UUID mediaId = UUID.randomUUID();
-        when(reviewMediaRepository.findById(mediaId)).thenReturn(Optional.empty());
+        when(reviewMediaRepository.findByIdForUpdate(mediaId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
                 () -> service.confirmUpload(mediaId, authentication));
@@ -198,7 +222,7 @@ class ReviewMediaServiceTest {
     @Test
     void confirmUpload_deniesACallerWhoIsNotTheUploader() {
         ReviewMedia asset = asset(UUID.randomUUID(), UUID.randomUUID(), MediaAssetStatus.PENDING_UPLOAD);
-        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
 
         assertThrows(AccessDeniedException.class,
                 () -> service.confirmUpload(asset.getId(), authentication));
