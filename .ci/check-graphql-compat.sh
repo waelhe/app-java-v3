@@ -139,7 +139,11 @@ if [[ "$BOOTSTRAP" -eq 0 ]]; then
         > "$WORK_DIR/baseline-maven.log" 2>&1; then
     remove_dump_test
     git checkout -q "$CURRENT_SHA"
-    echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent. See .ci/graphql-compat/baseline-maven.log (uploaded as a workflow artifact on failure)."
+    echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent."
+    echo "=== baseline Maven failure (last 120 lines) ==="
+    tail -n 120 "$WORK_DIR/baseline-maven.log" || true
+    echo "=== end baseline Maven failure ==="
+    echo "Full log is also uploaded as a workflow artifact."
     exit 1
   fi
   if [[ ! -f "$DUMP_FILE" ]]; then
