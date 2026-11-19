@@ -296,7 +296,24 @@ class ReviewMediaServiceTest {
     }
 
     @Test
-    void delete_survivesAStorageFailure() {
+    void delete_pendingReviewUploadAlsoRemovesItsStagingObject() {
+        UUID reviewId = UUID.randomUUID();
+        UUID uploaderId = UUID.randomUUID();
+        String finalKey = "review-media/" + reviewId + "/pending.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
+        ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
+                "image/jpeg", 1024L, 1);
+        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+
+        service.delete(asset.getId(), authentication);
+
+        verify(reviewMediaRepository).delete(asset);
+        verify(s3).deleteObject(finalKey);
+        verify(s3).deleteObject(stagingKey);
+    }
+
+
         UUID uploaderId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
         ReviewMedia asset = asset(UUID.randomUUID(), uploaderId, MediaAssetStatus.UPLOADED);
