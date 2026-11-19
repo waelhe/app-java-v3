@@ -506,7 +506,7 @@ class MediaServiceTest {
 
         assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
         assertNull(asset.getUploadObjectKey());
-        assertEquals(finalKey, view.downloadUrl() == null ? null : finalKey);
+        assertEquals("https://storage.example/signed-get", view.downloadUrl());
         verify(storage).verifyUploaded(stagingKey, "image/jpeg", 2048L);
         verify(storage).copyObject(stagingKey, finalKey);
         verify(storage).deleteObjects(List.of(stagingKey));
