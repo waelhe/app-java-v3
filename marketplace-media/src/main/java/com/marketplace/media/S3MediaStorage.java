@@ -9,6 +9,8 @@ import software.amazon.awssdk.http.SdkHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.MetadataDirective;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
@@ -227,6 +229,24 @@ final class S3MediaStorage implements AutoCloseable {
 
     private static boolean contentTypeEquals(HeadObjectResponse head, String contentType) {
         return head.contentType() != null && head.contentType().equalsIgnoreCase(contentType);
+    }
+
+    /**
+     * Promotes a verified temporary upload to its immutable published key.
+     * CopyObject is supported by both Amazon S3 and Cloudflare R2's current
+     * S3-compatibility contract. The caller holds the media-row write lock so
+     * account erasure cannot commit between the verification and promotion.
+     */
+    void copyObject(String sourceKey, String destinationKey) {
+        if (sourceKey.equals(destinationKey)) {
+            return;
+        }
+        circuitBreaker.executeRunnable(() -> client.copyObject(CopyObjectRequest.builder()
+                .bucket(bucket)
+                .key(destinationKey)
+                .copySource(bucket + "/" + sourceKey)
+                .metadataDirective(MetadataDirective.COPY)
+                .build()));
     }
 
     /**
