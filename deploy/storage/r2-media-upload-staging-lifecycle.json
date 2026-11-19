@@ -1,0 +1,11 @@
+{
+  "Rules": [
+    {
+      "ID": "marketplace-media-upload-staging-expire",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "media-upload-staging/" },
+      "Expiration": { "Days": 1 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+    }
+  ]
+}
