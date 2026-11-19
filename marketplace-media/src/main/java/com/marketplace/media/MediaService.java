@@ -458,16 +458,17 @@ public class MediaService {
         mediaAssetRepository.delete(asset);
         String objectKey = asset.getObjectKey();
         String thumbKey = asset.getThumbObjectKey();
+        String uploadKey = asset.getUploadObjectKey();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    removeStorageObjects(s3, objectKey, thumbKey);
+                    removeStorageObjects(s3, objectKey, thumbKey, uploadKey);
                 }
             });
         } else {
             // No active transaction (unit tests) — remove immediately.
-            removeStorageObjects(s3, objectKey, thumbKey);
+            removeStorageObjects(s3, objectKey, thumbKey, uploadKey);
         }
     }
 
@@ -475,10 +476,14 @@ public class MediaService {
      * L28: removes the original and — when a distinct thumbnail object
      * exists — the thumbnail. Same best-effort contract as the original.
      */
-    private void removeStorageObjects(S3MediaStorage s3, String objectKey, String thumbKey) {
+    private void removeStorageObjects(S3MediaStorage s3, String objectKey, String thumbKey, String uploadKey) {
         removeStorageObject(s3, objectKey);
         if (thumbKey != null && !thumbKey.equals(objectKey)) {
             removeStorageObject(s3, thumbKey);
+        }
+        if (uploadKey != null && !uploadKey.equals(objectKey)
+                && !uploadKey.equals(thumbKey)) {
+            removeStorageObject(s3, uploadKey);
         }
     }
 
