@@ -1,6 +1,7 @@
 package test.config;
 
 import com.marketplace.shared.config.MarketplaceProperties;
+import com.marketplace.shared.config.ClockConfig;
 import com.marketplace.shared.jpa.JpaConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +17,11 @@ import java.util.Optional;
 
 /**
  * Shared test configuration for all {@code @ApplicationModuleTest} classes.
+ *
+ * <p><b>Shared time source in slice tests:</b> Importing the production {@link ClockConfig}
+ * keeps module slices aligned with the application bean graph for services that
+ * validate time-bound signatures. Tests that need boundary determinism can still
+ * override the {@link java.time.Clock} bean with a fixed clock.
  *
  * <p><b>Auditing in slice tests:</b> This class {@code @Import}s {@link JpaConfig}
  * (production config in {@code marketplace-platform-infra}) so that
@@ -40,7 +46,7 @@ import java.util.Optional;
  * Spring Data JPA — Auditing</a>
  */
 @Configuration
-@Import(JpaConfig.class)
+@Import({JpaConfig.class, ClockConfig.class})
 public class ModuleTestConfig {
 
     @Bean
