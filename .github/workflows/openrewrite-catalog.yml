@@ -107,7 +107,7 @@ jobs:
 
       - name: Set up JDK 25 and authenticated Maven settings
         if: steps.credentials.outputs.skip_audit != 'true'
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.2.0
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
@@ -297,7 +297,7 @@ jobs:
           fi
 
       - name: Set up JDK 25 and Maven settings
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.2.0
         env:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
