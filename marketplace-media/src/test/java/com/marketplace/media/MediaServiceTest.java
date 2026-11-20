@@ -160,6 +160,9 @@ class MediaServiceTest {
         assertEquals(view.objectKey(), saved.getValue().getUploadObjectKey());
         verify(repository).lockPostPositionAllocation(postId.toString());
         verify(storage).presignUpload(view.objectKey(), "image/jpeg");
+        var authorizationOrder = org.mockito.Mockito.inOrder(repository, currentUserProvider);
+        authorizationOrder.verify(repository).lockAccountMediaMutation(userId.toString());
+        authorizationOrder.verify(currentUserProvider).getCurrentUserId(authentication);
     }
 
     /** L48: an unknown/hidden/deleted post answers the port's honest 404. */
@@ -442,6 +445,9 @@ class MediaServiceTest {
         assertTrue(saved.getValue().getObjectKey().startsWith("listings/" + listingId + "/"));
         assertEquals(view.objectKey(), saved.getValue().getUploadObjectKey());
         verify(storage).presignUpload(view.objectKey(), "image/jpeg");
+        var authorizationOrder = org.mockito.Mockito.inOrder(repository, currentUserProvider);
+        authorizationOrder.verify(repository).lockAccountMediaMutation(providerId.toString());
+        authorizationOrder.verify(currentUserProvider).getCurrentUserId(authentication);
     }
 
     @Test
