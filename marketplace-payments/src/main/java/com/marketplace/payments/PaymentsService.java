@@ -1237,12 +1237,17 @@ public class PaymentsService implements PaymentsSpi {
                             + " the read is transient and the operation never re-submits.");
         }
         Payment payment = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);
-        if (payment == null || remoteTotal == null) {
-            // Once a provider channel and remote intent are present, an absent
-            // live cumulative is NOT proof that this executed operation is in
-            // the books. Only the channel-less deployment may fall back to
-            // the local arithmetic.
+        if (payment == null) {
+            // A missing local payment is never a reconciled result, even when
+            // the provider channel returned a cumulative value.
             return false;
+        }
+        if (remoteTotal == null) {
+            // The channel has no cumulative linked to this charge yet. This
+            // is different from a failed read or a known-low cumulative: keep
+            // the books-synchronized decision as the fallback, as for a
+            // channel-less deployment.
+            return null;
         }
         long requiredRemoteTotal = operation.getAmountCents() == null
                 ? payment.getAmountCents()
