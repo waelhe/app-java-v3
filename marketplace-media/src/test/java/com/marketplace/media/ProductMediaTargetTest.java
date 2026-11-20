@@ -100,7 +100,7 @@ class ProductMediaTargetTest {
         // uploads to the STAGING key — the returned objectKey IS it — and
         // the products namespace is the asset's FINAL destination, assigned
         // at confirmation's CopyObject (MediaServiceTest pins the promote
-        // flow itself: verifyUploaded → copyObject(staging, final) →
+        // flow itself: verifyUploaded → copyVerifiedObject(staging, final, contentType, sizeBytes) →
         // deleteObjects(staging))
         assertThat(view.objectKey()).startsWith("media-upload-staging/");
         assertThat(view.uploadUrl()).isEqualTo("https://signed-put");
