@@ -332,32 +332,17 @@ class StripePspChannel implements PspChannel {
             // the V33 link and its amount_refunded is the remote actual.
             Charge charge = extractCharge(event);
             if (charge != null) {
-                // CodeRabbit round 13: the refund identities are fetched ONLY
-                // for the one event type the dispatch consumes them under —
-                // charge.refunded. Every other charge-carrying event (e.g.
-                // charge.succeeded, charge.failed) answers its snapshot from
-                // the payload alone (cumulative only, no identity retrieval,
-                // no refunds fetch); the ignore path for unsubscribed events
-                // below stays exactly as it was.
-                boolean wantsIdentities = "charge.refunded".equals(event.getType());
-                // The identities are resolved only for a USABLE event (one
-                // carrying the payment_intent the dispatch resolves); an
-                // unusable one never reads its snapshot, so no retrieval
-                // fires for it. When the payload omits the refunds
-                // collection the charge is re-retrieved — and the RETRIEVED
-                // cumulative rides along with the identities (CodeRabbit
-                // round 4): it is the fresher number from the same API
-                // snapshot the identities came from, never the event's stale
-                // one.
-                RefundIdentities identities = charge.getPaymentIntent() == null || !wantsIdentities
-                        ? new RefundIdentities(
-                                charge.getAmountRefunded() == null ? 0L : charge.getAmountRefunded(),
-                                List.of())
-                        : refundIdentities(charge);
+                // Verification and payload extraction are side-effect free.
+                // Refund identity pagination is deferred until resolveWebhookDetails(),
+                // after the service has passed the provider/event-id dedup preflight.
+                long cumulative = charge.getAmountRefunded() == null ? 0L : charge.getAmountRefunded();
+                List<PspChannel.ExecutedRefund> embedded = List.of();
+                if ("charge.refunded".equals(event.getType())
+                        && charge.getRefunds() != null && charge.getRefunds().getData() != null) {
+                    embedded = mapExecutedRefunds(charge.getRefunds().getData());
+                }
                 return new VerifiedWebhook(event.getId(), event.getType(), null,
-                        charge.getPaymentIntent(),
-                        new RefundSnapshot(identities.cumulativeRefundedCents(),
-                                identities.executedRefunds()));
+                        charge.getPaymentIntent(), new RefundSnapshot(cumulative, embedded));
             }
             // Events we did not subscribe to (or unknown objects) —
             // acknowledged and ignored by returning a no-op record; dispatch
@@ -368,6 +353,37 @@ class StripePspChannel implements PspChannel {
         }
         UUID marketplaceIntentId = metadataIntentId(data.getMetadata());
         return new VerifiedWebhook(event.getId(), event.getType(), marketplaceIntentId, data.getId(), null);
+    }
+
+    /**
+     * Completes the charge.refunded identity snapshot only after the caller
+     * has passed the provider/event-id dedup preflight. Stripe's charge
+     * payload can omit the refunds collection or provide only its first page;
+     * the expanded retrieval returns the complete identity set and the
+     * cumulative from the same provider snapshot.
+     */
+    @Override
+    public VerifiedWebhook resolveWebhookDetails(String rawPayload, String signatureHeader,
+                                                  VerifiedWebhook verified) {
+        if (!"charge.refunded".equals(verified.eventType()) || verified.pspIntentId() == null) {
+            return verified;
+        }
+        Event event;
+        try {
+            // Re-verify the exact signed payload at the deferred enrichment
+            // boundary; no provider request is made until this succeeds.
+            event = Webhook.constructEvent(rawPayload, signatureHeader, webhookSecret);
+        } catch (Exception e) {
+            throw new AccessDeniedException("Stripe webhook signature verification failed: " + e.getMessage());
+        }
+        Charge charge = extractCharge(event);
+        if (charge == null || charge.getPaymentIntent() == null) {
+            return verified;
+        }
+        RefundIdentities identities = refundIdentities(charge);
+        return new VerifiedWebhook(verified.eventId(), verified.eventType(),
+                verified.marketplaceIntentId(), verified.pspIntentId(),
+                new RefundSnapshot(identities.cumulativeRefundedCents(), identities.executedRefunds()));
     }
 
     /** Same official extraction pattern for Refund-carrying events (round 6). */
