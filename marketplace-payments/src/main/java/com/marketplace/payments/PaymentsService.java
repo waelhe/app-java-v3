@@ -219,6 +219,17 @@ public class PaymentsService implements PaymentsSpi {
     public boolean handleStripeWebhook(String rawPayload, String signatureHeader) {
         PspChannel channel = requireChannel();
         PspChannel.VerifiedWebhook verified = channel.verifyWebhook(rawPayload, signatureHeader);
+        // Verify the signed event first, then acknowledge an already-recorded
+        // event before any optional provider API reads. The unique
+        // (provider,event_id) insert below remains the concurrent serialization point.
+        if (webhookEventRepository.findByProviderAndEventId("stripe", verified.eventId()).isPresent()) {
+            return false;
+        }
+        PspChannel.VerifiedWebhook enriched =
+                channel.resolveWebhookDetails(rawPayload, signatureHeader, verified);
+        if (enriched != null) {
+            verified = enriched; // allows test doubles and no-enrichment channels.
+        }
         UUID intentId = verified.marketplaceIntentId();
         if (intentId == null && verified.pspIntentId() != null) {
             intentId = paymentIntentRepository.findByPspIntentId(verified.pspIntentId())
