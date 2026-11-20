@@ -792,6 +792,19 @@ class MediaServiceTest {
     }
 
     @Test
+    void processThumbnail_whenAssetIsNotUploaded_doesNotReadOrCreateDerivative() {
+        when(storageProvider.getIfAvailable()).thenReturn(storage);
+        MediaAsset asset = pendingAsset();
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+
+        service.processThumbnail(asset.getId());
+
+        verify(storage, never()).getObject(anyString());
+        verify(storage, never()).putObject(anyString(), anyString(), any(byte[].class));
+        verify(repository, never()).save(any(MediaAsset.class));
+    }
+
+    @Test
     void processThumbnail_whenStorageFetchFails_countsFetchAndPropagates() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = uploadedAsset();
