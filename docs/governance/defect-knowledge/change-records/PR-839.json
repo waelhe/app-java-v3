@@ -8,7 +8,11 @@
     "AGENTS.md",
     "docs/governance/defect-knowledge/change-protocol.md",
     "docs/governance/defect-knowledge/rulebook.md",
-    "docs/governance/defect-knowledge/pattern-catalog.md"
+    "docs/governance/defect-knowledge/pattern-catalog.md",
+    "docs/railway-deployment-reference.md",
+    "SYSTEM.md",
+    "PROJECT_MAP.md",
+    "docs/operating/trial-renewal-and-provider-migration-runbook.md"
   ],
   "rulesTriggered": [
     "A1",
@@ -31,6 +35,7 @@
     "The Dockerfile cache mount id s/<live production service id>-<target> matches Railway's documented service-scoped cache-mount form.",
     "The manual Railway deployment workflow targets the measured live production project, environment, and service identifiers rather than the retired resources.",
     "The workflow is workflow_dispatch-only: merging a pull request does not trigger a Railway production deployment.",
+    "Historical recovery commands in SYSTEM.md, PROJECT_MAP.md, and the 2026-10-17 provider runbook are explicitly retired; current Railway identity is read back and published in docs/railway-deployment-reference.md.",
     "No application code, API contract, database schema, runtime variables, secrets, or data resources are changed by this pull request."
   ],
   "doors": [
@@ -46,16 +51,19 @@
         "Dockerfile.staging",
         ".github/workflows/railway-deploy.yml",
         ".railway/railway.ts",
-        "docs/railway-deployment-reference.md"
+        "docs/railway-deployment-reference.md",
+        "SYSTEM.md",
+        "PROJECT_MAP.md",
+        "docs/operating/trial-renewal-and-provider-migration-runbook.md"
       ],
-      "result": "Dockerfile.staging does not carry a cache mount (verified — no --mount=type=cache in the staging file); .railway/railway.ts declares variables not service ids; the only other service-id literal was the comment block removed with the retired id. No other file carries the retired production service id."
+      "result": "The retired service id 3efcf70c-56d5-4d87-ada5-6bba32022229 remained in four historical operational references across three files: SYSTEM.md:401, PROJECT_MAP.md:127, and docs/operating/trial-renewal-and-provider-migration-runbook.md:350 and :360. These were not live deployment configuration, but the runbook recovery command was unsafe to replay. The occurrences are now explicitly marked historical/retired and point to docs/railway-deployment-reference.md, whose current project/environment/service ids were read back directly from Railway on 2026-11-20. The current production workflow uses the live ids; Dockerfile.staging has no cache mount; .railway/railway.ts declares variables, not service ids."
     }
   ],
   "tests": [
     {
       "name": "Railway read-back of live production resources",
       "command": "Read-only Railway GraphQL/API read-back",
-      "verification": "Project c8985750-82a2-42eb-8431-ee0f49352818 (meticulous-consideration), environment c324c1a0-e4db-4a9a-8dc0-30ca1f3935d0 (production), and service 43b1b64b-9087-45d4-88ca-358a40c5a583 (app-java-v3) were read back on 2026-11-15 before this change."
+      "verification": "Read-only Railway describe-service/list-deployments read-back on 2026-11-20 confirmed project c8985750-82a2-42eb-8431-ee0f49352818 (meticulous-consideration), environment c324c1a0-e4db-4a9a-8dc0-30ca1f3935d0 (production), service 43b1b64b-9087-45d4-88ca-358a40c5a583 (app-java-v3), domain app-java-v3-production.up.railway.app:8080, latest deployment FAILED at BUILD_IMAGE, and previous latest SUCCESS on 2026-11-15."
     },
     {
       "name": "Railway build-failure evidence",
