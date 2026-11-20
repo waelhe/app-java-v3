@@ -18,7 +18,7 @@ import java.util.Optional;
 /**
  * Shared test configuration for all {@code @ApplicationModuleTest} classes.
  *
- * * <p><b>Auditing in slice tests:</b> This class {@code @Import}s {@link JpaConfig}
+ * <p><b>Auditing in slice tests:</b> This class {@code @Import}s {@link JpaConfig}
  * (production config in {@code marketplace-platform-infra}) so that
  * {@code @EnableJpaAuditing} is active in slice test contexts. Without this import,
  * slice tests (which limit component scanning to the module's base package) would
