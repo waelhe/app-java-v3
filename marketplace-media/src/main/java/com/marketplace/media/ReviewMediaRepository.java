@@ -12,6 +12,12 @@ import java.util.UUID;
 
 public interface ReviewMediaRepository extends JpaRepository<ReviewMedia, UUID> {
 
+    /** Shares the erasure snapshot lock with MediaPurgeStateService. */
+    @Query(value = "SELECT pg_advisory_xact_lock(hashtextextended('marketplace-media-account:' || CAST(:userId AS text), 0))",
+            nativeQuery = true)
+    void lockAccountMediaMutation(@Param("userId") String userId);
+
+
     /** Serializes confirmUpload with the erasure tombstone UPDATE for this row. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from ReviewMedia m where m.id = :id")
