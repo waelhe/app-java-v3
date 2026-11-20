@@ -22,6 +22,7 @@ import test.config.IntegrationContainers;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -73,6 +74,7 @@ class RefundCarrierPoisoningIntegrationTest {
      */
     /** The failing-once channel's refund-call counter (round 13's assertion hook). */
     static volatile AtomicInteger REFUND_CALLS;
+    static volatile AtomicReference<Long> LIVE_REFUND_TOTAL;
 
     @TestConfiguration
     static class FailingOnceChannelConfig {
@@ -81,12 +83,14 @@ class RefundCarrierPoisoningIntegrationTest {
         @Primary
         PspChannel failingOnceChannel() {
             AtomicInteger refundCalls = new AtomicInteger();
+            AtomicReference<Long> liveRefundTotal = new AtomicReference<>(1500L);
             // Round 13: the channel's own call counter, exposed to the test
             // so the poisoning replay asserts the channel was actually
             // consulted TWICE — first attempt failed transiently, retry
             // succeeded — instead of proving only the books' outcome (which
             // a NO_CHANNEL bypass could also satisfy).
             REFUND_CALLS = refundCalls;
+            LIVE_REFUND_TOTAL = liveRefundTotal;
             return new PspChannel() {
                 @Override
                 public RemoteIntent createRemoteIntent(UUID marketplaceIntentId, long amountCents,
@@ -113,11 +117,10 @@ class RefundCarrierPoisoningIntegrationTest {
 
                 @Override
                 public Long readRemoteRefundTotalCents(String pspIntentId) {
-                    // Round 10's live cumulative read: the A4 replay never
-                    // rides the refund.updated identity vehicle, so no
-                    // charge-backed cumulative exists to read — the null
-                    // contract (never an invented zero).
-                    return null;
+                    // The provider has executed the 1500-cent refund and must
+                    // expose that charge-backed cumulative to ground the
+                    // journal's reconciled answer (a null read is NOT evidence).
+                    return liveRefundTotal.get();
                 }
             };
         }
@@ -191,5 +194,17 @@ class RefundCarrierPoisoningIntegrationTest {
         // channel exactly twice: the first attempt failed transiently and
         // the retry succeeded (the A4 replay's own shape).
         assertThat(REFUND_CALLS.get()).isEqualTo(2);
+
+        // A repeat can only be reconciled by provider evidence. Even though
+        // the local books already show 1500, a missing live cumulative must
+        // not let independent/local arithmetic stand in for this operation.
+        LIVE_REFUND_TOTAL.set(null);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                carrier.execute(status -> orderRefundPort.refundForOrder(orderId, returnId, 1500L)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("await the charge.refunded sync");
+        assertThat(REFUND_CALLS.get())
+                .as("re-reading an EXECUTED operation never re-submits the remote refund")
+                .isEqualTo(2);
     }
 }
