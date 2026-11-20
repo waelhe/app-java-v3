@@ -148,13 +148,15 @@ class ProductMediaJourneyIntegrationTest {
                 .andExpect(jsonPath("$.productId").value(productId));
 
         // Confirm promotion is the commit point: the durable read key is in
-        // the product namespace and the temporary upload key is cleared.
+        // the product namespace. Keep the original staging key as durable
+        // evidence for a later account-erasure retry.
         var persistedKeys = jdbc.queryForMap(
                 "SELECT object_key, upload_object_key FROM media_assets WHERE id = ?",
                 UUID.fromString(assetId));
         assertThat(persistedKeys.get("object_key").toString())
                 .startsWith("products/" + productId + "/");
-        assertThat(persistedKeys.get("upload_object_key")).isNull();
+        assertThat(persistedKeys.get("upload_object_key").toString())
+                .startsWith("media-upload-staging/");
 
         // (4) The owner's read carries the freshly presigned GET URLs.
         mockMvc.perform(get("/api/v1/media/products/{productId}", productId)
