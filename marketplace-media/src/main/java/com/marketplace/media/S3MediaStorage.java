@@ -250,6 +250,43 @@ final class S3MediaStorage implements AutoCloseable {
     }
 
     /**
+     * Copies a staged object only if the source is still the same object whose
+     * metadata was just checked. The conditional source ETag closes the window
+     * in which a reusable presigned PUT could replace the key between HEAD and
+     * CopyObject. AWS S3 and Cloudflare R2 both document x-amz-copy-source-if-match.
+     */
+    void copyVerifiedObject(String sourceKey, String destinationKey, String contentType, long sizeBytes) {
+        HeadObjectResponse head;
+        try {
+            head = circuitBreaker.executeSupplier(() -> client.headObject(HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(sourceKey)
+                    .build()));
+        } catch (RuntimeException ex) {
+            throw new BadRequestException("Staged upload is no longer available for confirmation");
+        }
+        String sourceEtag = head == null ? null : head.eTag();
+        if (head == null || !sizeEquals(head, sizeBytes) || !contentTypeEquals(head, contentType)
+                || sourceEtag == null || sourceEtag.isBlank()) {
+            throw new BadRequestException("Staged upload changed before it could be published");
+        }
+        try {
+            circuitBreaker.executeRunnable(() -> client.copyObject(CopyObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(destinationKey)
+                    .copySource(bucket + "/" + sourceKey)
+                    .copySourceIfMatch(sourceEtag)
+                    .metadataDirective(MetadataDirective.COPY)
+                    .build()));
+        } catch (S3Exception ex) {
+            if (ex.statusCode() == 412) {
+                throw new BadRequestException("Staged upload changed during confirmation; please upload again");
+            }
+            throw ex;
+        }
+    }
+
+    /**
      * Best-effort object removal (owner delete). Storage-side failure is logged
      * by the caller and never fails the API call — bucket lifecycle rules own
      * orphan cleanup.
