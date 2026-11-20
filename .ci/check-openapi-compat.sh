@@ -80,6 +80,8 @@ BASELINE_BRANCH="openapi-baseline-$LATEST_TAG"
 git checkout -q "$LATEST_TAG"
 prepare_baseline_maven_wrapper "$ROOT_DIR/.mvn/wrapper/maven-wrapper.properties"
 generate_spec "baseline" "$WORK_DIR/baseline-openapi.json"
+# The archive URL override is scoped to the historical baseline only.
+git checkout -q -- .mvn/wrapper/maven-wrapper.properties
 
 cd "$ROOT_DIR"
 git checkout -q "$CURRENT_SHA"
