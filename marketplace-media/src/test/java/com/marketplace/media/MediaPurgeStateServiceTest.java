@@ -34,6 +34,7 @@ class MediaPurgeStateServiceTest {
         doAnswer(invocation -> {
             String sql = invocation.getArgument(0);
             RowCallbackHandler handler = invocation.getArgument(1);
+            if (sql.contains("pg_advisory_xact_lock")) return null;
             ResultSet row = org.mockito.Mockito.mock(ResultSet.class);
             if (sql.contains("media_assets")) {
                 when(row.getString(1)).thenReturn("listings/1/a.jpg", "posts/2/b.jpg");
@@ -70,6 +71,7 @@ class MediaPurgeStateServiceTest {
         UUID userId = UUID.randomUUID();
         doAnswer(invocation -> {
             String sql = invocation.getArgument(0);
+            if (sql.contains("pg_advisory_xact_lock")) return null;
             assertThat(sql).contains("status <> 'PURGED'");
             RowCallbackHandler handler = invocation.getArgument(1);
             ResultSet row = org.mockito.Mockito.mock(ResultSet.class);
