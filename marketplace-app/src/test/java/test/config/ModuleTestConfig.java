@@ -1,7 +1,6 @@
 package test.config;
 
 import com.marketplace.shared.config.MarketplaceProperties;
-import com.marketplace.shared.config.ClockConfig;
 import com.marketplace.shared.jpa.JpaConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -12,18 +11,14 @@ import org.springframework.data.domain.AuditorAware;
 import org.springframework.web.servlet.config.annotation.ApiVersionConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 
 /**
  * Shared test configuration for all {@code @ApplicationModuleTest} classes.
  *
- * <p><b>Shared time source in slice tests:</b> Importing the production {@link ClockConfig}
- * keeps module slices aligned with the application bean graph for services that
- * validate time-bound signatures. Tests that need boundary determinism can still
- * override the {@link java.time.Clock} bean with a fixed clock.
- *
- * <p><b>Auditing in slice tests:</b> This class {@code @Import}s {@link JpaConfig}
+ * * <p><b>Auditing in slice tests:</b> This class {@code @Import}s {@link JpaConfig}
  * (production config in {@code marketplace-platform-infra}) so that
  * {@code @EnableJpaAuditing} is active in slice test contexts. Without this import,
  * slice tests (which limit component scanning to the module's base package) would
@@ -46,7 +41,7 @@ import java.util.Optional;
  * Spring Data JPA — Auditing</a>
  */
 @Configuration
-@Import({JpaConfig.class, ClockConfig.class})
+@Import(JpaConfig.class)
 public class ModuleTestConfig {
 
     @Bean
@@ -59,6 +54,15 @@ public class ModuleTestConfig {
                         .setDefaultVersion("1.0");
             }
         };
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(Clock.class)
+    Clock clock() {
+        // Module slices deliberately do not scan platform-infra's ClockConfig.
+        // Supply the same UTC system-clock contract only when a test has not
+        // declared its own fixed/mutable Clock.
+        return Clock.systemUTC();
     }
 
     @Bean
