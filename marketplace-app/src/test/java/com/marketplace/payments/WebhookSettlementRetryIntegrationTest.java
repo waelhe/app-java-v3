@@ -62,10 +62,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ApplicationModuleTest
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
-@Import({ModuleTestConfig.class, WebhookSettlementRetryIntegrationTest.RealChannelConfig.class,
+@Import({ModuleTestConfig.class, WebhookSettlementRetryIntegrationTest.ClockBean.class,
+        WebhookSettlementRetryIntegrationTest.RealChannelConfig.class,
         WebhookSettlementRetryIntegrationTest.TransientReadFailureConfig.class})
 @WithMockUser
 class WebhookSettlementRetryIntegrationTest {
+
+    /**
+     * The webhook verifier's Clock — the production bean lives in
+     * platform-infra's ClockConfig, which this slice does not scan (the
+     * ClockConfig javadoc's own "tests override the bean" pattern). One
+     * Clock per context, never two; the shared {@code ModuleTestConfig}
+     * fallback of 2026-11-20 is reverted ({@code @ConditionalOnMissingBean}
+     * ordering is undefined on plain {@code @Configuration} classes —
+     * Spring Boot reference).
+     */
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ClockBean {
+        @org.springframework.context.annotation.Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+    }
 
     @Container
     @ServiceConnection
