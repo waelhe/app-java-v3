@@ -309,7 +309,7 @@ jobs:
                          if r["user"]["login"] == "coderabbitai[bot]"
                          and r.get("commit_id") == head
                          and r.get("state") != "PENDING"]
-              latest = max(reviews, key=lambda r: r["submitted_at"]) if reviews else None
+              latest = max(enumerate(reviews), key=lambda pair: (pair[1]["submitted_at"], pair[0]))[1] if reviews else None
               status_desc = ""
               try:
                   st = call(f"/commits/{head}/status")
