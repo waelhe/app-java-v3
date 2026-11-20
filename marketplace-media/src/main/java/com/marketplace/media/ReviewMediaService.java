@@ -83,6 +83,7 @@ public class ReviewMediaService {
         UUID authorId = reviewLookupPort.findAuthorId(reviewId)
                 .orElseThrow(() -> new ResourceNotFoundException("Review not found: " + reviewId));
         verifyReviewOwnership(authorId, authentication);
+        reviewMediaRepository.lockAccountMediaMutation(authorId.toString());
 
         // Position allocation must serialize per review (the MediaAsset
         // #241 shape — the same advisory transaction lock).
