@@ -139,6 +139,7 @@ class PaymentsServiceReturnRefundJournalTest {
         assertThat(result).isNotNull();
         // no re-submission: the executed refund is never sent again
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+        verify(pspChannel).readRemoteRefundTotalCents("pi_remote_return");
     }
 
     @Test
