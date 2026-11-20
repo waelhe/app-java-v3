@@ -191,6 +191,25 @@ class S3MediaStorageTest {
     }
 
     @Test
+    void copyVerifiedObjectPropagatesStorageOutagesInsteadOfBadRequest() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
+                    Duration.ofMinutes(15), neverOpens());
+            when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
+                    .thenThrow(software.amazon.awssdk.services.s3.model.S3Exception.builder()
+                            .statusCode(503).message("SlowDown").build());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    storage.copyVerifiedObject("media-upload-staging/random", "listings/abc/photo.jpg",
+                            "image/jpeg", 2048L))
+                    .isInstanceOf(software.amazon.awssdk.services.s3.model.S3Exception.class)
+                    .hasMessageContaining("SlowDown");
+            verify(client, org.mockito.Mockito.never()).copyObject(any(
+                    software.amazon.awssdk.services.s3.model.CopyObjectRequest.class));
+        }
+    }
+
+    @Test
     void copyVerifiedObjectMapsSourcePreconditionFailureToConflict() {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
