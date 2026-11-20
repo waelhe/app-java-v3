@@ -505,10 +505,10 @@ class MediaServiceTest {
         var view = service.confirmUpload(asset.getId(), authentication);
 
         assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
-        assertNull(asset.getUploadObjectKey());
+        assertEquals(stagingKey, asset.getUploadObjectKey());
         assertEquals("https://storage.example/signed-get", view.downloadUrl());
         verify(storage).verifyUploaded(stagingKey, "image/jpeg", 2048L);
-        verify(storage).copyObject(stagingKey, finalKey);
+        verify(storage).copyVerifiedObject(stagingKey, finalKey, "image/jpeg", 2048L);
         verify(storage).deleteObjects(List.of(stagingKey));
     }
 
