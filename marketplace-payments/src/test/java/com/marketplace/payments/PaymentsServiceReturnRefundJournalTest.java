@@ -122,6 +122,11 @@ class PaymentsServiceReturnRefundJournalTest {
         // EXECUTED record FIRST and answers the reconciled state.
         PaymentsService svc = service();
         Payment payment = collectedPayment(2000L); // the books already carry the executed refund
+        // Re-completion must read both the provider's actual cumulative and
+        // the current payment row; a default-null Mockito read is not evidence.
+        when(paymentRepository.findByPaymentIntentId(payment.getPaymentIntentId()))
+                .thenReturn(Optional.of(payment));
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_return")).thenReturn(2000L);
         UUID returnId = UUID.randomUUID();
         String operationKey = PaymentsService.StableRefundScope.forReturn(returnId)
                 .idempotencyKey(payment.getId(), 2000L);
