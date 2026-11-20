@@ -1,6 +1,7 @@
 package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -269,8 +270,8 @@ final class S3MediaStorage implements AutoCloseable {
                     .metadataDirective(MetadataDirective.COPY)
                     .build()));
         } catch (S3Exception ex) {
-            if (ex.statusCode() == 412) {
-                throw new BadRequestException("Staged upload changed during confirmation; please upload again");
+            if (ex.statusCode() == 412 || ex.statusCode() == 409) {
+                throw new ConflictException("Staged upload changed during confirmation; please upload again");
             }
             throw ex;
         }
