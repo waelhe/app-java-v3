@@ -6,7 +6,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -22,6 +24,8 @@ import java.util.UUID;
  */
 @Service
 public class MediaPurgeStateService {
+    private static final int UPDATE_BATCH_SIZE = 1_000;
+
     private final JdbcTemplate jdbcTemplate;
 
     public MediaPurgeStateService(JdbcTemplate jdbcTemplate) {
@@ -52,12 +56,20 @@ public class MediaPurgeStateService {
                 "SELECT pg_advisory_xact_lock(hashtextextended('marketplace-media-account:' || CAST(? AS text), 0))",
                 rs -> { }, userId);
 
-        List<String> keys = new ArrayList<>();
+        Set<String> keys = new LinkedHashSet<>();
         List<UUID> mediaAssetIds = new ArrayList<>();
         RowCallbackHandler assetKeys = rs -> {
             mediaAssetIds.add((UUID) rs.getObject(1));
             String objectKey = rs.getString(2);
-            if (objectKey != null) keys.add(objectKey);
+            if (objectKey != null) {
+                keys.add(objectKey);
+                // Thumbnail keys are deterministic (objectKey + "/thumb").
+                // Include the candidate even when the pointer is null: S3
+                // writes cannot roll back with the DB transaction, so a
+                // successful PUT followed by a failed pointer commit leaves
+                // an orphan that account erasure must still delete.
+                keys.add(objectKey + "/thumb");
+            }
             String thumbKey = rs.getString(3);
             if (thumbKey != null) keys.add(thumbKey);
             String uploadKey = rs.getString(4);
@@ -86,7 +98,7 @@ public class MediaPurgeStateService {
         // this batch without its keys being deleted.
         markPending("media_assets", "provider_id", userId, mediaAssetIds);
         markPending("review_media", "uploader_id", userId, reviewMediaIds);
-        return new PurgeBatch(keys, mediaAssetIds, reviewMediaIds);
+        return new PurgeBatch(new ArrayList<>(keys), mediaAssetIds, reviewMediaIds);
     }
 
     /**
@@ -118,14 +130,19 @@ public class MediaPurgeStateService {
         if (ids.isEmpty()) {
             return 0;
         }
-        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
-        String sql = "UPDATE " + table + " SET " + assignment + ", version = version + 1 "
-                + "WHERE " + ownerColumn + " = ? AND id IN (" + placeholders + ") AND " + predicate;
-        Object[] args = new Object[ids.size() + 1];
-        args[0] = userId;
-        for (int i = 0; i < ids.size(); i++) {
-            args[i + 1] = ids.get(i);
+        int updated = 0;
+        for (int start = 0; start < ids.size(); start += UPDATE_BATCH_SIZE) {
+            List<UUID> batch = ids.subList(start, Math.min(start + UPDATE_BATCH_SIZE, ids.size()));
+            String placeholders = String.join(",", java.util.Collections.nCopies(batch.size(), "?"));
+            String sql = "UPDATE " + table + " SET " + assignment + ", version = version + 1 "
+                    + "WHERE " + ownerColumn + " = ? AND id IN (" + placeholders + ") AND " + predicate;
+            Object[] args = new Object[batch.size() + 1];
+            args[0] = userId;
+            for (int i = 0; i < batch.size(); i++) {
+                args[i + 1] = batch.get(i);
+            }
+            updated += jdbcTemplate.update(sql, args);
         }
-        return jdbcTemplate.update(sql, args);
+        return updated;
     }
 }
