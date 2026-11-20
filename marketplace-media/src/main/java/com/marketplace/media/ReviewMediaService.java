@@ -172,7 +172,8 @@ public class ReviewMediaService {
         }
         boolean promotedFromStaging = !uploadObjectKey.equals(asset.getObjectKey());
         if (promotedFromStaging) {
-            s3.copyObject(uploadObjectKey, asset.getObjectKey());
+            s3.copyVerifiedObject(uploadObjectKey, asset.getObjectKey(),
+                    asset.getContentType(), asset.getSizeBytes());
         }
         asset.markUploaded();
         if (promotedFromStaging) {
