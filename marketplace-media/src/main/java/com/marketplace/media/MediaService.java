@@ -110,8 +110,12 @@ public class MediaService {
         validateSize(sizeBytes);
 
         ListingPriceProvider.ListingInfo listing = listingPriceProvider.getListingInfo(listingId);
-        verifyListingOwnership(listing.providerId(), authentication);
+        // Lock before resolving the caller's current identity. If erasure wins
+        // this lock, the identity re-check below observes the pseudonymized
+        // subject and rejects this request; if upload wins, erasure waits and
+        // includes the committed row in its key snapshot.
         mediaAssetRepository.lockAccountMediaMutation(listing.providerId().toString());
+        verifyListingOwnership(listing.providerId(), authentication);
 
         // Display-position allocation must be atomic per listing (CodeRabbit
         // #241): countByListingId()+1 inside a transaction does NOT serialize
@@ -166,9 +170,11 @@ public class MediaService {
         validateSize(sizeBytes);
 
         PostLookupPort.PostInfo post = postLookupPort.getPostInfo(postId);
+        // Acquire the owner fence before the identity check so a request
+        // queued behind account erasure cannot reuse a pre-erasure JWT check.
+        mediaAssetRepository.lockAccountMediaMutation(post.authorId().toString());
         verifyPostAuthorship(post.authorId(), authentication);
         verifyPostWriteRight(post);
-        mediaAssetRepository.lockAccountMediaMutation(post.authorId().toString());
 
         // Display-position allocation must be atomic per post (CodeRabbit
         // #241, the listing flow's exact discipline): the advisory
@@ -211,8 +217,8 @@ public class MediaService {
         validateSize(sizeBytes);
 
         ProductLookupPort.ProductInfo product = productLookupPort.getProductInfo(productId);
-        verifyListingOwnership(product.providerId(), authentication);
         mediaAssetRepository.lockAccountMediaMutation(product.providerId().toString());
+        verifyListingOwnership(product.providerId(), authentication);
 
         mediaAssetRepository.lockProductPositionAllocation(productId.toString());
 
