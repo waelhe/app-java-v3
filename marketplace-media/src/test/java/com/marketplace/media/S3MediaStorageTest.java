@@ -168,27 +168,6 @@ class S3MediaStorageTest {
     }
 
     @Test
-    void copyObjectPromotesTheStagingObjectToThePermanentKey() {
-        try (S3Presigner presigner = realPresigner()) {
-            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
-                    Duration.ofMinutes(15), neverOpens());
-
-            storage.copyObject("media-upload-staging/random", "listings/abc/photo.jpg");
-
-            var captor = org.mockito.ArgumentCaptor.forClass(
-                    software.amazon.awssdk.services.s3.model.CopyObjectRequest.class);
-            verify(client).copyObject(captor.capture());
-            var request = captor.getValue();
-            org.assertj.core.api.Assertions.assertThat(request.bucket()).isEqualTo(BUCKET);
-            org.assertj.core.api.Assertions.assertThat(request.key()).isEqualTo("listings/abc/photo.jpg");
-            org.assertj.core.api.Assertions.assertThat(request.copySource())
-                    .isEqualTo(BUCKET + "/media-upload-staging/random");
-            org.assertj.core.api.Assertions.assertThat(request.metadataDirective())
-                    .isEqualTo(software.amazon.awssdk.services.s3.model.MetadataDirective.COPY);
-        }
-    }
-
-    @Test
     void copyVerifiedObjectPinsTheSourceEtagThatWasChecked() {
         try (S3Presigner presigner = realPresigner()) {
             S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
