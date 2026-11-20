@@ -63,7 +63,7 @@ class MediaPurgeStateServiceTest {
 
         assertThat(batch.objectKeys()).containsExactly(
                 "listings/1/a.jpg", "listings/1/a.jpg/thumb", "media-upload-staging/asset-a",
-                "posts/2/b.jpg", "review-media/3/c.jpg", "media-upload-staging/review-c");
+                "posts/2/b.jpg", "posts/2/b.jpg/thumb", "review-media/3/c.jpg", "media-upload-staging/review-c");
         assertThat(batch.mediaAssetIds()).containsExactly(assetOne, assetTwo);
         assertThat(batch.reviewMediaIds()).containsExactly(reviewMediaId);
         verify(jdbcTemplate).update(
@@ -104,8 +104,8 @@ class MediaPurgeStateServiceTest {
 
         var batch = new MediaPurgeStateService(jdbcTemplate).markPendingAndCollectKeys(userId);
 
-        assertThat(batch.objectKeys()).containsExactly("listings/retry.jpg", "media-upload-staging/retry-asset",
-                "review-media/retry.jpg", "media-upload-staging/retry-review");
+        assertThat(batch.objectKeys()).containsExactly("listings/retry.jpg", "listings/retry.jpg/thumb",
+                "media-upload-staging/retry-asset", "review-media/retry.jpg", "media-upload-staging/retry-review");
         assertThat(batch.mediaAssetIds()).containsExactly(assetId);
         assertThat(batch.reviewMediaIds()).containsExactly(reviewMediaId);
     }
@@ -132,6 +132,27 @@ class MediaPurgeStateServiceTest {
                 eq("UPDATE review_media SET status = 'PURGED', version = version + 1 "
                         + "WHERE uploader_id = ? AND id IN (?) AND status = 'PURGE_PENDING'"),
                 aryEq(new Object[]{userId, reviewMediaId}));
+    }
+
+    @Test
+    void largePurgeSnapshotsAreUpdatedInBoundedBatches() {
+        UUID userId = UUID.randomUUID();
+        List<UUID> assetIds = java.util.stream.IntStream.range(0, 1_001)
+                .mapToObj(ignored -> UUID.randomUUID()).toList();
+        var batch = new MediaPurgeStateService.PurgeBatch(List.of(), assetIds, List.of());
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1_000, 1);
+
+        int result = new MediaPurgeStateService(jdbcTemplate).markPurged(userId, batch);
+
+        assertThat(result).isEqualTo(1_001);
+        org.mockito.ArgumentCaptor<Object[]> arguments =
+                org.mockito.ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate, org.mockito.Mockito.times(2)).update(anyString(), arguments.capture());
+        assertThat(arguments.getAllValues()).hasSize(2);
+        assertThat(arguments.getAllValues().get(0)).hasSize(1_001);
+        assertThat(arguments.getAllValues().get(1)).hasSize(2);
+        assertThat(arguments.getAllValues().get(0)[0]).isEqualTo(userId);
+        assertThat(arguments.getAllValues().get(1)[0]).isEqualTo(userId);
     }
 
     @Test
