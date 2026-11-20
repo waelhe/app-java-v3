@@ -601,14 +601,15 @@ public class MediaService {
     @Observed(name = "media.thumbnail.process")
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void processThumbnail(UUID mediaId) {
-        S3MediaStorage s3 = requireStorage();
         MediaAsset asset = mediaAssetRepository.findByIdForUpdate(mediaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Media asset not found: " + mediaId));
         // The erasure tombstone and this worker serialize on the same row.
-        // Do not read or create derivatives once purge has hidden the asset.
+        // Do not require storage, read the original, or create derivatives
+        // once purge has hidden the asset.
         if (asset.getStatus() != MediaAssetStatus.UPLOADED) {
             return;
         }
+        S3MediaStorage s3 = requireStorage();
         if (asset.getThumbObjectKey() != null) {
             // Idempotent: a resubmission re-running the listener must not
             // re-store the object or flip the pointer.
