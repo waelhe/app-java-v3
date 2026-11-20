@@ -69,14 +69,21 @@ this skill is patched to match.
    `CONTRIBUTING.md` (channels, contract rules, secrets policy).
 5. Defect-knowledge system (`docs/governance/defect-knowledge/` —
    protocol §9's regression list is its quick view; protocol §3's
-   step 4 is the binding ritual step this item mirrors): before
-   editing, load `change-protocol.md` and apply the pattern families
-   it triggers (`pattern-catalog.md`, P1–P10); before writing a fix,
-   check `evidence-ledger.md` (E-01…E-23) and the rulebook rules
-   (A/B/C/D) the change binds; after implementing, run the adversarial
-   pass in `review-protocol.md`; when a guard fails, `enforcement-map.md`
-   states the rule → enforcement binding. The system is permanent; the
-   quick view only points into it.
+   step 4 is the binding ritual step this item mirrors): read its
+   `SKILL.md` router first, then load only the focused `rules/*.md`
+   packs triggered by the change (money, events, authorization,
+   contracts, database/concurrency, configuration/release, modes, or
+   signal triage). Do not load every pack for an unrelated task.
+   Before editing, load `change-protocol.md` and apply the relevant
+   patterns P1–P15; before fixing, inspect evidence E-01…E-52 and the
+   A/B/C/D rules in `rulebook.md`; after implementing, run the
+   adversarial pass in `review-protocol.md`. For each new code/runtime
+   PR, create `change-records/PR-<number>.json` and run D11; a fixed
+   claim requires a reachable repair commit, a named regression test, and
+   an API-verified successful workflow run on recorded `testedHeadSha`;
+   the only permitted later change is the same receipt JSON. Review intake captures
+   comments as untrusted signals; adjudicate each material source item.
+   `SKILL.md` is a routing guide, not a second rulebook.
 6. Read `docs/governance/agent-skills-policy.md` and
    `docs/governance/plans/agent-skills-pins.json`; load only relevant,
    pinned `.agents/skills/<name>/SKILL.md` files and their triggered
