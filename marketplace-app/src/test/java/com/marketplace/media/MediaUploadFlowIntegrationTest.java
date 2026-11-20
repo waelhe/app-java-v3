@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -316,4 +316,42 @@ class MediaUploadFlowIntegrationTest {
         assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow().getStatus())
                 .isEqualTo(MediaAssetStatus.PENDING_UPLOAD);
     }
+
+    @Test
+    void purgeFinalizesOnlyRowsCapturedByItsOwnBatch_whenAnOverlappingPurgeFindsNewRows() {
+        UUID ownerId = UUID.randomUUID();
+        UUID firstListingId = UUID.randomUUID();
+        MediaAsset first = mediaAssetRepository.save(MediaAsset.create(
+                firstListingId, ownerId,
+                "listings/" + firstListingId + "/first.jpg",
+                "media-upload-staging/" + UUID.randomUUID(),
+                "image/jpeg", 2048L, 1));
+
+        // Purge A commits its snapshot and leaves its rows retryable before S3 I/O.
+        var firstBatch = mediaPurgeStateService.markPendingAndCollectKeys(ownerId);
+        assertThat(firstBatch.mediaAssetIds()).containsExactly(first.getId());
+
+        // A second row is created and captured by overlapping purge B before A finalizes.
+        UUID secondListingId = UUID.randomUUID();
+        MediaAsset second = mediaAssetRepository.save(MediaAsset.create(
+                secondListingId, ownerId,
+                "listings/" + secondListingId + "/second.jpg",
+                "media-upload-staging/" + UUID.randomUUID(),
+                "image/jpeg", 4096L, 1));
+        var secondBatch = mediaPurgeStateService.markPendingAndCollectKeys(ownerId);
+        assertThat(secondBatch.mediaAssetIds()).containsExactlyInAnyOrder(first.getId(), second.getId());
+
+        // A's successful deletion may finalize only A's captured row. B remains
+        // PURGE_PENDING until B's own storage deletion is confirmed.
+        assertThat(mediaPurgeStateService.markPurged(ownerId, firstBatch)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM media_assets WHERE id = ?", String.class, first.getId()))
+                .isEqualTo("PURGED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM media_assets WHERE id = ?", String.class, second.getId()))
+                .isEqualTo("PURGE_PENDING");
+
+        assertThat(mediaPurgeStateService.markPurged(ownerId, secondBatch)).isEqualTo(1);
+    }
+
 }
