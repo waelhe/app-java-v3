@@ -104,9 +104,14 @@ class PaymentsServiceDisputeRefundJournalTest {
         }
         when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
         when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
-        when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         return payment;
+    }
+
+    /** Stub only the live-read path, which asks for the payment by intent id. */
+    private void stubPaymentLookupForLiveRead(Payment payment) {
+        when(paymentRepository.findByPaymentIntentId(payment.getPaymentIntentId()))
+                .thenReturn(Optional.of(payment));
     }
 
     private static String disputeKey(UUID paymentId, UUID disputeId) {
@@ -178,6 +183,7 @@ class PaymentsServiceDisputeRefundJournalTest {
         // is still OPEN — the pre-fix cap check (3000 + 3000 > 5000) would
         // reject the very refund that already executed
         Payment payment = collectedPayment(3000L);
+        stubPaymentLookupForLiveRead(payment);
         PaymentRefundOperation executed =
                 new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
         executed.markExecuted("re_dispute_prior");
@@ -240,9 +246,10 @@ class PaymentsServiceDisputeRefundJournalTest {
     }
 
     @Test
-    void anExecutedOperationWithNoLiveCumulativeCannotReconcileFromLocalArithmeticAlone() {
+    void anExecutedOperationWithNoLiveCumulativeUsesTheAlreadySyncedBooks() {
         UUID disputeId = UUID.randomUUID();
         Payment payment = collectedPayment(3000L);
+        stubPaymentLookupForLiveRead(payment);
         PaymentRefundOperation executed =
                 new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
         executed.markExecuted("re_dispute_prior");
@@ -250,12 +257,12 @@ class PaymentsServiceDisputeRefundJournalTest {
                 .thenReturn(Optional.of(executed));
         when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(null);
 
-        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
-                PaymentsService.StableRefundScope.forDispute(disputeId)))
-                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("await the charge.refunded sync");
+        PaymentsService.RefundedPayment refunded = service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId));
 
+        assertThat(refunded.payment().getRefundedAmountCents()).isEqualTo(3000L);
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+        verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
     }
 
     @Test
@@ -264,6 +271,7 @@ class PaymentsServiceDisputeRefundJournalTest {
         // The local books already meet the amount threshold, but the live PSP
         // cumulative does not; stale local arithmetic cannot close the dispute.
         Payment payment = collectedPayment(3000L);
+        stubPaymentLookupForLiveRead(payment);
         PaymentRefundOperation executed =
                 new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
         executed.markExecuted("re_dispute_prior");
