@@ -790,6 +790,9 @@ class PaymentsServicePspTest {
         when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
         when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
+        // Re-completion must ground the already-EXECUTED operation on the
+        // provider's live cumulative, not merely on the synced local books.
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_r9")).thenReturn(2000L);
         // the provider accepts the refund but answers pending — the books
         // await the webhook and the operation row stays SUBMITTED
         when(pspChannel.createRemoteRefund(eq("pi_remote_r9"), eq(2000L), eq(key)))
