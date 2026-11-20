@@ -121,6 +121,9 @@ class MediaUploadFlowIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     /**
      * Stubs ownership for the media flow: the user-owned provider profile
      * ({@code findByUserId}, A1) plus the listing price info.
@@ -152,6 +155,48 @@ class MediaUploadFlowIntegrationTest {
         } catch (java.io.IOException ex) {
             throw new IllegalStateException("test fixture failed to encode a JPEG", ex);
         }
+    }
+
+    /** A processable source wider than the configured 640-pixel thumbnail bound. */
+    private static byte[] largeJpeg() {
+        try {
+            java.awt.image.BufferedImage image =
+                    new java.awt.image.BufferedImage(1280, 800, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "jpeg", out);
+            return out.toByteArray();
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("test fixture failed to encode a large JPEG", ex);
+        }
+    }
+
+    /**
+     * Wait for the purge transaction to be visibly blocked by PostgreSQL on
+     * the row lock held by the thumbnail transaction. A start latch alone
+     * would only prove that both tasks were scheduled, not that the critical
+     * section actually overlapped.
+     */
+    private void awaitPostgresRowLockWait(int backendPid, java.util.concurrent.Future<?> purge)
+            throws Exception {
+        long deadline = System.nanoTime()
+                + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Boolean waiting = jdbcTemplate.queryForObject(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                            + "WHERE pid = ? AND wait_event_type = 'Lock')",
+                    Boolean.class, backendPid);
+            if (Boolean.TRUE.equals(waiting)) {
+                return;
+            }
+            if (purge.isDone()) {
+                // Surface the task's exception first when it failed; otherwise
+                // completing here means the purge did not wait on the row.
+                purge.get();
+                throw new AssertionError("account purge completed while thumbnail held the media row lock");
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("account purge never became a PostgreSQL lock waiter");
     }
 
     @Test
@@ -315,6 +360,85 @@ class MediaUploadFlowIntegrationTest {
         }
         assertThat(mediaAssetRepository.findById(view.mediaId()).orElseThrow().getStatus())
                 .isEqualTo(MediaAssetStatus.PENDING_UPLOAD);
+    }
+
+    @Test
+    void accountErasureWaitsForInFlightThumbnailAndCapturesItsDerivativeKey() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        // Listing ownership is carried as the authenticated user's id; using
+        // the same id here mirrors CatalogController's create contract and
+        // the MediaAsset.providerId account-erasure key.
+        mockOwner(userId, userId, listingId);
+        when(storage.presignUpload(anyString(), anyString())).thenReturn("https://u");
+        when(storage.verifyUploaded(anyString(), anyString(), any(Long.class))).thenReturn(true);
+        when(storage.presignDownload(anyString())).thenReturn("https://g");
+
+        var upload = mediaService.requestUpload(listingId, "image/jpeg", 8192L, null);
+        mediaService.confirmUpload(upload.mediaId(), null);
+        MediaAsset uploaded = mediaAssetRepository.findById(upload.mediaId()).orElseThrow();
+        assertThat(uploaded.getStatus()).isEqualTo(MediaAssetStatus.UPLOADED);
+        String originalKey = uploaded.getObjectKey();
+        String thumbnailKey = originalKey + "/thumb";
+        String stagingKey = uploaded.getUploadObjectKey();
+
+        var sourceReadStarted = new java.util.concurrent.CountDownLatch(1);
+        var allowThumbnailWrite = new java.util.concurrent.CountDownLatch(1);
+        when(storage.getObject(anyString())).thenAnswer(invocation -> {
+            sourceReadStarted.countDown();
+            if (!allowThumbnailWrite.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new IllegalStateException("test did not release the thumbnail worker");
+            }
+            return largeJpeg();
+        });
+
+        var purgeBackendPid = new java.util.concurrent.CompletableFuture<Integer>();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            try {
+                var thumbnail = pool.submit(() -> mediaService.processThumbnail(upload.mediaId()));
+                assertThat(sourceReadStarted.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                        .as("thumbnail worker must hold the media row lock before reading the source")
+                        .isTrue();
+
+                var purge = pool.submit(() ->
+                        new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                                .execute(status -> {
+                                    Integer pid = jdbcTemplate.queryForObject(
+                                            "SELECT pg_backend_pid()", Integer.class);
+                                    purgeBackendPid.complete(pid);
+                                    return mediaPurgeStateService.markPendingAndCollectKeys(userId);
+                                }));
+                int waitingPid = purgeBackendPid.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                awaitPostgresRowLockWait(waitingPid, purge);
+
+                // The purge is now proven to be waiting on PostgreSQL's row
+                // lock. Let the worker finish the derivative write and commit;
+                // the purge must then observe and collect the new thumb key.
+                allowThumbnailWrite.countDown();
+                thumbnail.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                MediaPurgeStateService.PurgeBatch batch =
+                        purge.get(30, java.util.concurrent.TimeUnit.SECONDS);
+
+                assertThat(batch.mediaAssetIds()).containsExactly(upload.mediaId());
+                assertThat(batch.objectKeys()).contains(originalKey, thumbnailKey, stagingKey);
+                assertThat(mediaAssetRepository.findById(upload.mediaId()).orElseThrow().getStatus())
+                        .isEqualTo(MediaAssetStatus.PURGE_PENDING);
+                org.mockito.Mockito.verify(storage).putObject(
+                        org.mockito.ArgumentMatchers.eq(thumbnailKey),
+                        org.mockito.ArgumentMatchers.eq("image/jpeg"),
+                        org.mockito.ArgumentMatchers.any(byte[].class));
+
+                // The storage adapter receives the complete snapshot before
+                // finalization; a successful deletion is the only path to PURGED.
+                mediaService.destroyObjectsForErasure(batch.objectKeys());
+                org.mockito.Mockito.verify(storage).deleteObjects(batch.objectKeys());
+                assertThat(mediaPurgeStateService.markPurged(userId, batch)).isEqualTo(1);
+                assertThat(mediaAssetRepository.findById(upload.mediaId()).orElseThrow().getStatus())
+                        .isEqualTo(MediaAssetStatus.PURGED);
+            } finally {
+                allowThumbnailWrite.countDown();
+            }
+        }
     }
 
     @Test
