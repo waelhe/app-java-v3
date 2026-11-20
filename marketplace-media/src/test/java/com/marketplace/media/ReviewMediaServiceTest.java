@@ -193,8 +193,8 @@ class ReviewMediaServiceTest {
         service.confirmUpload(asset.getId(), authentication);
 
         assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
-        assertNull(asset.getUploadObjectKey());
-        verify(s3).copyObject(stagingKey, finalKey);
+        assertEquals(stagingKey, asset.getUploadObjectKey());
+        verify(s3).copyVerifiedObject(stagingKey, finalKey, "image/jpeg", 1024L);
         verify(s3).deleteObjects(List.of(stagingKey));
     }
 
