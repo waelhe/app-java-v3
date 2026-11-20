@@ -108,8 +108,9 @@ jobs:
           GITLEAKS_FAIL_LEVEL: high
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -212,8 +213,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -342,8 +344,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -451,8 +454,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -524,8 +528,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -586,8 +591,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -649,8 +655,9 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v6.1.0
+        uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           distribution: temurin
           java-version: "17"
 

@@ -67,6 +67,18 @@ public class LedgerEntry extends BaseEntity {
                 amountCents, currency);
     }
 
+    /**
+     * A2 (owner-gate batch 6a — the ADR-0013 D3 §3 mirror rule): the full
+     * refund's commission REVERSAL credit — the mirror image of the
+     * settlement's COMMISSION_DEBIT, in the original currency, so the
+     * refunded balance returns to its pre-settlement zero, not to a
+     * commission-sized negative.
+     */
+    public static LedgerEntry commissionReversalCredit(UUID providerId, UUID sourceId, long amountCents, String currency) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.COMMISSION_REVERSAL_CREDIT,
+                amountCents, currency);
+    }
+
     /** L24 — the full refund's debit (mirrors the PAYMENT_CREDIT amount), in the original currency. */
     public static LedgerEntry refundDebit(UUID providerId, UUID sourceId, long amountCents, String currency) {
         return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.REFUND_DEBIT,
