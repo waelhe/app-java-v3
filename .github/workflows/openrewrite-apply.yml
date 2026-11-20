@@ -70,6 +70,7 @@ jobs:
       - name: Set up JDK 25 and authenticated Maven
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: '25'
           distribution: temurin
           cache: maven
