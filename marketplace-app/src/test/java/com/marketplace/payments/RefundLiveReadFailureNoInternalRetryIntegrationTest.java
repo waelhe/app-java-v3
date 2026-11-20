@@ -149,6 +149,8 @@ class RefundLiveReadFailureNoInternalRetryIntegrationTest {
         payment.markCompleted("ch_live_read_outage");
         payment.markPartiallyRefunded(3000L);
         paymentRepository.save(payment);
+// The provider can only refund a captured (SUCCEEDED) payment intent.
+        intent.markSucceeded();
         intent.markPartiallyRefunded(3000L);
         paymentIntentRepository.save(intent);
         // the operation is EXECUTED and durable: the journal's own record
