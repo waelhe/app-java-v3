@@ -140,6 +140,7 @@ if [[ "$BOOTSTRAP" -eq 0 ]]; then
   if ! ./mvnw -U -q -pl marketplace-app -am clean test -Dtest=GraphQlSchemaDumpGate \
         -Dsurefire.failIfNoSpecifiedTests=false -DskipITs \
         > "$WORK_DIR/baseline-maven.log" 2>&1; then
+    git checkout -q -- .mvn/wrapper/maven-wrapper.properties
     remove_dump_test
     git checkout -q "$CURRENT_SHA"
     echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent."
@@ -149,6 +150,9 @@ if [[ "$BOOTSTRAP" -eq 0 ]]; then
     echo "Full log is also uploaded as a workflow artifact."
     exit 1
   fi
+  # The temporary archive URL rewrite belongs only to the historical tag.
+  # Restore its tracked wrapper file before returning to the current tree.
+  git checkout -q -- .mvn/wrapper/maven-wrapper.properties
   if [[ ! -f "$DUMP_FILE" ]]; then
     remove_dump_test
     git checkout -q "$CURRENT_SHA"
