@@ -45,7 +45,7 @@ public class ReviewMedia extends BaseEntity {
     @Column(name = "object_key", nullable = false, length = 500)
     private String objectKey;
 
-    /** Temporary destination of the presigned PUT; null after promotion to objectKey. */
+    /** Presigned staging destination retained for account-erasure cleanup/retry. */
     @Column(name = "upload_object_key", length = 500)
     private String uploadObjectKey;
 
@@ -94,7 +94,7 @@ public class ReviewMedia extends BaseEntity {
     public void markUploaded() {
         this.status.validateTransitionTo(MediaAssetStatus.UPLOADED);
         this.status = MediaAssetStatus.UPLOADED;
-        this.uploadObjectKey = null;
+        // Keep the original staging key as erasure evidence for failed cleanup retries.
     }
 
     @Override
