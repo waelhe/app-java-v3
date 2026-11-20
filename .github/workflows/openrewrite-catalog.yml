@@ -112,6 +112,7 @@ jobs:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
         with:
+          problem-matcher: true
           java-version: '25'
           distribution: temurin
           cache: maven
@@ -302,6 +303,7 @@ jobs:
           CODEGENOME_USERNAME: ${{ secrets.CODEGENOME_USERNAME }}
           CODEGENOME_TOKEN: ${{ secrets.CODEGENOME_TOKEN }}
         with:
+          problem-matcher: true
           java-version: '25'
           distribution: temurin
           cache: maven
