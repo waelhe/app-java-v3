@@ -40,6 +40,8 @@ set -euo pipefail
 #   GRAPHQL_BASELINE_TAG — optional tag override (default: newest tag).
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=.ci/prepare-baseline-maven-wrapper.sh
+source "$ROOT_DIR/.ci/prepare-baseline-maven-wrapper.sh"
 WORK_DIR="$ROOT_DIR/.ci/graphql-compat"
 DUMP_FILE="marketplace-app/target/graphql-schema.graphqls"
 DUMP_CLASS_DIR="marketplace-app/src/test/java/com/marketplace/app/graphql"
@@ -130,6 +132,7 @@ remove_dump_test() {
 # ------------------------------------------------------------- baseline phase
 if [[ "$BOOTSTRAP" -eq 0 ]]; then
   git checkout -q "$LATEST_TAG"
+  prepare_baseline_maven_wrapper "$ROOT_DIR/.mvn/wrapper/maven-wrapper.properties"
   write_dump_test
   # `clean` is load-bearing (the OpenAPI gate's measured lesson): the two
   # phases build different trees through the same target/ — a stale
