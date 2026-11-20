@@ -1332,6 +1332,20 @@ public class PaymentsService implements PaymentsSpi {
                 // intent has nothing refundable to ground on.
                 boolean reconciled = liveGrounding != null ? liveGrounding : booksSynced;
                 if (!reconciled) {
+                    // CodeRabbit round 16: the two rejection causes prescribe
+                    // different retry vehicles. An ANSWERED live read (FALSE)
+                    // means the provider's own cumulative has not reached the
+                    // required amount yet — the retry rides the provider's
+                    // live total, never a webhook. The channel-less books wait
+                    // (null — no channel or no psp intent id) is the only path
+                    // that rides the webhook vehicle, so its message keeps the
+                    // charge.refunded reference.
+                    if (Boolean.FALSE.equals(liveGrounding)) {
+                        throw new ConflictException("The " + scopeKind + "'s refund operation already EXECUTED at the"
+                                + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
+                                + " but the live provider total has not reached the required amount yet —"
+                                + " retry once a total that satisfies it is available");
+                    }
                     throw new ConflictException("The " + scopeKind + "'s refund operation already EXECUTED at the"
                             + " provider (remote refund " + operation.getRemoteRefundId() + " recorded)"
                             + " but the local books await the charge.refunded sync — retry after the"

@@ -202,7 +202,7 @@ class RefundCarrierPoisoningIntegrationTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                 carrier.execute(status -> orderRefundPort.refundForOrder(orderId, returnId, 1500L)))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("await the charge.refunded sync");
+                .hasMessageContaining("has not reached the required amount yet");
         assertThat(REFUND_CALLS.get())
                 .as("re-reading an EXECUTED operation never re-submits the remote refund")
                 .isEqualTo(2);

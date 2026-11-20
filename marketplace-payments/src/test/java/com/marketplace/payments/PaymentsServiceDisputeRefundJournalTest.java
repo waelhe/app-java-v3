@@ -264,7 +264,7 @@ class PaymentsServiceDisputeRefundJournalTest {
         assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
                 PaymentsService.StableRefundScope.forDispute(disputeId)))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("await the charge.refunded sync");
+                .hasMessageContaining("has not reached the required amount yet");
 
         verify(pspChannel).readRemoteRefundTotalCents("pi_remote_dispute");
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
@@ -288,7 +288,7 @@ class PaymentsServiceDisputeRefundJournalTest {
         assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
                 PaymentsService.StableRefundScope.forDispute(disputeId)))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("await the charge.refunded sync");
+                .hasMessageContaining("has not reached the required amount yet");
 
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
     }
