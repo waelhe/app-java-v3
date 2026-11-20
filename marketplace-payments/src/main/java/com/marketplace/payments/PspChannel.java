@@ -70,6 +70,17 @@ public interface PspChannel {
     VerifiedWebhook verifyWebhook(String rawPayload, String signatureHeader);
 
     /**
+     * Performs provider API reads needed to complete a verified event's
+     * dispatch snapshot. Callers invoke this only after a provider-scoped
+     * event-id dedup preflight. Implementations that need no enrichment keep
+     * the default identity mapping.
+     */
+    default VerifiedWebhook resolveWebhookDetails(String rawPayload, String signatureHeader,
+                                                  VerifiedWebhook verified) {
+        return verified;
+    }
+
+    /**
      * Reads the charge's CURRENT cumulative refunded amount through the
      * provider's own API — the same authoritative cumulative read
      * {@code createRemoteRefund} answers with (the retrieved
