@@ -5,10 +5,12 @@ import com.marketplace.payments.PaymentIntent;
 import com.marketplace.payments.PaymentIntentRepository;
 import com.marketplace.payments.PaymentRepository;
 import com.marketplace.payments.PaymentsService;
+import com.marketplace.payments.BoundFakePspChannelConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -59,6 +61,7 @@ import static org.mockito.Mockito.when;
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(BoundFakePspChannelConfig.class)
 class AdOriginRefundJourneyIntegrationTest {
 
     @Container
@@ -133,7 +136,9 @@ class AdOriginRefundJourneyIntegrationTest {
         assertThat(intent.getAmountCents()).isEqualTo(20000L);
 
         // (1) The provider drives the money loop: process (PROCESSING +
-        // the Payment row), then the administrative capture (SUCCEEDED).
+        // the Payment row — W3: through the bound fake channel, the REAL
+        // money path the fifth provider gate now requires), then the
+        // administrative capture (SUCCEEDED).
         asRole("ROLE_CONSUMER", campaign.getProviderId());
         paymentsService.processIntent(intent.getId(),
                 SecurityContextHolder.getContext().getAuthentication());

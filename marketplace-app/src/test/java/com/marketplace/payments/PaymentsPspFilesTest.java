@@ -23,8 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Pinned contract:
  * <ul>
  *   <li>application.yml — the two PAYMENTS_STRIPE_* provider-gate
- *       placeholders exist (empty defaults = channel inert, processIntent
- *       keeps the legacy behavior, Stripe webhook answers 503 SU-001)</li>
+ *       placeholders exist (empty defaults = channel inert, W3: BOTH
+ *       processIntent and the Stripe webhook answer 503 SU-001 — the
+ *       fifth provider gate closed with the four MAIL/MEDIA_S3/sitemap/
+ *       pseudonymizer gates)</li>
  *   <li>parent pom — stripe-java managed in dependencyManagement with the
  *       documented Exception #11 and the version property</li>
  *   <li>marketplace-payments pom — the ONLY module consuming the SDK</li>

@@ -34,13 +34,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the {@code aiChat} instance uses for its OFF state): ignored
  * exceptions "should be ignored and neither count as failure nor
  * success", and the retry twin's list leaves them un-retried.</p>
+ *
+ * <p>W3 (CodeRabbit round on #827, 2026-11-14 — the F-827-1 twin from the
+ * 2026-11-14 adversarial behavioral review): {@code requireChannel()}'s 503
+ * SU-001 joins the same honest-state list on BOTH twins. The capability
+ * being OFF is a state, not a channel failure (the {@code aiChat} OFF-state
+ * precedent's own rule); an unbound channel cannot become bound between
+ * attempts, so the retry would only burn ~3s of backoff before the identical
+ * 503 on the consumer money path, and the SHARED breaker must keep measuring
+ * only the bound channel's real health — otherwise its open state rejects
+ * the healthy {@code refundPayment}/{@code confirm}/{@code autoRefund}
+ * paths for the 60s open window.</p>
  */
 class PaymentProcessingResilienceFilesTest {
 
-    private static final List<String> CALLER_CONTROLLED_FAILURES = List.of(
+    private static final List<String> HONEST_STATE_FAILURES = List.of(
             "com.marketplace.shared.api.ResourceNotFoundException",
             "org.springframework.security.access.AccessDeniedException",
-            "com.marketplace.shared.api.ConflictException");
+            "com.marketplace.shared.api.ConflictException",
+            "com.marketplace.shared.api.ServiceUnavailableException");
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> loadResilience4j() throws IOException {
@@ -65,13 +77,25 @@ class PaymentProcessingResilienceFilesTest {
             throws IOException {
         List<String> ignored = ignoreListOf("circuitbreaker");
         assertThat(ignored).isNotNull();
-        assertThat(ignored).containsExactlyElementsOf(CALLER_CONTROLLED_FAILURES);
+        assertThat(ignored).containsExactlyElementsOf(HONEST_STATE_FAILURES);
     }
 
     @Test
     void theSharedPaymentRetryLeavesTheExpectedFailuresUnRetried() throws IOException {
         List<String> ignored = ignoreListOf("retry");
         assertThat(ignored).isNotNull();
-        assertThat(ignored).containsExactlyElementsOf(CALLER_CONTROLLED_FAILURES);
+        assertThat(ignored).containsExactlyElementsOf(HONEST_STATE_FAILURES);
+    }
+
+    @Test
+    void theUnboundChannel503RidesTheIgnoreMechanismOnBothTwins() throws IOException {
+        // W3: requireChannel()'s ServiceUnavailableException (503 SU-001) must
+        // stay on BOTH lists — dropping either entry resurrects the measured
+        // defect: ~3s of retry backoff before the identical 503 and a shared
+        // breaker open that rejects healthy refund/confirm/autoRefund paths.
+        assertThat(ignoreListOf("circuitbreaker"))
+                .contains("com.marketplace.shared.api.ServiceUnavailableException");
+        assertThat(ignoreListOf("retry"))
+                .contains("com.marketplace.shared.api.ServiceUnavailableException");
     }
 }
