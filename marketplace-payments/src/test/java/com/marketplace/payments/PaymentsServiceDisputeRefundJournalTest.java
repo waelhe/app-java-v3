@@ -104,6 +104,7 @@ class PaymentsServiceDisputeRefundJournalTest {
         }
         when(intentRepository.findById(intent.getId())).thenReturn(Optional.of(intent));
         when(paymentRepository.findById(payment.getId())).thenReturn(Optional.of(payment));
+        when(paymentRepository.findByPaymentIntentId(intent.getId())).thenReturn(Optional.of(payment));
         when(boundChannel.getIfAvailable()).thenReturn(pspChannel);
         return payment;
     }
@@ -182,6 +183,7 @@ class PaymentsServiceDisputeRefundJournalTest {
         executed.markExecuted("re_dispute_prior");
         when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
                 .thenReturn(Optional.of(executed));
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(3000L);
 
         PaymentsService.RefundedPayment refunded = service().refundPayment(payment.getId(), 3000L,
                 PaymentsService.StableRefundScope.forDispute(disputeId));
@@ -235,6 +237,46 @@ class PaymentsServiceDisputeRefundJournalTest {
         // record stays the operation's own execution fact
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
         verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
+    }
+
+    @Test
+    void anExecutedOperationWithNoLiveCumulativeCannotReconcileFromLocalArithmeticAlone() {
+        UUID disputeId = UUID.randomUUID();
+        Payment payment = collectedPayment(3000L);
+        PaymentRefundOperation executed =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(executed));
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(null);
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("await the charge.refunded sync");
+
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+    }
+
+    @Test
+    void anExecutedOperationRejectsALiveCumulativeThatDoesNotCoverItsFrozenAmount() {
+        UUID disputeId = UUID.randomUUID();
+        // The local books already meet the amount threshold, but the live PSP
+        // cumulative does not; stale local arithmetic cannot close the dispute.
+        Payment payment = collectedPayment(3000L);
+        PaymentRefundOperation executed =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(executed));
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(2500L);
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("await the charge.refunded sync");
+
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
     }
 
     @Test
