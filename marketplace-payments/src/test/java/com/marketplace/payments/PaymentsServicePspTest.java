@@ -825,6 +825,7 @@ class PaymentsServicePspTest {
         PaymentsService.RefundedPayment settled = svc.refundPayment(
                 payment.getId(), 2000L, PaymentsService.StableRefundScope.forReturn(returnId));
 
+        verify(pspChannel, times(1)).readRemoteRefundTotalCents("pi_remote_r9");
         verify(pspChannel, times(1)).createRemoteRefund(eq("pi_remote_r9"), eq(2000L), eq(key));
         assertEquals(PaymentStatus.REFUNDED, settled.payment().getStatus());
         assertEquals(2000L, settled.payment().getRefundedAmountCents());
