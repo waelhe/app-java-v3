@@ -1225,15 +1225,22 @@ public class PaymentsService implements PaymentsSpi {
                             + " cumulative — never the books' arithmetic alone — so retry the resolution;"
                             + " the read is transient and the operation never re-submits.");
         }
-        if (remoteTotal == null) {
-            // The documented null contract (round 10): the provider has no
-            // charge yet — nothing refundable to ground on, so the caller's
-            // arithmetic keeps its own verdict.
-            return null;
-        }
         Payment payment = paymentRepository.findByPaymentIntentId(intent.getId()).orElse(null);
-        if (payment == null) {
-            return null;
+        if (payment == null || remoteTotal == null) {
+            // Once a provider channel and remote intent are present, an absent
+            // live cumulative is NOT proof that this executed operation is in
+            // the books. Only the channel-less deployment may fall back to
+            // the local arithmetic.
+            return false;
+        }
+        long requiredRemoteTotal = operation.getAmountCents() == null
+                ? payment.getAmountCents()
+                : Math.addExact(operation.getBooksAtSubmitCents(), operation.getAmountCents());
+        if (remoteTotal < requiredRemoteTotal) {
+            log.info("The {} refund operation {} is EXECUTED, but live provider cumulative {} cents is below"
+                            + " the required {} cents — reconciliation remains pending",
+                    scopeKind, operation.getIdempotencyKey(), remoteTotal, requiredRemoteTotal);
+            return false;
         }
         log.info("The {} refund operation {} is EXECUTED and the books' arithmetic alone passed — refreshing"
                 + " the books through the live remote cumulative {} cents before the reconciled answer",
