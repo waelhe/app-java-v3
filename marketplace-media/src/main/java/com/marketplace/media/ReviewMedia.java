@@ -45,7 +45,7 @@ public class ReviewMedia extends BaseEntity {
     @Column(name = "object_key", nullable = false, length = 500)
     private String objectKey;
 
-    /** Presigned staging destination retained for account-erasure cleanup/retry. */
+    /** Original PUT destination retained for account-erasure cleanup/retry (legacy rows may equal objectKey). */
     @Column(name = "upload_object_key", length = 500)
     private String uploadObjectKey;
 
