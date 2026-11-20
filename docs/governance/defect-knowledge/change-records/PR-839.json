@@ -36,7 +36,8 @@
     "The manual Railway deployment workflow targets the measured live production project, environment, and service identifiers rather than the retired resources.",
     "The workflow is workflow_dispatch-only: merging a pull request does not trigger a Railway production deployment.",
     "Historical recovery commands in SYSTEM.md, PROJECT_MAP.md, and the 2026-10-17 provider runbook are explicitly retired; current Railway identity is read back and published in docs/railway-deployment-reference.md.",
-    "No application code, API contract, database schema, runtime variables, secrets, or data resources are changed by this pull request."
+    "No application code, API contract, database schema, runtime variables, secrets, or data resources are changed by this pull request.",
+    "Production deployment workflow rejects workflow_dispatch refs other than refs/heads/main; feature branches and tags cannot deploy to the production service."
   ],
   "doors": [
     "GitHub Actions .github/workflows/railway-deploy.yml workflow_dispatch — the only repository-managed Railway deployment entry point",
@@ -54,7 +55,8 @@
         "docs/railway-deployment-reference.md",
         "SYSTEM.md",
         "PROJECT_MAP.md",
-        "docs/operating/trial-renewal-and-provider-migration-runbook.md"
+        "docs/operating/trial-renewal-and-provider-migration-runbook.md",
+        ".github/workflows/railway-deploy.yml"
       ],
       "result": "The retired service id 3efcf70c-56d5-4d87-ada5-6bba32022229 remained in four historical operational references across three files: SYSTEM.md:401, PROJECT_MAP.md:127, and docs/operating/trial-renewal-and-provider-migration-runbook.md:350 and :360. These were not live deployment configuration, but the runbook recovery command was unsafe to replay. The occurrences are now explicitly marked historical/retired and point to docs/railway-deployment-reference.md, whose current project/environment/service ids were read back directly from Railway on 2026-11-20. The current production workflow uses the live ids; Dockerfile.staging has no cache mount; .railway/railway.ts declares variables, not service ids."
     }
@@ -79,6 +81,11 @@
       "name": "Post-merge production deployment and smoke verification",
       "command": "Manually dispatch Actions → Railway Deploy from main, then read back Railway deployment state and run the agreed service smoke check",
       "verification": "Pending owner-gated execution tracked in https://github.com/waelhe/app-java-v3/issues/845; merging this PR alone does not deploy."
+    },
+    {
+      "name": "Production dispatch ref guard",
+      "command": "GitHub Actions workflow guard checks context.ref equals refs/heads/main before running the all-suites-green gate or calling Railway",
+      "verification": "Static workflow review; GitHub documents workflow_dispatch GITHUB_REF as the branch or tag that received dispatch. Negative-path execution remains covered by GitHub Actions after this head is pushed."
     }
   ],
   "findings": [
