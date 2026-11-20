@@ -253,8 +253,13 @@ final class S3MediaStorage implements AutoCloseable {
                     .bucket(bucket)
                     .key(sourceKey)
                     .build()));
-        } catch (RuntimeException ex) {
-            throw new BadRequestException("Staged upload is no longer available for confirmation");
+        } catch (S3Exception ex) {
+            if (ex.statusCode() == 404) {
+                throw new BadRequestException("Staged upload is no longer available for confirmation");
+            }
+            // Preserve storage outages, access failures and circuit-breaker
+            // signals as operational failures; they are not bad client uploads.
+            throw ex;
         }
         String sourceEtag = head == null ? null : head.eTag();
         if (head == null || !sizeEquals(head, sizeBytes) || !contentTypeEquals(head, contentType)
