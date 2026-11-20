@@ -58,16 +58,27 @@ The application deliberately does not overwrite bucket lifecycle rules at
 startup. Until the provider's live configuration is checked, infrastructure
 cleanup is an operational prerequisite rather than a proven production fact.
 
-## Legacy pending uploads
+## Legacy direct PUT URLs
 
-Migration V305 adds the nullable key columns; V306 preserves the
-already-issued destination of rows that were `PENDING_UPLOAD` at migration
-time. Their old presigned URLs cannot be moved to the staging namespace because
-the signed URL already fixes its key. The configured TTL bounds when a new
-request may START, not when an already-started PUT must finish: AWS checks URL
-expiry when the HTTP request begins, and a transfer begun before expiry may
-continue after it. Therefore TTL expiry alone is not proof that no in-flight
-legacy PUT can still create the old destination key. Keep this legacy window
-as an explicit residual erasure risk until in-flight requests are known to have
-drained or are otherwise contained. New uploads use the staging namespace and
-its object-age lifecycle rule; do not extend the legacy exception to new rows.
+Before the staging rollout, upload URLs addressed the permanent `object_key`
+directly. This applied both to rows still in `PENDING_UPLOAD` and to rows
+already confirmed as `UPLOADED`: the URL was reusable until expiry and a PUT
+could replace the same key after confirmation. V306 therefore preserves that
+historical upload destination in `upload_object_key` for every non-`PURGED`
+row in both media tables, not only pending uploads.
+
+The signed URL cannot be moved or revoked by a database migration. Its
+configured TTL bounds when a new request may START, not when an already-started
+PUT must finish: AWS checks URL expiry when the HTTP request begins, and a
+transfer begun before expiry may continue after it. Thus TTL expiry alone is
+not proof that no in-flight legacy PUT can recreate a permanent key after the
+erasure adapter has deleted it. The old direct-upload capability remains an
+explicit residual erasure risk until legacy requests are known to have drained
+or an owner-approved containment mechanism is in place. No production bucket
+rule or upload-drain telemetry is assumed by this application change.
+
+The new staging namespace applies only to URLs issued after the rollout. It
+confines reusable and late PUTs to `media-upload-staging/`, so the configured
+object-age lifecycle can remove them without making published media keys
+writable. Do not treat the new staging rule as revocation of a previously
+issued legacy URL.
