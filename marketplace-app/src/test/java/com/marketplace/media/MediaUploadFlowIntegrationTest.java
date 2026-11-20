@@ -185,7 +185,7 @@ class MediaUploadFlowIntegrationTest {
         assertThat(confirmed.thumbUrl()).isNull();
         var uploadedAsset = mediaAssetRepository.findById(view.mediaId()).orElseThrow();
         assertThat(uploadedAsset.getStatus()).isEqualTo(MediaAssetStatus.UPLOADED);
-        assertThat(uploadedAsset.getUploadObjectKey()).isNull();
+        assertThat(uploadedAsset.getUploadObjectKey()).isEqualTo(view.objectKey());
         assertThat(uploadedAsset.getObjectKey()).startsWith("listings/" + listingId + "/");
 
         // 3) read path: only UPLOADED assets, presigned per call — thumbUrl
