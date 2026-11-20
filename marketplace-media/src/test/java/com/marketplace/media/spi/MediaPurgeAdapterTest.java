@@ -33,8 +33,10 @@ class MediaPurgeAdapterTest {
         UUID subject = UUID.randomUUID();
         List<String> keys = List.of(
                 "listings/1/a.jpg", "listings/1/a.jpg/thumb", "review-media/3/c.jpg");
-        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(keys);
-        when(purgeState.markPurged(subject)).thenReturn(3);
+        var batch = new MediaPurgeStateService.PurgeBatch(
+                keys, List.of(UUID.randomUUID(), UUID.randomUUID()), List.of(UUID.randomUUID()));
+        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(batch);
+        when(purgeState.markPurged(subject, batch)).thenReturn(3);
 
         int purged = new MediaPurgeAdapter(purgeState, mediaService).purgeAuthoredTexts(subject);
 
@@ -42,14 +44,16 @@ class MediaPurgeAdapterTest {
         InOrder order = inOrder(purgeState, mediaService);
         order.verify(purgeState).markPendingAndCollectKeys(subject);
         order.verify(mediaService).destroyObjectsForErasure(keys);
-        order.verify(purgeState).markPurged(subject);
+        order.verify(purgeState).markPurged(subject, batch);
     }
 
     @Test
     void storageFailureLeavesPendingRowsRetryableAndNeverMarksPurged() {
         UUID subject = UUID.randomUUID();
         List<String> keys = List.of("listings/1/a.jpg");
-        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(keys);
+        var batch = new MediaPurgeStateService.PurgeBatch(
+                keys, List.of(UUID.randomUUID()), List.of());
+        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(batch);
         org.mockito.Mockito.doThrow(new IllegalStateException("S3 AccessDenied"))
                 .when(mediaService).destroyObjectsForErasure(keys);
 
@@ -57,32 +61,36 @@ class MediaPurgeAdapterTest {
                 () -> new MediaPurgeAdapter(purgeState, mediaService).purgeAuthoredTexts(subject));
 
         verify(purgeState).markPendingAndCollectKeys(subject);
-        verify(purgeState, never()).markPurged(subject);
+        verify(purgeState, never()).markPurged(subject, batch);
     }
 
     @Test
     void alreadyAbsentObjectsAreFinalizedWithoutRequiringStorage() {
         UUID subject = UUID.randomUUID();
-        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(List.of());
-        when(purgeState.markPurged(subject)).thenReturn(2);
+        var batch = new MediaPurgeStateService.PurgeBatch(
+                List.of(), List.of(UUID.randomUUID()), List.of(UUID.randomUUID()));
+        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(batch);
+        when(purgeState.markPurged(subject, batch)).thenReturn(2);
 
         int purged = new MediaPurgeAdapter(purgeState, mediaService).purgeAuthoredTexts(subject);
 
         assertThat(purged).isEqualTo(2);
         verify(mediaService, never()).destroyObjectsForErasure(org.mockito.ArgumentMatchers.any());
-        verify(purgeState).markPurged(subject);
+        verify(purgeState).markPurged(subject, batch);
     }
 
     @Test
     void retryProcessesPreviouslyPendingKeysAgainBeforeFinalization() {
         UUID subject = UUID.randomUUID();
         List<String> pendingKeys = List.of("posts/2/b.jpg");
-        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(pendingKeys);
-        when(purgeState.markPurged(subject)).thenReturn(1);
+        var batch = new MediaPurgeStateService.PurgeBatch(
+                pendingKeys, List.of(UUID.randomUUID()), List.of());
+        when(purgeState.markPendingAndCollectKeys(subject)).thenReturn(batch);
+        when(purgeState.markPurged(subject, batch)).thenReturn(1);
 
         new MediaPurgeAdapter(purgeState, mediaService).purgeAuthoredTexts(subject);
 
         verify(mediaService).destroyObjectsForErasure(pendingKeys);
-        verify(purgeState).markPurged(subject);
+        verify(purgeState).markPurged(subject, batch);
     }
 }
