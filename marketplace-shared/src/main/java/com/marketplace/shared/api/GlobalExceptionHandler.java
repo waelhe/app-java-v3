@@ -16,10 +16,14 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -135,6 +139,155 @@ public class GlobalExceptionHandler {
             leaf = node.getName();
         }
         return leaf != null ? leaf : violation.getPropertyPath().toString();
+    }
+
+    /**
+     * D4 (adversarial review 2026-11-10): a request parameter that fails its
+     * declared type binding — an unknown enum vocabulary value on a raw
+     * enum-bound {@code @RequestParam} (search's purpose/propertyType), or a
+     * non-numeric value on a numeric parameter — is a CLIENT-contract
+     * violation: the house VAL-001 400 with the rejected parameter named in
+     * the violations list, never the masked INT-001 500 the
+     * uncaught-exception net answered before this handler (the gap
+     * DiscoveryController's own comment documents — closed tree-wide here,
+     * both legs of the type gate now answer the one error pipeline).
+     *
+     * <p>i18n leg (CodeRabbit full-review round 2026-11-11): the detail —
+     * and the violations-list message — resolve through the bound
+     * {@link MessageSource} at the request locale via the dedicated
+     * {@code error.VAL-001.type-mismatch-detail} bundle key (the sibling
+     * of the existing {@code constraint-violation-detail} sub-key) with
+     * the rejected parameter, value, and declared type inserted as
+     * arguments, so the Arabic request sees the Arabic sentence while the
+     * detail keeps the rejected-value facts — instead of the generic
+     * {@code error.VAL-001.detail} "Validation failed" swallowing them.
+     * Without a bound source the exact English literal below is the floor,
+     * byte-identical to the previous behavior.</p>
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ProblemDetail handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+            HttpServletRequest request) {
+        String expected = ex.getRequiredType() != null
+                ? ex.getRequiredType().getSimpleName() : "the declared type";
+        // CodeRabbit full-review round 2026-11-14 (the repeated-parameter
+        // leg): Spring binds repeated query parameters as String[] — when
+        // the conversion fails the exception's value IS that array
+        // (RequestParamMethodArgumentResolver's own contract), and the
+        // raw String.valueOf would surface the JVM's identity string
+        // («[Ljava.lang.String;@…») where the client needs the rejected
+        // values. The rejected value renders as its elements joined with
+        // ", " on BOTH surfaces — the no-source fallback and the i18n
+        // argument — so detail and fieldErrors[].message carry the facts.
+        Object rawValue = ex.getValue();
+        String rejectedValue = rawValue != null && rawValue.getClass().isArray()
+                ? java.util.Arrays.stream((Object[]) rawValue)
+                        .map(String::valueOf)
+                        .collect(java.util.stream.Collectors.joining(", "))
+                : String.valueOf(rawValue);
+        String englishFallback = "Invalid value '" + rejectedValue + "' for parameter '" + ex.getName()
+                + "' — expected " + expected;
+        String detail = ProblemDetailRendering.resolve(messageSource,
+                ProblemDetailRendering.KEY_PREFIX + ApiErrorTaxonomy.VALIDATION.errorCode()
+                        + ".type-mismatch-detail",
+                englishFallback, ex.getName(), rejectedValue, expected);
+        // A null detail key passes the already-localized detail through — see
+        // ProblemDetailRendering.problem: one resolve, one text, both surfaces.
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, detail, request, null, null);
+        pd.setProperty("fieldErrors",
+                List.of(new ApiErrorPayload.FieldError(ex.getName(), detail)));
+        return pd;
+    }
+
+    /**
+     * F-821-1's first framework gate (closed after the 2026-11-15 empty
+     * approval measured the trap): an unparseable request body — malformed
+     * JSON, or a JSON value the target field's declared type cannot carry
+     * (an enum member that does not exist) — is a CLIENT-contract violation
+     * answering the house VAL-001 tree, never Boot's bare automatic body.
+     * The detail is a FIXED sentence by the leakage policy:
+     * HttpMessageNotReadableException's own message carries the parser's
+     * input fragments (Jackson prints the offending token), and the
+     * security policy never surfaces internal exception detail — the
+     * errorCode/category/traceId triple stays the client's facts, and the
+     * empty fieldErrors list is the honest shape (no field is addressable
+     * when the body itself did not parse).
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        return validationTreeWithFixedDetail("The request body could not be parsed for the expected shape.",
+                request);
+    }
+
+    /**
+     * F-821-1's second gate — the 400 MEMBER ONLY: a
+     * MissingPathVariableException reaches a client-contract 400 solely
+     * when {@code missingAfterConversion=true} (the path variable resolved
+     * but its conversion to the declared type came out null — the client
+     * sent a path value the type cannot carry). A {@code @PathVariable}
+     * name that does not match the template's own variable is a
+     * SERVER-side misconfiguration: it answers the house masked INT-001 500
+     * (the generic net's own body), never a client 400 — the registered
+     * split, per the Spring Framework 7.0.10 source the contract cites.
+     */
+    @ExceptionHandler(MissingPathVariableException.class)
+    public ProblemDetail handleMissingPathVariable(MissingPathVariableException ex, HttpServletRequest request) {
+        if (!ex.isMissingAfterConversion()) {
+            // The misconfiguration member: not a client contract. The
+            // masked 500 the generic net answers, with the
+            // misconfiguration logged for the operator (the client body
+            // never carries it).
+            log.error("Path variable misconfiguration: variable '{}' declared but absent from the template",
+                    ex.getVariableName(), ex);
+            return problem(ApiErrorTaxonomy.INTERNAL, "An unexpected error occurred", request, null, null);
+        }
+        String detail = "Invalid value for path parameter '" + ex.getVariableName() + "'.";
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, detail, request, null, null);
+        pd.setProperty("fieldErrors",
+                List.of(new ApiErrorPayload.FieldError(ex.getVariableName(), detail)));
+        return pd;
+    }
+
+    /**
+     * F-821-1's third gate — method-level validation (the
+     * {@code @Validated} controller surface, Spring 6.1+'s
+     * HandlerMethodValidationException): the SAME house VAL-001 tree the
+     * body-validation ({@code MethodArgumentNotValidException}) and
+     * method-validation ({@code ConstraintViolationException}) legs
+     * answer, with the parameter results mapped into fieldErrors — the
+     * parameter's own name as the field (the plain-name shape both
+     * existing legs carry, so a client renders one violations list for
+     * every 400 on every leg). The constraint messages arrive already
+     * localized by the validator — no re-resolution here.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ProblemDetail handleMethodValidation(HandlerMethodValidationException ex, HttpServletRequest request) {
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, "Validation failed", request, null, "detail");
+        List<ApiErrorPayload.FieldError> fieldErrors = new java.util.ArrayList<>();
+        for (ParameterValidationResult result : ex.getValueResults()) {
+            String parameter = result.getMethodParameter().getParameterName();
+            // Framework 7 dropped the 6.1 nested ValidationResult type —
+            // the resolvable errors ARE the message-source-resolvable
+            // carriers (getDefaultMessage on the interface itself).
+            for (org.springframework.context.MessageSourceResolvable error : result.getResolvableErrors()) {
+                fieldErrors.add(new ApiErrorPayload.FieldError(parameter, error.getDefaultMessage()));
+            }
+        }
+        pd.setProperty("fieldErrors", fieldErrors);
+        return pd;
+    }
+
+    /**
+     * The fixed-detail VAL-001 tree the framework-gate 400s answer: no i18n
+     * key resolution (the sentence is deliberately fixed — it interpolates
+     * no client input, the leakage policy's own rule), the empty
+     * fieldErrors list stated explicitly (a client sees the extension
+     * exists and carries no entries, not a missing extension).
+     */
+    private ProblemDetail validationTreeWithFixedDetail(String detail, HttpServletRequest request) {
+        ProblemDetail pd = problem(ApiErrorTaxonomy.VALIDATION, detail, request, null, null);
+        pd.setProperty("fieldErrors", List.of());
+        return pd;
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
