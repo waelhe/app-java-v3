@@ -803,7 +803,6 @@ class MediaServiceTest {
 
     @Test
     void processThumbnail_whenAssetIsNotUploaded_doesNotReadOrCreateDerivative() {
-        when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
         when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
 
