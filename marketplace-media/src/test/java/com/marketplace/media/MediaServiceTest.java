@@ -792,7 +792,6 @@ class MediaServiceTest {
     private MediaAsset uploadedAsset() {
         MediaAsset asset = pendingAsset();
         asset.markUploaded();
-        when(repository.findById(asset.getId())).thenReturn(Optional.of(asset));
         when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         return asset;
     }
