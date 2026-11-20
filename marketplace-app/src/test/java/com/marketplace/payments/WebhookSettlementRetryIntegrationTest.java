@@ -24,7 +24,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -64,7 +63,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
 @Import({ModuleTestConfig.class, WebhookSettlementRetryIntegrationTest.RealChannelConfig.class,
-        WebhookSettlementRetryIntegrationTest.ClockBean.class,
         WebhookSettlementRetryIntegrationTest.TransientReadFailureConfig.class})
 @WithMockUser
 class WebhookSettlementRetryIntegrationTest {
@@ -101,19 +99,6 @@ class WebhookSettlementRetryIntegrationTest {
         @Bean
         PspChannel testStripeChannel() {
             return new StripePspChannel("sk_test_inert", TEST_WEBHOOK_SECRET);
-        }
-    }
-
-    /**
-     * The webhook verifier's Clock — the production bean lives in
-     * platform-infra's ClockConfig, which this slice does not scan (the
-     * ClockConfig javadoc's own "tests override the bean" pattern).
-     */
-    @TestConfiguration
-    static class ClockBean {
-        @Bean
-        Clock clock() {
-            return Clock.systemUTC();
         }
     }
 
