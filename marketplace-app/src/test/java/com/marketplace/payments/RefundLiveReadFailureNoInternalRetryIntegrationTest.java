@@ -127,6 +127,9 @@ class RefundLiveReadFailureNoInternalRetryIntegrationTest {
     private PaymentsService paymentsService;
 
     @Autowired
+    private io.github.resilience4j.retry.RetryRegistry retryRegistry;
+
+    @Autowired
     private PaymentIntentRepository paymentIntentRepository;
 
     @Autowired
@@ -137,6 +140,13 @@ class RefundLiveReadFailureNoInternalRetryIntegrationTest {
 
     @Test
     void theLiveGroundingReads503ReachesTheCallerAfterExactlyOneRead_NoInternalRetry() {
+        // Subscribe to the production RetryRegistry before invoking the
+        // proxied service. The ignored-error event proves the @Retry aspect
+        // observed the exception; a single read alone would not prove that.
+        var paymentProcessingRetry = retryRegistry.retry("paymentProcessing");
+        var ignoredRetryEvents = new AtomicInteger();
+        paymentProcessingRetry.getEventPublisher()
+                .onIgnoredError(event -> ignoredRetryEvents.incrementAndGet());
         // the books' arithmetic alone passes: 3000 >= 0 + 3000 — the gate
         // must stand on the LIVE read, and the read always fails
         PaymentIntent intent = paymentIntentRepository.save(PaymentIntent.create(
@@ -179,6 +189,10 @@ class RefundLiveReadFailureNoInternalRetryIntegrationTest {
         // carries the 503, the ConflictException precedent verbatim)
         assertThat(liveReads.get())
                 .as("the deliberate 503 is the CALLER's retry vehicle — exactly one live read")
+                .isEqualTo(1);
+
+        assertThat(ignoredRetryEvents.get())
+                .as("the production @Retry advice observed and ignored the non-retryable 503")
                 .isEqualTo(1);
 
         // and nothing re-submitted: no remote refund was ever created
