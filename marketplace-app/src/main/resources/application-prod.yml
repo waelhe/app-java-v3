@@ -236,6 +236,18 @@ management:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  # W2 (adversarial behavioral review 2026-11-10): identity's client-facing
+  # link origin — fail-fast exactly like AUTH_SERVER_ISSUER / MAIL_FROM /
+  # CORS_ALLOWED_ORIGINS above. The base profile keeps the record's
+  # development default (IdentityMailProperties' @DefaultValue
+  # http://localhost:3000, the measured dev client origin); production must
+  # never inherit it silently: password-reset and email-verification deep
+  # links would point at localhost. No default here — an unset
+  # MARKETPLACE_IDENTITY_MAIL_BASE_URL fails at placeholder resolution before
+  # the app ever serves a mail link. Declared in .railway/railway.ts
+  # (preserve()) per the D10/G2 matrix invariant.
+  identity:
+    mail-base-url: ${MARKETPLACE_IDENTITY_MAIL_BASE_URL}
   # Incident #682's root fix: the mail channel's sender identity, explicit and
   # mandatory (INV-2/D6). No default here — an unset MAIL_FROM fails at
   # binding time with MailChannelProperties' operational message instead of
