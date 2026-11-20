@@ -186,6 +186,7 @@ class PaymentsServicePspTest {
         boolean created = service(boundChannel).handleStripeWebhook("payload", "t=1,v1=sig");
 
         assertFalse(created, "a replayed Stripe notification must not re-dispatch");
+        verify(pspChannel, never()).resolveWebhookDetails(anyString(), anyString(), any());
         verify(webhookEventRepository, never()).saveAndFlush(any());
     }
 
@@ -204,8 +205,8 @@ class PaymentsServicePspTest {
                         intentId, "pi_12", null));
         // Pre-check: absent; post-DIVE re-check: the winner's row exists.
         when(webhookEventRepository.findByProviderAndEventId("stripe", "evt_12"))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(mock(PaymentWebhookEvent.class)));
+                .thenReturn(Optional.empty(), Optional.empty(),
+                        Optional.of(mock(PaymentWebhookEvent.class)));
         when(webhookEventRepository.saveAndFlush(any(PaymentWebhookEvent.class)))
                 .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
                         "duplicate key value violates unique constraint"));
