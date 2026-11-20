@@ -418,10 +418,18 @@ class StripePspChannelTest {
                             any(RequestOptions.class)))
                     .thenReturn(retrievedCharge);
 
-            PspChannel.VerifiedWebhook verified = channel.verifyWebhook(payload, signature);
+            PspChannel.VerifiedWebhook preflight = channel.verifyWebhook(payload, signature);
+            assertThat(preflight.eventType()).isEqualTo("charge.refunded");
+            assertThat(preflight.pspIntentId()).isEqualTo("pi_r10");
+            // Signature verification is side-effect free: no Stripe
+            // retrieval is allowed until the event-id dedup preflight passes.
+            assertThat(preflight.refund().refundedAmountCents()).isEqualTo(1000L);
+            assertThat(preflight.refund().executedRefunds()).isEmpty();
+            chargeMock.verify(() -> Charge.retrieve(eq("ch_10"), any(ChargeRetrieveParams.class),
+                    any(RequestOptions.class)), org.mockito.Mockito.never());
 
-            assertThat(verified.eventType()).isEqualTo("charge.refunded");
-            assertThat(verified.pspIntentId()).isEqualTo("pi_r10");
+            PspChannel.VerifiedWebhook verified =
+                    channel.resolveWebhookDetails(payload, signature, preflight);
             // the RETRIEVED cumulative wins over the event's stale one
             assertThat(verified.refund().refundedAmountCents()).isEqualTo(2500L);
             assertThat(verified.refund().executedRefunds()).containsExactly(
@@ -567,10 +575,14 @@ class StripePspChannelTest {
                             any(RequestOptions.class)))
                     .thenReturn(retrievedCharge);
 
-            PspChannel.VerifiedWebhook verified = channel.verifyWebhook(payload, signature);
+            PspChannel.VerifiedWebhook preflight = channel.verifyWebhook(payload, signature);
+            assertThat(preflight.eventType()).isEqualTo("charge.refunded");
+            assertThat(preflight.pspIntentId()).isEqualTo("pi_hm");
+            assertThat(preflight.refund().refundedAmountCents()).isEqualTo(1000L);
+            assertThat(preflight.refund().executedRefunds()).isEmpty();
 
-            assertThat(verified.eventType()).isEqualTo("charge.refunded");
-            assertThat(verified.pspIntentId()).isEqualTo("pi_hm");
+            PspChannel.VerifiedWebhook verified =
+                    channel.resolveWebhookDetails(payload, signature, preflight);
             // the RETRIEVED cumulative wins over the event's stale one
             assertThat(verified.refund().refundedAmountCents()).isEqualTo(3000L);
             // the pagination crossed the page boundary: both keyed
