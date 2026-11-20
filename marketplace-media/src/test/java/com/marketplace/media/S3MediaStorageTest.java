@@ -227,7 +227,7 @@ class S3MediaStorageTest {
             org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                     storage.copyVerifiedObject("media-upload-staging/random", "listings/abc/photo.jpg",
                             "image/jpeg", 2048L))
-                    .isInstanceOf(com.marketplace.shared.api.ConflictException.class);
+                    .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
             verify(client, org.mockito.Mockito.never()).copyObject(any(
                     software.amazon.awssdk.services.s3.model.CopyObjectRequest.class));
         }
