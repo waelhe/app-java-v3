@@ -110,6 +110,7 @@ jobs:
       - name: Set up JDK 25
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -214,6 +215,7 @@ jobs:
       - name: Set up JDK 25
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -344,6 +346,7 @@ jobs:
       - name: Set up JDK 25
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -453,6 +456,7 @@ jobs:
       - name: Set up JDK 25
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -526,6 +530,7 @@ jobs:
       - name: Set up JDK 25
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -588,6 +593,7 @@ jobs:
       - name: Set up JDK 25
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           java-version: "25"
           distribution: temurin
           cache: maven
@@ -651,6 +657,7 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v6.3.0
         with:
+          problem-matcher: true
           distribution: temurin
           java-version: "17"
 
