@@ -4,6 +4,7 @@ import test.config.IntegrationContainers;
 
 import com.marketplace.catalog.CatalogService;
 import com.marketplace.shared.api.ApiErrorTaxonomy;
+import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -127,6 +128,36 @@ class GraphQlErrorIntegrationTest {
                             .containsEntry("errorCode", ApiErrorTaxonomy.CONFLICT.errorCode());
                     org.assertj.core.api.Assertions.assertThat(error.getExtensions())
                             .containsEntry("category", ApiErrorTaxonomy.CONFLICT.category());
+                });
+    }
+
+    /**
+     * D1's integration leg (review round 2, 2026-11-11): the house
+     * {@code ApiProblemDetail} family's own branch — a
+     * {@code BadRequestException} thrown from inside a data fetcher rides
+     * the family branch through the REAL HTTP GraphQL endpoint (not the
+     * resolver in isolation): the response carries the domain's designated
+     * message with the family's VALIDATION taxonomy pair, exactly the
+     * pair its REST twin answers with — never the masked INT-001 internal.
+     */
+    @Test
+    void shouldMapHouseBadRequestFamilyError() {
+        UUID id = UUID.randomUUID();
+        when(catalogService.getActiveById(id))
+                .thenThrow(new BadRequestException("Service slot overlaps an existing booking"));
+
+        graphQlTester.document("query($id: ID!){ service(id: $id) { id name } }")
+                .variable("id", id.toString())
+                .execute()
+                .errors()
+                .satisfy(errors -> {
+                    var error = errors.getFirst();
+                    org.assertj.core.api.Assertions.assertThat(error.getMessage())
+                            .isEqualTo("Service slot overlaps an existing booking");
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("errorCode", ApiErrorTaxonomy.VALIDATION.errorCode());
+                    org.assertj.core.api.Assertions.assertThat(error.getExtensions())
+                            .containsEntry("category", ApiErrorTaxonomy.VALIDATION.category());
                 });
     }
 
