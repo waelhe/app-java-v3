@@ -176,7 +176,7 @@ class S3MediaStorageTest {
                     .thenReturn(HeadObjectResponse.builder()
                             .contentLength(2048L)
                             .contentType("image/jpeg")
-                            .eTag("\\"verified-etag\\"")
+                            .eTag("verified-etag")
                             .build());
 
             storage.copyVerifiedObject("media-upload-staging/random", "listings/abc/photo.jpg",
@@ -186,7 +186,29 @@ class S3MediaStorageTest {
                     software.amazon.awssdk.services.s3.model.CopyObjectRequest.class);
             verify(client).copyObject(captor.capture());
             org.assertj.core.api.Assertions.assertThat(captor.getValue().copySourceIfMatch())
-                    .isEqualTo("\\"verified-etag\\"");
+                    .isEqualTo("verified-etag");
+        }
+    }
+
+    @Test
+    void copyVerifiedObjectMapsSourcePreconditionFailureToConflict() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
+                    Duration.ofMinutes(15), neverOpens());
+            when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
+                    .thenReturn(HeadObjectResponse.builder()
+                            .contentLength(2048L)
+                            .contentType("image/jpeg")
+                            .eTag("verified-etag")
+                            .build());
+            when(client.copyObject(any(software.amazon.awssdk.services.s3.model.CopyObjectRequest.class)))
+                    .thenThrow(software.amazon.awssdk.services.s3.model.S3Exception.builder()
+                            .statusCode(412).message("PreconditionFailed").build());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    storage.copyVerifiedObject("media-upload-staging/random", "listings/abc/photo.jpg",
+                            "image/jpeg", 2048L))
+                    .isInstanceOf(com.marketplace.shared.api.ConflictException.class);
         }
     }
 
@@ -199,13 +221,13 @@ class S3MediaStorageTest {
                     .thenReturn(HeadObjectResponse.builder()
                             .contentLength(999L)
                             .contentType("image/jpeg")
-                            .eTag("\\"changed\\"")
+                            .eTag("changed")
                             .build());
 
             org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                     storage.copyVerifiedObject("media-upload-staging/random", "listings/abc/photo.jpg",
                             "image/jpeg", 2048L))
-                    .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+                    .isInstanceOf(com.marketplace.shared.api.ConflictException.class);
             verify(client, org.mockito.Mockito.never()).copyObject(any(
                     software.amazon.awssdk.services.s3.model.CopyObjectRequest.class));
         }
