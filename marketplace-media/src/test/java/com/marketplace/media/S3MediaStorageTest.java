@@ -189,6 +189,50 @@ class S3MediaStorageTest {
     }
 
     @Test
+    void copyVerifiedObjectPinsTheSourceEtagThatWasChecked() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
+                    Duration.ofMinutes(15), neverOpens());
+            when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
+                    .thenReturn(HeadObjectResponse.builder()
+                            .contentLength(2048L)
+                            .contentType("image/jpeg")
+                            .eTag("\\"verified-etag\\"")
+                            .build());
+
+            storage.copyVerifiedObject("media-upload-staging/random", "listings/abc/photo.jpg",
+                    "image/jpeg", 2048L);
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.CopyObjectRequest.class);
+            verify(client).copyObject(captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().copySourceIfMatch())
+                    .isEqualTo("\\"verified-etag\\"");
+        }
+    }
+
+    @Test
+    void copyVerifiedObjectRejectsAChangedSourceBeforeCopy() {
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET,
+                    Duration.ofMinutes(15), neverOpens());
+            when(client.headObject(any(software.amazon.awssdk.services.s3.model.HeadObjectRequest.class)))
+                    .thenReturn(HeadObjectResponse.builder()
+                            .contentLength(999L)
+                            .contentType("image/jpeg")
+                            .eTag("\\"changed\\"")
+                            .build());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    storage.copyVerifiedObject("media-upload-staging/random", "listings/abc/photo.jpg",
+                            "image/jpeg", 2048L))
+                    .isInstanceOf(com.marketplace.shared.api.BadRequestException.class);
+            verify(client, org.mockito.Mockito.never()).copyObject(any(
+                    software.amazon.awssdk.services.s3.model.CopyObjectRequest.class));
+        }
+    }
+
+    @Test
     void g3_deleteObjects_sendsTheExactKnownKeysInOneBatchCall() {
         // G3 (owner-gate batch 6a — the erasure flow's storage leg): the
         // documented batch API carries the purge's KNOWN keys in ONE wire
