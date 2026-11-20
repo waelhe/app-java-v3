@@ -58,6 +58,16 @@ jobs:
       github.repository == 'waelhe/app-java-v3'
     runs-on: ubuntu-latest
     steps:
+      - name: Guard — production deployment must be dispatched from main
+        uses: actions/github-script@v9
+        with:
+          script: |
+            if (context.ref !== 'refs/heads/main') {
+              core.setFailed(`Production Railway deployments are restricted to refs/heads/main; received ${context.ref}.`);
+              return;
+            }
+            core.info(`Approved production ref: ${context.ref}; target commit: ${context.sha}`);
+
       - name: Gate — every GitHub Actions suite on the commit must be green
         uses: actions/github-script@v9
         id: gate
