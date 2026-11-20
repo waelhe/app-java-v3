@@ -442,6 +442,66 @@ class MediaUploadFlowIntegrationTest {
     }
 
     @Test
+    void accountErasureCollectsOrphanedThumbnailWhenStorageWriteOutlivesPointerRollback() {
+        UUID userId = UUID.randomUUID();
+        UUID listingId = UUID.randomUUID();
+        mockOwner(userId, userId, listingId);
+        when(storage.presignUpload(anyString(), anyString())).thenReturn("https://u");
+        when(storage.verifyUploaded(anyString(), anyString(), any(Long.class))).thenReturn(true);
+        when(storage.presignDownload(anyString())).thenReturn("https://g");
+
+        var upload = mediaService.requestUpload(listingId, "image/jpeg", 128_000L, null);
+        mediaService.confirmUpload(upload.mediaId(), null);
+        MediaAsset uploaded = mediaAssetRepository.findById(upload.mediaId()).orElseThrow();
+        String originalKey = uploaded.getObjectKey();
+        String thumbnailKey = originalKey + "/thumb";
+        String stagingKey = uploaded.getUploadObjectKey();
+        when(storage.getObject(anyString())).thenReturn(largeJpeg());
+
+        // Inject a database failure only when this asset's thumbnail pointer
+        // changes. The external S3 PUT succeeds first and cannot roll back.
+        String suffix = upload.mediaId().toString().replace("-", "");
+        String triggerName = "fail_thumb_pointer_" + suffix;
+        String functionName = triggerName + "_fn";
+        jdbcTemplate.execute("CREATE FUNCTION " + functionName + "() RETURNS trigger AS $ "
+                + "BEGIN IF OLD.id = '" + upload.mediaId() + "'::uuid "
+                + "AND NEW.thumb_object_key IS DISTINCT FROM OLD.thumb_object_key "
+                + "AND NEW.thumb_object_key IS NOT NULL THEN "
+                + "RAISE EXCEPTION 'injected thumbnail pointer update failure'; "
+                + "END IF; RETURN NEW; END; $ LANGUAGE plpgsql");
+        try {
+            jdbcTemplate.execute("CREATE TRIGGER " + triggerName
+                    + " BEFORE UPDATE OF thumb_object_key ON media_assets FOR EACH ROW "
+                    + "EXECUTE FUNCTION " + functionName + "()");
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> mediaService.processThumbnail(upload.mediaId()))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("injected thumbnail pointer update failure");
+        } finally {
+            jdbcTemplate.execute("DROP TRIGGER IF EXISTS " + triggerName + " ON media_assets");
+            jdbcTemplate.execute("DROP FUNCTION IF EXISTS " + functionName + "()");
+        }
+
+        String persistedThumbnailKey = jdbcTemplate.queryForObject(
+                "SELECT thumb_object_key FROM media_assets WHERE id = ?", String.class, upload.mediaId());
+        assertThat(persistedThumbnailKey).isNull();
+        assertThat(mediaAssetRepository.findById(upload.mediaId()).orElseThrow().getStatus())
+                .isEqualTo(MediaAssetStatus.UPLOADED);
+        org.mockito.Mockito.verify(storage).putObject(
+                org.mockito.ArgumentMatchers.eq(thumbnailKey),
+                org.mockito.ArgumentMatchers.eq("image/jpeg"),
+                org.mockito.ArgumentMatchers.any(byte[].class));
+
+        MediaPurgeStateService.PurgeBatch batch = mediaPurgeStateService.markPendingAndCollectKeys(userId);
+        assertThat(batch.objectKeys()).contains(originalKey, thumbnailKey, stagingKey);
+        mediaService.destroyObjectsForErasure(batch.objectKeys());
+        org.mockito.Mockito.verify(storage).deleteObjects(batch.objectKeys());
+        assertThat(mediaPurgeStateService.markPurged(userId, batch)).isEqualTo(1);
+        assertThat(mediaAssetRepository.findById(upload.mediaId()).orElseThrow().getStatus())
+                .isEqualTo(MediaAssetStatus.PURGED);
+    }
+
+    @Test
     void purgeFinalizesOnlyRowsCapturedByItsOwnBatch_whenAnOverlappingPurgeFindsNewRows() {
         UUID ownerId = UUID.randomUUID();
         UUID firstListingId = UUID.randomUUID();
