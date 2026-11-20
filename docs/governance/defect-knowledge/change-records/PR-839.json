@@ -55,8 +55,7 @@
         "docs/railway-deployment-reference.md",
         "SYSTEM.md",
         "PROJECT_MAP.md",
-        "docs/operating/trial-renewal-and-provider-migration-runbook.md",
-        ".github/workflows/railway-deploy.yml"
+        "docs/operating/trial-renewal-and-provider-migration-runbook.md"
       ],
       "result": "The retired service id 3efcf70c-56d5-4d87-ada5-6bba32022229 remained in four historical operational references across three files: SYSTEM.md:401, PROJECT_MAP.md:127, and docs/operating/trial-renewal-and-provider-migration-runbook.md:350 and :360. These were not live deployment configuration, but the runbook recovery command was unsafe to replay. The occurrences are now explicitly marked historical/retired and point to docs/railway-deployment-reference.md, whose current project/environment/service ids were read back directly from Railway on 2026-11-20. The current production workflow uses the live ids; Dockerfile.staging has no cache mount; .railway/railway.ts declares variables, not service ids."
     }
@@ -85,7 +84,7 @@
     {
       "name": "Production dispatch ref guard",
       "command": "GitHub Actions workflow guard checks context.ref equals refs/heads/main before running the all-suites-green gate or calling Railway",
-      "verification": "Static workflow review; GitHub documents workflow_dispatch GITHUB_REF as the branch or tag that received dispatch. Negative-path execution remains covered by GitHub Actions after this head is pushed."
+      "verification": "Static workflow-order review confirms this guard executes before the all-suites-green gate and before the Railway API mutation. The non-main failure path has not been dispatched in this change; no production deployment was run."
     }
   ],
   "findings": [
@@ -100,7 +99,8 @@
         "https://github.com/waelhe/app-java-v3/issues/845",
         "https://docs.railway.com/guides/dockerfiles",
         "https://docs.railway.com/deployments/deployment-actions",
-        "https://docs.railway.com/deployments/github-autodeploys"
+        "https://docs.railway.com/deployments/github-autodeploys",
+        "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows"
       ],
       "classification": "environmental",
       "severity": "high",
