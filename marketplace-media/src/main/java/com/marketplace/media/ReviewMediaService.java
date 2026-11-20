@@ -82,8 +82,11 @@ public class ReviewMediaService {
 
         UUID authorId = reviewLookupPort.findAuthorId(reviewId)
                 .orElseThrow(() -> new ResourceNotFoundException("Review not found: " + reviewId));
-        verifyReviewOwnership(authorId, authentication);
+        // Re-resolve the caller's identity only after acquiring the same
+        // account lock as erasure; a pre-erasure JWT check must not authorize
+        // a write queued behind the committed erasure event.
         reviewMediaRepository.lockAccountMediaMutation(authorId.toString());
+        verifyReviewOwnership(authorId, authentication);
 
         // Position allocation must serialize per review (the MediaAsset
         // #241 shape — the same advisory transaction lock).
