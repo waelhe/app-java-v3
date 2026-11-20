@@ -36,16 +36,16 @@ public class MediaPurgeAdapter implements AuthoredContentPurgePort {
     public int purgeAuthoredTexts(UUID userId) {
         // The pending state commits in its own transaction before network I/O.
         // On failure, the state remains hidden and is selected again on retry.
-        List<String> objectKeys = purgeState.markPendingAndCollectKeys(userId);
-        if (!objectKeys.isEmpty()) {
-            mediaService.destroyObjectsForErasure(objectKeys);
+        MediaPurgeStateService.PurgeBatch batch = purgeState.markPendingAndCollectKeys(userId);
+        if (!batch.objectKeys().isEmpty()) {
+            mediaService.destroyObjectsForErasure(batch.objectKeys());
         }
 
-        // This separate transaction is reached only after the storage adapter
-        // confirms all keys/versions are gone or were already absent.
-        int purgedRows = purgeState.markPurged(userId);
+        // This separate transaction finalizes only rows captured by this
+        // attempt, never rows added by an overlapping purge after the snapshot.
+        int purgedRows = purgeState.markPurged(userId, batch);
         log.info("G3 media purge completed: userId={}, tombstonedRows={}, objectKeys={}",
-                userId, purgedRows, objectKeys.size());
+                userId, purgedRows, batch.objectKeys().size());
         return purgedRows;
     }
 }
