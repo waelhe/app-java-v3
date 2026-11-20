@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -117,8 +118,9 @@ class ProductMediaJourneyIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         String productId = productIdFrom(productBody);
 
-        // (2) The upload is requested for the productId target — the media
-        // line's third arm: the object key under products/, the presigned PUT.
+        // (2) The upload is requested for the productId target. The presigned
+        // PUT is deliberately issued against an isolated staging key; the
+        // final products/{productId}/ key is promoted only after verification.
         String assetId = mockMvc.perform(post("/api/v1/media/uploads")
                         .with(jwt().authorities(() -> "ROLE_PROVIDER"))
                         .contentType("application/json")
@@ -126,7 +128,7 @@ class ProductMediaJourneyIntegrationTest {
                                 + "\"sizeBytes\":1024}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.objectKey").value(org.hamcrest.Matchers
-                        .startsWith("products/" + productId + "/")))
+                        .startsWith("media-upload-staging/")))
                 .andExpect(jsonPath("$.uploadUrl").value("https://signed-put"))
                 // The view's id field is "mediaId" (MediaUploadView's own record
                 // component), never a bare "id": the 2026-10-09 CI trace printed
@@ -144,6 +146,15 @@ class ProductMediaJourneyIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UPLOADED"))
                 .andExpect(jsonPath("$.productId").value(productId));
+
+        // Confirm promotion is the commit point: the durable read key is in
+        // the product namespace and the temporary upload key is cleared.
+        var persistedKeys = jdbc.queryForMap(
+                "SELECT object_key, upload_object_key FROM media_assets WHERE id = ?",
+                UUID.fromString(assetId));
+        assertThat(persistedKeys.get("object_key").toString())
+                .startsWith("products/" + productId + "/");
+        assertThat(persistedKeys.get("upload_object_key")).isNull();
 
         // (4) The owner's read carries the freshly presigned GET URLs.
         mockMvc.perform(get("/api/v1/media/products/{productId}", productId)
