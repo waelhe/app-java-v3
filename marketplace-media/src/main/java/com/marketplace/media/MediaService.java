@@ -111,6 +111,7 @@ public class MediaService {
 
         ListingPriceProvider.ListingInfo listing = listingPriceProvider.getListingInfo(listingId);
         verifyListingOwnership(listing.providerId(), authentication);
+        mediaAssetRepository.lockAccountMediaMutation(listing.providerId().toString());
 
         // Display-position allocation must be atomic per listing (CodeRabbit
         // #241): countByListingId()+1 inside a transaction does NOT serialize
@@ -167,6 +168,7 @@ public class MediaService {
         PostLookupPort.PostInfo post = postLookupPort.getPostInfo(postId);
         verifyPostAuthorship(post.authorId(), authentication);
         verifyPostWriteRight(post);
+        mediaAssetRepository.lockAccountMediaMutation(post.authorId().toString());
 
         // Display-position allocation must be atomic per post (CodeRabbit
         // #241, the listing flow's exact discipline): the advisory
@@ -210,6 +212,7 @@ public class MediaService {
 
         ProductLookupPort.ProductInfo product = productLookupPort.getProductInfo(productId);
         verifyListingOwnership(product.providerId(), authentication);
+        mediaAssetRepository.lockAccountMediaMutation(product.providerId().toString());
 
         mediaAssetRepository.lockProductPositionAllocation(productId.toString());
 
