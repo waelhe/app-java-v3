@@ -94,6 +94,11 @@ class ReviewMediaServiceTest {
         assertEquals(view.objectKey(), saved.getValue().getUploadObjectKey());
         assertEquals("https://upload.test", view.uploadUrl());
         assertEquals(Duration.ofMinutes(15), view.urlLifetime());
+        // The account lock must precede re-resolving caller identity so an
+        // upload queued behind account erasure cannot use a stale JWT check.
+        var authorizationOrder = org.mockito.Mockito.inOrder(reviewMediaRepository, currentUserProvider);
+        authorizationOrder.verify(reviewMediaRepository).lockAccountMediaMutation(authorId.toString());
+        authorizationOrder.verify(currentUserProvider).getCurrentUserId(authentication);
         // the position serializes per review (the #241 advisory-lock shape)
         verify(reviewMediaRepository).lockPositionAllocation(reviewId.toString());
     }
