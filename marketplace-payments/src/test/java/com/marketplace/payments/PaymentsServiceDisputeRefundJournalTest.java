@@ -246,8 +246,12 @@ class PaymentsServiceDisputeRefundJournalTest {
     }
 
     @Test
-    void anExecutedOperationWithNoLiveCumulativeUsesTheAlreadySyncedBooks() {
+    void anExecutedOperationWithNoLiveCumulativeDoesNotUseAlreadySyncedBooks() {
         UUID disputeId = UUID.randomUUID();
+        // Local books already show the frozen amount, but this configured
+        // provider channel cannot expose a charge-backed cumulative. The
+        // local total may include an independent refund, so it is not proof
+        // that this EXECUTED operation's money reached the ledger.
         Payment payment = collectedPayment(3000L);
         stubPaymentLookupForLiveRead(payment);
         PaymentRefundOperation executed =
@@ -257,10 +261,12 @@ class PaymentsServiceDisputeRefundJournalTest {
                 .thenReturn(Optional.of(executed));
         when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(null);
 
-        PaymentsService.RefundedPayment refunded = service().refundPayment(payment.getId(), 3000L,
-                PaymentsService.StableRefundScope.forDispute(disputeId));
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("await the charge.refunded sync");
 
-        assertThat(refunded.payment().getRefundedAmountCents()).isEqualTo(3000L);
+        verify(pspChannel).readRemoteRefundTotalCents("pi_remote_dispute");
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
         verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
     }
