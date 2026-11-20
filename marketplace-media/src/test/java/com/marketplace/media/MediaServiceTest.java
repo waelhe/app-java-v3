@@ -792,6 +792,16 @@ class MediaServiceTest {
     }
 
     @Test
+    void processThumbnail_whenAssetIsHiddenDoesNotRequireStorage() {
+        MediaAsset asset = pendingAsset();
+        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+
+        service.processThumbnail(asset.getId());
+
+        verifyNoInteractions(storageProvider);
+    }
+
+    @Test
     void processThumbnail_whenAssetIsNotUploaded_doesNotReadOrCreateDerivative() {
         when(storageProvider.getIfAvailable()).thenReturn(storage);
         MediaAsset asset = pendingAsset();
