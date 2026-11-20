@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -113,6 +114,12 @@ class MediaUploadFlowIntegrationTest {
 
     @Autowired
     private MediaAssetRepository mediaAssetRepository;
+
+    @Autowired
+    private MediaPurgeStateService mediaPurgeStateService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     /**
      * Stubs ownership for the media flow: the user-owned provider profile
