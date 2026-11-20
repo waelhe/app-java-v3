@@ -463,12 +463,12 @@ class MediaUploadFlowIntegrationTest {
         String suffix = upload.mediaId().toString().replace("-", "");
         String triggerName = "fail_thumb_pointer_" + suffix;
         String functionName = triggerName + "_fn";
-        jdbcTemplate.execute("CREATE FUNCTION " + functionName + "() RETURNS trigger AS $ "
+        jdbcTemplate.execute("CREATE FUNCTION " + functionName + "() RETURNS trigger AS $$ "
                 + "BEGIN IF OLD.id = '" + upload.mediaId() + "'::uuid "
                 + "AND NEW.thumb_object_key IS DISTINCT FROM OLD.thumb_object_key "
                 + "AND NEW.thumb_object_key IS NOT NULL THEN "
                 + "RAISE EXCEPTION 'injected thumbnail pointer update failure'; "
-                + "END IF; RETURN NEW; END; $ LANGUAGE plpgsql");
+                + "END IF; RETURN NEW; END; $$ LANGUAGE plpgsql");
         try {
             jdbcTemplate.execute("CREATE TRIGGER " + triggerName
                     + " BEFORE UPDATE OF thumb_object_key ON media_assets FOR EACH ROW "
