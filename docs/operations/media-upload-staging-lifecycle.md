@@ -60,9 +60,14 @@ cleanup is an operational prerequisite rather than a proven production fact.
 
 ## Legacy pending uploads
 
-Migration V305 preserves the already-issued destination of rows that were
-`PENDING_UPLOAD` at migration time. Their old presigned URLs cannot be moved
-to the staging namespace because the signed URL already fixes its key. They
-remain a bounded compatibility window (the configured presign TTL); once those
-requests expire, new requests use staging exclusively. Do not claim that the
-old in-flight URL window is cryptographically revoked by V305.
+Migration V305 adds the nullable key columns; V306 preserves the
+already-issued destination of rows that were `PENDING_UPLOAD` at migration
+time. Their old presigned URLs cannot be moved to the staging namespace because
+the signed URL already fixes its key. The configured TTL bounds when a new
+request may START, not when an already-started PUT must finish: AWS checks URL
+expiry when the HTTP request begins, and a transfer begun before expiry may
+continue after it. Therefore TTL expiry alone is not proof that no in-flight
+legacy PUT can still create the old destination key. Keep this legacy window
+as an explicit residual erasure risk until in-flight requests are known to have
+drained or are otherwise contained. New uploads use the staging namespace and
+its object-age lifecycle rule; do not extend the legacy exception to new rows.
