@@ -24,7 +24,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -67,7 +66,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ApplicationModuleTest
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
-@Import({ModuleTestConfig.class, WebhookInboxRecoveryIntegrationTest.ClockBean.class})
+@Import(ModuleTestConfig.class)
 class WebhookInboxRecoveryIntegrationTest {
 
     @Container
@@ -79,22 +78,6 @@ class WebhookInboxRecoveryIntegrationTest {
     @ServiceConnection
     @SuppressWarnings({"resource"}) // Lifecycle managed by @Testcontainers; connection details via RedisContainerConnectionDetailsFactory.
     static GenericContainer<?> redis = IntegrationContainers.redis();
-
-    /**
-     * The webhook verifier's Clock — the production bean lives in
-     * platform-infra's ClockConfig, which this slice does not scan (the
-     * ClockConfig javadoc's own "tests override the bean" pattern; the same
-     * seam {@code PaymentsModuleIntegrationTest} and
-     * {@code WebhookSettlementRetryIntegrationTest} carry — the slice boots
-     * without it nowhere).
-     */
-    @TestConfiguration
-    static class ClockBean {
-        @Bean
-        Clock clock() {
-            return Clock.systemUTC();
-        }
-    }
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
