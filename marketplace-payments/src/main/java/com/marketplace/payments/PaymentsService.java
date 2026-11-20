@@ -1243,11 +1243,16 @@ public class PaymentsService implements PaymentsSpi {
             return false;
         }
         if (remoteTotal == null) {
-            // The channel has no cumulative linked to this charge yet. This
-            // is different from a failed read or a known-low cumulative: keep
-            // the books-synchronized decision as the fallback, as for a
-            // channel-less deployment.
-            return null;
+            // A configured channel and provider intent already exist on this
+            // path. No charge-backed cumulative is not the channel-less case:
+            // it is missing live evidence for THIS EXECUTED refund. Local
+            // arithmetic can be saturated by an independent refund, so it
+            // must not reconcile this operation. Keep the journal pending
+            // until the provider exposes its cumulative refund total.
+            log.info("The {} refund operation {} is EXECUTED, but the provider has not exposed "
+                            + "a charge-backed cumulative yet — reconciliation remains pending",
+                    scopeKind, operation.getIdempotencyKey());
+            return false;
         }
         long requiredRemoteTotal = operation.getAmountCents() == null
                 ? payment.getAmountCents()
