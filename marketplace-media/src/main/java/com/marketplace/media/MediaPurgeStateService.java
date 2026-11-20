@@ -29,6 +29,12 @@ public class MediaPurgeStateService {
     /** Commits the retryable tombstone before any object-store network I/O. */
     @Transactional
     public List<String> markPendingAndCollectKeys(UUID userId) {
+        // Serialize row creation with the snapshot-and-tombstone transaction.
+        // Upload request paths take this same transaction-scoped lock.
+        jdbcTemplate.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended('marketplace-media-account:' || CAST(? AS text), 0))",
+                rs -> { }, userId);
+
         List<String> keys = new ArrayList<>();
         RowCallbackHandler assetKeys = rs -> {
             String objectKey = rs.getString(1);
@@ -40,7 +46,7 @@ public class MediaPurgeStateService {
         };
         jdbcTemplate.query(
                 "SELECT object_key, thumb_object_key, upload_object_key FROM media_assets "
-                        + "WHERE provider_id = ? AND status <> 'PURGED'",
+                        + "WHERE provider_id = ? AND status <> 'PURGED' FOR UPDATE",
                 assetKeys, userId);
 
         RowCallbackHandler reviewKeys = rs -> {
@@ -51,7 +57,7 @@ public class MediaPurgeStateService {
         };
         jdbcTemplate.query(
                 "SELECT object_key, upload_object_key FROM review_media "
-                        + "WHERE uploader_id = ? AND status <> 'PURGED'",
+                        + "WHERE uploader_id = ? AND status <> 'PURGED' FOR UPDATE",
                 reviewKeys, userId);
 
         jdbcTemplate.update(
