@@ -310,7 +310,8 @@ public class MediaService {
         if (promotedFromStaging) {
             // This copy is idempotent: if the DB transaction rolls back, the
             // staging object remains and a retry safely overwrites the final key.
-            s3.copyObject(uploadObjectKey, asset.getObjectKey());
+            s3.copyVerifiedObject(uploadObjectKey, asset.getObjectKey(),
+                    asset.getContentType(), asset.getSizeBytes());
         }
         asset.markUploaded();
         if (promotedFromStaging) {
