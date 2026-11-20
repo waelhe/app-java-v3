@@ -205,7 +205,92 @@ def latest_review(reviews, sha, login):
                   if (item.get("user") or {}).get("login") == login
                   and item.get("commit_id") == sha
                   and item.get("state") != "PENDING"]
-    return max(candidates, key=lambda item: item.get("submitted_at") or "") if candidates else None
+    # CodeRabbit round 13 (2026-11-17, assertive full review on head
+    # 445dc368): a submitted_at TIE in the verdict selector resolves to the
+    # LATER position in the response — the same tiebreaker declaring_review
+    # already applies (round 12). Python's max() is stable and returns the
+    # FIRST maximal element, so a tie between an earlier APPROVED and a
+    # later CHANGES_REQUESTED/DISMISSED review on the same head would read
+    # the APPROVED as "newest" and pass a head the chronologically newer
+    # blocking review rejects. GitHub returns reviews in submission order,
+    # so the later response position is the newer submission; the
+    # (submitted_at, position) descending key selects it — fail-closed
+    # either way, and consistent with the gate workflow's newest-review
+    # verdict model.
+    for _, item in sorted(enumerate(candidates),
+                          key=lambda pair: (pair[1].get("submitted_at") or "", pair[0]),
+                          reverse=True):
+        return item
+    return None
+
+
+# The header is matched WITHOUT requiring a numeric count: a body whose
+# header carries an unparseable count (e.g. "Files selected for processing:
+# unknown") is a malformed declaration and must reach ``processed_files``,
+# which fails closed — never be silently skipped in favour of an older
+# declaration on the same head.
+DECLARATION_HEADER = re.compile(r"Files selected for processing:", re.I)
+
+
+def declares_processed_files(body):
+    """Whether a review body opens a processed-file declaration section."""
+    return DECLARATION_HEADER.search(body or "") is not None
+
+
+def declaring_review(reviews, sha, login, states):
+    """Newest review on this head that declares its processed-file list.
+
+    CodeRabbit's ``request_changes_workflow`` posts its substantive review
+    (state COMMENTED, body carrying ``Files selected for processing: N``) and
+    then, once the findings are resolved, a SECOND empty-bodied APPROVED
+    review. Taking the chronologically newest review as the coverage evidence
+    therefore reads an empty body and fails with "CodeRabbit omitted its
+    explicit processed-file list" even though the head is fully declared —
+    measured live on PR #819 and PR #820 (2026-11-12): the only review on each
+    head is ``APPROVED`` with an empty body, while the declaration sits on the
+    paired substantive review.
+
+    Coverage evidence is the declaration, not the chronology: the verdict
+    state still belongs to the newest review (the gate workflow enforces it,
+    and a CHANGES_REQUESTED review is never a good state here), and every
+    candidate accepted by this function must already carry one of ``states``
+    on this exact head. A body WITHOUT a declaration header is not evidence
+    and is skipped; a body WITH the header that fails to parse is a malformed
+    declaration and raises — it must never be papered over by falling back to
+    an older review. Returns ``(review, selected_paths)`` or
+    ``(None, None)``; the caller fails closed on ``None``.
+
+    Decision (documented on PR #842's review): a ``CHANGES_REQUESTED``
+    review is deliberately NOT accepted as coverage evidence even when a
+    later empty-bodied APPROVED lands on the same head. The declaration
+    describes the files as they stood when changes were requested; letting
+    an approval that asserts nothing resurrect that declaration would
+    weaken the fail-closed posture. No same-head CHANGES_REQUESTED-then-
+    empty-APPROVED pair has been observed on this repository (measured on
+    the #819/#820 review histories), and the escape if one ever appears is
+    the proven one: a fresh review on the head.
+    """
+    candidates = [item for item in reviews
+                  if (item.get("user") or {}).get("login") == login
+                  and item.get("commit_id") == sha
+                  and item.get("state") in states
+                  and declares_processed_files(item.get("body", ""))]
+    # CodeRabbit round 12 (2026-11-17T17:46Z, inline 4603504886): a
+    # submitted_at TIE resolves to the LATER position in the response.
+    # GitHub returns reviews chronologically, but Python's sort is stable —
+    # reverse=True preserves the original order among equal keys, so a
+    # tie between an older complete declaration and a newer malformed one
+    # (both COMMENTED at the same submitted_at, then a later empty
+    # approval) would return the OLDER declaration and PASS instead of
+    # raising on the newest malformed one. The response position is the
+    # tiebreaker: (submitted_at, position) descending selects the newest
+    # submission the API carries, malformed or not — fail-closed either
+    # way.
+    for _, item in sorted(enumerate(candidates),
+                          key=lambda pair: (pair[1].get("submitted_at") or "", pair[0]),
+                          reverse=True):
+        return item, processed_files(item.get("body", ""))
+    return None, None
 
 
 def exact_review(reviews, review_id, sha, login, states):
@@ -383,8 +468,26 @@ def run(repo, number, manifest_path, alternative_config, trusted_base_sha, token
     # rename-heavy candidate into the manifest path despite an existing review.
     if len(candidate_by_name) <= MAX_FILES:
         need(newest is not None, f"no CodeRabbit review on current candidate head {head_sha}")
-        review = exact_review(candidate_reviews, newest["id"], head_sha, BOT, GOOD_STATES)
-        selected = processed_files(review.get("body", ""))
+        # CodeRabbit rounds 10-11 (2026-11-17, review 5939887782 and the
+        # assertive full review at 16:45Z): the NEWEST review's state gates
+        # the coverage evidence before any declaration is accepted, and the
+        # gate is the workflow's own verdict model verbatim — GOOD_STATES
+        # only. A newest CHANGES_REQUESTED **or DISMISSED** review rejects
+        # coverage even when an older complete declaration exists on the
+        # same head (the round-10 exclusion-only check left DISMISSED
+        # through). The gate workflow's poll enforces the same model; the
+        # verifier must never contradict it (a green poll that raced ahead
+        # of a blocking review landing on the same head must not survive
+        # here). The declaring pair measured live on #819/#820/#831 stays
+        # accepted: a newest APPROVED state — even an empty-bodied one — is
+        # a good state over a full declaration.
+        need(newest.get("state") in GOOD_STATES,
+             f"latest CodeRabbit review on head {head_sha} is {newest.get('state')}; "
+             "coverage requires a good verdict")
+        review, selected = declaring_review(candidate_reviews, head_sha, BOT, GOOD_STATES)
+        need(review is not None,
+             "no CodeRabbit review on the current candidate head declares its processed-file list "
+             "(a bare empty-bodied approval is not coverage evidence)")
         need(0 < len(selected) <= MAX_FILES, "candidate CodeRabbit review exceeds the 100-file cap")
         for path in selected:
             direct.add(path)
