@@ -1,5 +1,8 @@
 package com.marketplace.config;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.audit.AuditEvent;
@@ -8,6 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
@@ -15,9 +19,18 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import test.config.IntegrationContainers;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -85,6 +98,21 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
     @Autowired
     private AuditEventRepository auditEventRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    private final List<UUID> diagnosticPublicationIds = new ArrayList<>();
+
+    @AfterEach
+    void removeDiagnosticPublicationFixtures() {
+        diagnosticPublicationIds.forEach(id ->
+                jdbcTemplate.update("DELETE FROM event_publication WHERE id = ?", id));
+        diagnosticPublicationIds.clear();
+    }
+
     /** The operator's own token — the ADMIN authority the /actuator/** rule requires. */
     private static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
             .JwtRequestPostProcessor operatorJwt() {
@@ -98,7 +126,7 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         for (String id : new String[] {
                 "auditevents", "beans", "caches", "conditions", "configprops",
                 "env", "flyway", "loggers", "mappings", "modulith",
-                "scheduledtasks", "threaddump"}) {
+                "scheduledtasks", "threaddump", "eventpublications"}) {
             mockMvc.perform(get("/actuator/" + id))
                     .andExpect(status().isUnauthorized());
         }
@@ -111,7 +139,7 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         for (String id : new String[] {
                 "auditevents", "beans", "caches", "conditions", "configprops",
                 "env", "flyway", "loggers", "mappings", "modulith",
-                "scheduledtasks", "threaddump"}) {
+                "scheduledtasks", "threaddump", "eventpublications"}) {
             mockMvc.perform(get("/actuator/" + id).with(jwt()))
                     .andExpect(status().isForbidden());
         }
@@ -208,6 +236,174 @@ class OperatorActuatorSurfaceSmokeIntegrationTest {
         mockMvc.perform(get("/actuator/flyway").with(operatorJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.contexts").isMap());
+    }
+
+    @Test
+    void eventPublicationDiagnosticsAreReadOnlyAndOperatorProtected() throws Exception {
+        mockMvc.perform(get("/actuator/eventpublications"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/actuator/eventpublications").with(jwt()))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/actuator/eventpublications").with(operatorJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.staleThresholdSeconds").value(21600))
+                .andExpect(jsonPath("$.count").isNumber())
+                .andExpect(jsonPath("$.publications").isArray());
+    }
+
+    @Test
+    void eventPublicationDiagnosticsReadRawMetadataWithoutDeserializingOrMutatingRows() throws Exception {
+        Instant now = Instant.now();
+        UUID legacyId = insertEventPublication(
+                now.minus(Duration.ofHours(8)), null, null, 0, null,
+                "com.marketplace.removed.LegacyDomainEvent",
+                "legacy-listener",
+                "not-valid-json");
+        Instant lastResubmissionAt = now.minus(Duration.ofHours(6)).truncatedTo(ChronoUnit.MICROS);
+        UUID processingId = insertEventPublication(
+                now.minus(Duration.ofHours(7)), null, "PROCESSING", 3, lastResubmissionAt,
+                "com.marketplace.current.PendingDomainEvent",
+                "processing-listener",
+                "also-not-deserialized");
+        UUID recentId = insertEventPublication(
+                now.minus(Duration.ofHours(1)), null, "PROCESSING", 1, null,
+                "com.marketplace.current.RecentDomainEvent",
+                "recent-listener",
+                "recent-payload");
+        UUID completedId = insertEventPublication(
+                now.minus(Duration.ofHours(8)), now.minus(Duration.ofHours(7)), "COMPLETED", 1, null,
+                "com.marketplace.current.CompletedDomainEvent",
+                "completed-listener",
+                "completed-payload");
+
+        var response = mockMvc.perform(get("/actuator/eventpublications").with(operatorJwt()))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode report = objectMapper.readTree(response.getResponse().getContentAsString());
+        assertThat(report.path("staleThresholdSeconds").asLong()).isEqualTo(21600);
+        assertThat(report.path("count").asInt()).isEqualTo(2);
+        assertThat(report.path("total").asLong()).isEqualTo(2);
+        assertThat(report.path("truncated").asBoolean()).isFalse();
+
+        JsonNode publications = report.path("publications");
+        assertThat(publications.isArray()).isTrue();
+        assertThat(publications.size()).isEqualTo(2);
+
+        Map<String, JsonNode> publicationsById = new HashMap<>();
+        for (JsonNode publication : publications) {
+            publicationsById.put(publication.path("id").asText(), publication);
+            assertThat(publication.has("event")).isFalse();
+            assertThat(publication.has("payload")).isFalse();
+        }
+        assertThat(publicationsById).containsOnlyKeys(legacyId.toString(), processingId.toString());
+
+        JsonNode legacy = publicationsById.get(legacyId.toString());
+        assertThat(legacy.path("eventType").asText())
+                .isEqualTo("com.marketplace.removed.LegacyDomainEvent");
+        assertThat(legacy.path("listener").asText()).isEqualTo("legacy-listener");
+        assertThat(legacy.path("status").asText()).isEqualTo("LEGACY_UNCLASSIFIED");
+        assertThat(legacy.path("ageSeconds").asLong()).isBetween(7 * 3600L, 9 * 3600L);
+
+        JsonNode processing = publicationsById.get(processingId.toString());
+        assertThat(processing.path("eventType").asText())
+                .isEqualTo("com.marketplace.current.PendingDomainEvent");
+        assertThat(processing.path("listener").asText()).isEqualTo("processing-listener");
+        assertThat(processing.path("status").asText()).isEqualTo("PROCESSING");
+        assertThat(processing.path("completionAttempts").asInt()).isEqualTo(3);
+        assertThat(OffsetDateTime.parse(processing.path("lastResubmissionAt").asText()).toInstant())
+                .isEqualTo(lastResubmissionAt);
+
+        Integer fixtureCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM event_publication WHERE id IN (?, ?, ?, ?)",
+                Integer.class,
+                legacyId, processingId, recentId, completedId);
+        assertThat(fixtureCount).isEqualTo(4);
+
+        Map<String, Object> legacyRow = jdbcTemplate.queryForMap(
+                "SELECT status, completion_date, serialized_event FROM event_publication WHERE id = ?",
+                legacyId);
+        assertThat(legacyRow.get("status")).isNull();
+        assertThat(legacyRow.get("completion_date")).isNull();
+        assertThat(legacyRow.get("serialized_event")).isEqualTo("not-valid-json");
+
+        Map<String, Object> processingRow = jdbcTemplate.queryForMap(
+                "SELECT status, completion_date, serialized_event FROM event_publication WHERE id = ?",
+                processingId);
+        assertThat(processingRow.get("status")).isEqualTo("PROCESSING");
+        assertThat(processingRow.get("completion_date")).isNull();
+        assertThat(processingRow.get("serialized_event")).isEqualTo("also-not-deserialized");
+    }
+
+    @Test
+    void eventPublicationDiagnosticsCapsTheReportAtTheOperationalBound() throws Exception {
+        // The adversarial finding (2026-11-16): the endpoint exists for the
+        // incident it diagnoses, and the live backlog under exactly that
+        // incident is unbounded (the production mail outage stranded every
+        // notification listener leg's publication). 201 stale rows must
+        // answer a bounded report: 200 oldest-first entries, the honest
+        // total, and an explicit truncation flag.
+        Instant now = Instant.now();
+        for (int i = 0; i < 201; i++) {
+            insertEventPublication(
+                    now.minus(Duration.ofHours(8)).minusSeconds(i), null, null, 0, null,
+                    "com.marketplace.current.CappedDomainEvent",
+                    "capped-listener-" + i,
+                    "capped-payload");
+        }
+
+        var response = mockMvc.perform(get("/actuator/eventpublications").with(operatorJwt()))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode report = objectMapper.readTree(response.getResponse().getContentAsString());
+        assertThat(report.path("count").asInt()).isEqualTo(200);
+        assertThat(report.path("total").asLong()).isEqualTo(201);
+        assertThat(report.path("truncated").asBoolean()).isTrue();
+        JsonNode publications = report.path("publications");
+        assertThat(publications.size()).isEqualTo(200);
+        // oldest-first survives the cap: the first row is the oldest insert
+        // (i = 200 carries the earliest publication_date)
+        assertThat(publications.get(0).path("listener").asText()).isEqualTo("capped-listener-200");
+        assertThat(publications.get(199).path("listener").asText()).isEqualTo("capped-listener-1");
+    }
+
+    private UUID insertEventPublication(
+            Instant publicationDate,
+            Instant completionDate,
+            String status,
+            int completionAttempts,
+            Instant lastResubmissionDate,
+            String eventType,
+            String listenerId,
+            String serializedEvent) {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO event_publication (
+                    id,
+                    publication_date,
+                    listener_id,
+                    serialized_event,
+                    event_type,
+                    completion_date,
+                    last_resubmission_date,
+                    completion_attempts,
+                    status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                id,
+                publicationDate.atOffset(ZoneOffset.UTC),
+                listenerId,
+                serializedEvent,
+                eventType,
+                completionDate == null ? null : completionDate.atOffset(ZoneOffset.UTC),
+                lastResubmissionDate == null ? null : lastResubmissionDate.atOffset(ZoneOffset.UTC),
+                completionAttempts,
+                status);
+        diagnosticPublicationIds.add(id);
+        return id;
     }
 
     @Test

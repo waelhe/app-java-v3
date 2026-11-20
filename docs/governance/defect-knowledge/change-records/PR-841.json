@@ -1,0 +1,89 @@
+{
+ "schemaVersion": 1,
+ "pullRequest": 841,
+ "governingFiles": [
+  "marketplace-platform-infra/src/main/java/com/marketplace/shared/observability/EventPublicationDiagnosticsEndpoint.java",
+  "marketplace-app/src/main/resources/application.yml",
+  "marketplace-app/src/main/resources/application-prod.yml",
+  "marketplace-app/src/test/java/com/marketplace/config/OperatorActuatorSurfaceSmokeIntegrationTest.java",
+  "AGENTS.md",
+  "docs/governance/defect-knowledge/change-protocol.md",
+  "docs/governance/defect-knowledge/rulebook.md",
+  "docs/governance/defect-knowledge/pattern-catalog.md"
+ ],
+ "rulesTriggered": [
+  "A1",
+  "A3",
+  "A5",
+  "A6",
+  "B3",
+  "B6"
+ ],
+ "patternsReviewed": [
+  "P1",
+  "P4",
+  "P6",
+  "P9"
+ ],
+ "historicalCasesReviewed": [
+  "E-03",
+  "E-13",
+  "E-17"
+ ],
+ "invariants": [
+  "The report is read-only: a single SELECT with one statement-wide snapshot (PostgreSQL READ COMMITTED per-statement semantics), no writes, no resubmission, no lifecycle change.",
+  "The response is bounded (MAX_PUBLICATIONS=200) and reports the true total plus honest truncation — an uncapped report would answer with a multi-megabyte JSON exactly during the incident it diagnoses.",
+  "The endpoint never reads the serialized event column and never deserializes payloads: legacy event types remain diagnosable after their classes disappear (the deliberate avoidance of TargetEventPublication.getEvent()).",
+  "Access inherits the application's ADMIN-only /actuator/** rule; the smoke test pins the operator-token read and the missing-authority deny."
+ ],
+ "doors": [
+  "GET /actuator/eventpublications (ReadOperation) — the single new operator door",
+  "management.endpoints.web.exposure.include (application.yml + application-prod.yml) — the exposure door",
+  "OperatorActuatorSurfaceSmokeIntegrationTest — the ADMIN/actuator security door re-pinned for the new endpoint",
+  "No write door exists: the endpoint issues no INSERT/UPDATE/DELETE and no Modulith resubmission call"
+ ],
+ "siblingSearch": [
+  {
+   "family": "Operator read surfaces over shared tables with bounded responses",
+   "pathsSearched": [
+    "marketplace-platform-infra/src/main/java/com/marketplace/shared/observability/",
+    "marketplace-app/src/main/java/com/marketplace/config/",
+    "marketplace-app/src/main/resources/application*.yml"
+   ],
+   "result": "The existing actuator surface (OperatorActuatorSurfaceSmokeIntegrationTest) is the family precedent — every operator door is ADMIN-only and covered by the same smoke test, which this PR extends rather than adding a second harness. No other HTTP endpoint reads event_publication directly: /actuator/modulith exposes the MODULE STRUCTURE only and neither reads the publication registry nor deserializes payloads, and IncompleteEventPublications is a Java API for resubmission, not an HTTP diagnostics door (both stay untouched deliberately). The diagnostics gap this PR closes is the absence of a metadata report that never reads payloads — the new endpoint is that report and rides the same access rule as the family."
+  }
+ ],
+ "tests": [
+  {
+   "name": "OperatorActuatorSurfaceSmokeIntegrationTest.eventPublicationDiagnosticsAreReadOnlyAndOperatorProtected",
+   "command": "./mvnw verify -pl marketplace-app -am",
+   "verification": "Failsafe executes the Testcontainers IT under @ActiveProfiles(\"test\") with @Testcontainers(disabledWithoutDocker=true); -am builds the dependency modules before Failsafe runs (CodeRabbit round 1: the command field carries the Maven command alone, copy-pasteable; the environment requirements live here). Required GitHub CI run on PR #841 head (Full Integration Test job)"
+  },
+  {
+   "name": "OperatorActuatorSurfaceSmokeIntegrationTest.eventPublicationDiagnosticsReadRawMetadataWithoutDeserializingOrMutatingRows",
+   "command": "./mvnw verify -pl marketplace-app -am",
+   "verification": "Required GitHub CI run on PR #841 head — pins read-only rows, no event/payload fields, LEGACY_UNCLASSIFIED status, age bounds, and fixture cleanup"
+  },
+  {
+   "name": "OperatorActuatorSurfaceSmokeIntegrationTest.eventPublicationDiagnosticsCapsTheReportAtTheOperationalBound",
+   "command": "./mvnw verify -pl marketplace-app -am",
+   "verification": "Failsafe runs the Testcontainers IT under @ActiveProfiles(\"test\") with @Testcontainers(disabledWithoutDocker=true); -am builds the dependency modules first so Failsafe's classpath resolves (CodeRabbit round 1: the command carries Maven switches alone and the environment requirements live here). CI runs it on the PR head (Full Integration Test job, Docker-gated). The cap test pins the 201-row bound: 200 oldest-first entries, total=201, truncated=true, first/last row identity."
+  }
+ ],
+ "findings": [
+  {
+   "key": "W-841-1",
+   "domain": "observability.event-publications",
+   "scenario": "An operator triages a stale-publication incident (marketplace_eventbus_stale accumulates) while the metric alone exposes neither the event type, the listener, nor the attempt count, and Modulith's own eventpublication endpoint would deserialize legacy payloads whose classes may no longer exist",
+   "invariant": "The operator's stale-publication report is a read-only, bounded, one-snapshot view of event_publication metadata that never deserializes event payloads and never mutates rows; access rides the existing ADMIN-only /actuator/** security rule",
+   "fingerprint": "sha256:b0b83236ecc984845d0dd3d3a2fca8c30e12f7286ef95b5305b8b9247fe4c5bf",
+   "sourceUrls": [
+    "https://github.com/waelhe/app-java-v3/pull/841"
+   ],
+   "classification": "capability_gap",
+   "severity": "medium",
+   "status": "open",
+   "note": "The diagnostics endpoint, its exposure, and the two regression ITs are implemented and the CI run 43909590876 succeeded on the code-bearing head ad91694790 (event pull_request, PR #841). The D11 evidence contract resolves the run's PR association through the LIVE GitHub Actions API, which now reports the PR's CURRENT head (the receipt-bearing head after the receipt commits), so the run can no longer be recorded as this finding's verification without contradicting the validator — the self-reference paradox the change-records README documents ('tested first, then run evidence recorded'). The finding stays open with its full local evidence; the required CI now running on the receipt-bearing head will gate the merge itself, and a follow-up commit may bind a fresh code-bearing run to close it per the contract's sequencing."
+  }
+ ]
+}

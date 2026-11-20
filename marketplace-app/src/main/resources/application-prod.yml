@@ -203,7 +203,7 @@ management:
         # and the deliberate exclusions (httpexchanges: the production
         # exchange record is the OTel/OTLP trace; shutdown stays disabled
         # per the reference's own default).
-        include: auditevents,beans,caches,conditions,configprops,env,flyway,health,info,loggers,mappings,metrics,prometheus,modulith,scheduledtasks,threaddump
+        include: auditevents,beans,caches,conditions,configprops,env,eventpublications,flyway,health,info,loggers,mappings,metrics,prometheus,modulith,scheduledtasks,threaddump
   observations:
     enabled: true
   metrics:
