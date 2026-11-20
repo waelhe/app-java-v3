@@ -1,5 +1,6 @@
 package com.marketplace.media;
 
+import com.marketplace.shared.api.BadRequestException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -11,6 +12,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.MetadataDirective;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
@@ -28,10 +30,10 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 
 import java.net.URI;
 import java.time.Duration;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 
 /**
  * The S3-compatible storage channel — the ONLY class in this module that talks
@@ -237,18 +239,6 @@ final class S3MediaStorage implements AutoCloseable {
      * S3-compatibility contract. The caller holds the media-row write lock so
      * account erasure cannot commit between the verification and promotion.
      */
-    void copyObject(String sourceKey, String destinationKey) {
-        if (sourceKey.equals(destinationKey)) {
-            return;
-        }
-        circuitBreaker.executeRunnable(() -> client.copyObject(CopyObjectRequest.builder()
-                .bucket(bucket)
-                .key(destinationKey)
-                .copySource(bucket + "/" + sourceKey)
-                .metadataDirective(MetadataDirective.COPY)
-                .build()));
-    }
-
     /**
      * Copies a staged object only if the source is still the same object whose
      * metadata was just checked. The conditional source ETag closes the window
