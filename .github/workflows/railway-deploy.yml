@@ -130,6 +130,20 @@ jobs:
             // through whenever any OTHER workflow on the commit succeeded
             // (the 2026-11-21 full review's Major: this step's own name
             // promises every suite green).
+            //
+            // CodeRabbit round on 9df92c5d (2026-11-21T21:50Z, Major —
+            // Functional Correctness): GitHub returns `timed_out` as its own
+            // conclusion, independent of `cancelled` and `failure`
+            // (docs.github.com — List workflow runs). A timed-out push run
+            // passed the completion check, the failure check, and the
+            // cancelled-only unverified filter — deploy=true on a commit
+            // whose gate suite died at the timeout. The verdict model is
+            // now an ALLOWLIST: a workflow's latest run must be success,
+            // skipped, or neutral; every other conclusion — cancelled,
+            // timed_out, action_required, stale, startup_failure, anything
+            // GitHub adds — leaves the commit UNVERIFIED and blocks the
+            // deploy. Fail closed on the unknown.
+            const VERIFIED_CONCLUSIONS = new Set(['success', 'skipped', 'neutral']);
             const latestPerWorkflow = new Map();
             for (const run of gate) {
               const prev = latestPerWorkflow.get(run.name);
@@ -138,9 +152,9 @@ jobs:
               }
             }
             const unverified = [...latestPerWorkflow.values()]
-              .filter(r => r.conclusion === 'cancelled');
+              .filter(r => !VERIFIED_CONCLUSIONS.has(r.conclusion));
             if (unverified.length > 0) {
-              core.setFailed(`Latest run cancelled without a succeeding re-run — the commit stays unverified, deployment skipped: ${unverified.map(r => r.name).join(', ')}`);
+              core.setFailed(`Latest suite run is not a verified verdict — the commit stays unverified, deployment skipped: ${unverified.map(r => `${r.name}=${r.conclusion}`).join(', ')}`);
               return;
             }
 
