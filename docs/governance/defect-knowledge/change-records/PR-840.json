@@ -87,7 +87,7 @@
     {
       "name": "ResendEmailSenderTest",
       "command": "./mvnw verify -pl marketplace-platform-infra (failsafe/surefire executes ResendEmailSenderTest)",
-      "verification": "Required GitHub CI run on PR #840 head (Build & Test + Full Integration Test)"
+      "verification": "Pins stable same-key/same-payload replay, explicit 409 rejection for same-key/different-body, and unique fallback keys when the exact rendered provider body differs."
     },
     {
       "name": "EmailNotificationServiceTest / NotificationServiceTest",
