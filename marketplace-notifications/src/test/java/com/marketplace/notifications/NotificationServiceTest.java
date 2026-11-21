@@ -972,23 +972,27 @@ class NotificationServiceTest {
         UUID secondMessageId = create(UUID.class);
 
         service.onMessageReceived(firstMessageId, conversationId, CONSUMER_ID);
+        // A Modulith resubmission of the same event retains its occurrence key.
+        service.onMessageReceived(firstMessageId, conversationId, CONSUMER_ID);
+        // A different message in the same conversation gets its own key.
         service.onMessageReceived(secondMessageId, conversationId, CONSUMER_ID);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
-        verify(repository, times(2)).save(saved.capture());
+        verify(repository, times(3)).save(saved.capture());
         assertThat(saved.getAllValues()).allSatisfy(notification -> {
             assertThat(notification.getType()).isEqualTo("MESSAGE_RECEIVED");
             assertThat(notification.getMessage()).contains(conversationId.toString());
         });
-        verify(messagingTemplate, times(2)).convertAndSend(
+        verify(messagingTemplate, times(3)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
 
         org.mockito.ArgumentCaptor<String> deliveryKeys =
                 org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(emailService, times(2)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(),
+        verify(emailService, times(3)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(),
                 deliveryKeys.capture());
         assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + firstMessageId,
                 "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + firstMessageId,
                 "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + secondMessageId)
                 .doesNotHaveDuplicates();
