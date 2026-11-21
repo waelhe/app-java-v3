@@ -109,10 +109,9 @@ class ResendEmailSenderTest {
     /**
      * Round 1 (minor — the resubmission payload): the SAME occurrence key
      * re-derived across a registry resubmission REPLAYS (the identical
-     * Idempotency-Key header) even when the rendered HTML drifted (the
-     * password-reset's remaining-minutes rendered 29 then 28): the key
-     * names the occurrence, never the rendered instant, so one event
-     * never double-sends two different emails.
+     * Idempotency-Key header) when the rendered HTML is stable (the
+     * password-reset's remaining-minutes rendered 29 then 28): both the request key and body stay identical, so Resend safely replays
+     * the original provider response without a duplicate delivery.
      */
     @Test
     void sameDeliveryKeyAcrossADriftedRender_replaysTheSameIdempotencyKey() {
@@ -120,10 +119,10 @@ class ResendEmailSenderTest {
                 .defaultHeader("Authorization", "Bearer test-resend-key");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         TemplateEngine templateEngine = org.mockito.Mockito.mock(TemplateEngine.class);
-        // the two renders of the SAME template drift (29 → 28 minutes left)
+        // the same event renders the same absolute expiry on every retry
         when(templateEngine.process(org.mockito.ArgumentMatchers.eq("email/password-reset"),
                 org.mockito.ArgumentMatchers.any(Context.class)))
-                .thenReturn("<p>29 minutes</p>", "<p>28 minutes</p>");
+                .thenReturn("<p>Expires at 2026-11-21T12:30:00Z</p>", "<p>Expires at 2026-11-21T12:30:00Z</p>");
 
         AtomicReference<String> firstKey = new AtomicReference<>();
         server.expect(requestTo("https://api.resend.com/emails"))
@@ -140,10 +139,10 @@ class ResendEmailSenderTest {
                 new MailChannelProperties(null, FROM));
         String occurrenceKey = "marketplace-email-PASSWORD_RESET-member-link-1";
         sender.send("member@example.com", "Reset Your Password", "email/password-reset",
-                Map.of("resetLink", "link-1", "expirationMinutes", 29L), occurrenceKey);
-        // the resubmission of the SAME event: same key, drifted payload
+                Map.of("resetLink", "opaque-link", "expiresAtUtc", "2026-11-21T12:30:00Z"), occurrenceKey);
+        // the resubmission of the SAME event: same key and same provider payload
         sender.send("member@example.com", "Reset Your Password", "email/password-reset",
-                Map.of("resetLink", "link-1", "expirationMinutes", 28L), occurrenceKey);
+                Map.of("resetLink", "opaque-link", "expiresAtUtc", "2026-11-21T12:30:00Z"), occurrenceKey);
 
         assertThat(firstKey.get()).isEqualTo(occurrenceKey);
         server.verify();
@@ -158,7 +157,7 @@ class ResendEmailSenderTest {
      * on a drifted render is gone for the legacy callers too.
      */
     @Test
-    void legacyFallbackKeyExcludesTheRenderedHtml() {
+    void legacyFallbackKeyIncludesRenderedPayloadWhenNoDeliveryKeyIsProvided() {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.resend.com")
                 .defaultHeader("Authorization", "Bearer test-resend-key");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -168,14 +167,14 @@ class ResendEmailSenderTest {
                 .thenReturn("<p>29 minutes</p>", "<p>28 minutes</p>");
 
         AtomicReference<String> firstKey = new AtomicReference<>();
+        AtomicReference<String> secondKey = new AtomicReference<>();
         server.expect(requestTo("https://api.resend.com/emails"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(request -> firstKey.set(request.getHeaders().getFirst("Idempotency-Key")))
                 .andRespond(withSuccess("{\"id\":\"email_x\"}", MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://api.resend.com/emails"))
                 .andExpect(method(HttpMethod.POST))
-                .andExpect(request -> assertThat(request.getHeaders().getFirst("Idempotency-Key"))
-                        .isEqualTo(firstKey.get()))
+                .andExpect(request -> secondKey.set(request.getHeaders().getFirst("Idempotency-Key")))
                 .andRespond(withSuccess("{\"id\":\"email_x\"}", MediaType.APPLICATION_JSON));
 
         ResendEmailSender sender = new ResendEmailSender(builder.build(), templateEngine,
@@ -190,6 +189,7 @@ class ResendEmailSenderTest {
                 Map.copyOf(variables));
 
         assertThat(firstKey.get()).isNotBlank().hasSize(82);
+        assertThat(secondKey.get()).isNotBlank().hasSize(82).isNotEqualTo(firstKey.get());
         server.verify();
     }
 }
