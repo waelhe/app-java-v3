@@ -107,14 +107,12 @@ class ResendEmailSenderTest {
     }
 
     /**
-     * Round 1 (minor — the resubmission payload): the SAME occurrence key
-     * re-derived across a registry resubmission REPLAYS (the identical
-     * Idempotency-Key header) when the rendered HTML is stable (the
-     * password-reset's remaining-minutes rendered 29 then 28): both the request key and body stay identical, so Resend safely replays
-     * the original provider response without a duplicate delivery.
+     * Resend replays only when both the occurrence key and request body
+     * remain stable. The reset event carries an immutable expiry instant,
+     * so the same publication renders the identical HTML on resubmission.
      */
     @Test
-    void sameDeliveryKeyAcrossADriftedRender_replaysTheSameIdempotencyKey() {
+    void sameDeliveryKeyAcrossAStableRender_replaysTheSameIdempotentRequest() {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://api.resend.com")
                 .defaultHeader("Authorization", "Bearer test-resend-key");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -149,12 +147,9 @@ class ResendEmailSenderTest {
     }
 
     /**
-     * Round 1 (minor — the fallback fingerprint): callers WITHOUT a delivery
-     * key keep the fallback fingerprint, which now EXCLUDES the rendered
-     * HTML — two sends whose rendered content drifts (a time-varying
-     * fragment) but whose request shape is identical re-derive the SAME
-     * fallback key (a replay), so the pre-fix behavior of double-sending
-     * on a drifted render is gone for the legacy callers too.
+     * The fallback fingerprint covers the provider request body. Different
+     * rendered HTML must therefore produce a different key, avoiding
+     * Resend's 409 same-key/different-payload response.
      */
     @Test
     void legacyFallbackKeyIncludesRenderedPayloadWhenNoDeliveryKeyIsProvided() {
