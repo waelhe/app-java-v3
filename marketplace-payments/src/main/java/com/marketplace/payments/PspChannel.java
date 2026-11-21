@@ -69,6 +69,39 @@ public interface PspChannel {
      */
     VerifiedWebhook verifyWebhook(String rawPayload, String signatureHeader);
 
+    /**
+     * Performs provider API reads needed to complete a verified event's
+     * dispatch snapshot. Callers invoke this only after a provider-scoped
+     * event-id dedup preflight. Implementations that need no enrichment keep
+     * the default identity mapping.
+     */
+    default VerifiedWebhook resolveWebhookDetails(String rawPayload, String signatureHeader,
+                                                  VerifiedWebhook verified) {
+        return verified;
+    }
+
+    /**
+     * Reads the charge's CURRENT cumulative refunded amount through the
+     * provider's own API — the same authoritative cumulative read
+     * {@code createRemoteRefund} answers with (the retrieved
+     * {@code charge.amount_refunded}), not a sum the caller computes.
+     *
+     * <p><b>CodeRabbit round 10 on #828 (the refund.updated settle):</b> the
+     * {@code refund.updated}/{@code refund.created} identity vehicle carries
+     * NO cumulative (a Refund object knows its own amount, never the
+     * charge's total), and Stripe does not guarantee webhook delivery order
+     * (official webhooks documentation) — the identity event can arrive
+     * BEFORE the {@code charge.refunded} event whose cumulative would sync
+     * the books. Settling the journal EXECUTED on that arrival therefore
+     * needs the remote total fetched live from the provider before the
+     * caller's reconciliation answer reads the local books; otherwise an
+     * independent earlier refund satisfies the books' arithmetic alone
+     * while this operation's own money is missing from the synced total.
+     * Returns {@code null} when no charge-backed refund total is
+     * resolvable for the intent (never invented).</p>
+     */
+    Long readRemoteRefundTotalCents(String pspIntentId);
+
     /** Remote intent identifiers handed back to the calling client. */
     record RemoteIntent(String pspIntentId, String clientSecret) {}
 
@@ -81,15 +114,59 @@ public interface PspChannel {
      * provider's own payload — the async safety net that syncs local state
      * for refunds completed outside this service (including the Stripe
      * dashboard).
+     *
+     * <p><b>CodeRabbit round 2 on #828 (the refund-specific execution
+     * evidence):</b> the snapshot also carries the charge's refund entries
+     * that completed at the provider. A refund this service created carries
+     * the refund operation's idempotency key as its provider metadata (see
+     * {@code StripePspChannel.OPERATION_KEY_METADATA}), so the webhook — the
+     * only witness of the provider's own refund record — can settle the
+     * matching journal operation by IDENTITY, never by the books'
+     * cumulative arithmetic (an independent refund advances the cumulative
+     * just as well while this operation never sent). Refunds created outside
+     * this service (the dashboard) carry no operation key and stay
+     * books-sync only.</p>
      */
-    record RefundSnapshot(long refundedAmountCents) {}
+    record RefundSnapshot(long refundedAmountCents, java.util.List<ExecutedRefund> executedRefunds) {
+
+        /**
+         * Books-sync only: no refund identities carried (legacy callers).
+         * CodeRabbit round 15 (2026-11-19T14:40Z review): stays PUBLIC —
+         * the record's implicit canonical constructor always was, and this
+         * convenience twin must keep the same reach for out-of-package
+         * callers assembling the books-sync shape.
+         */
+        public RefundSnapshot(long refundedAmountCents) {
+            this(refundedAmountCents, java.util.List.of());
+        }
+    }
+
+    /**
+     * A refund the provider reports as completed on the charge, with the
+     * refund operation key this service stamped as its metadata (null when
+     * the refund was not created through this service's contract).
+     */
+    record ExecutedRefund(String refundId, String operationKey) {}
 
     /**
      * Verified webhook fields mapped onto the house dispatch contract. For
      * {@code charge.refunded} events the {@code pspIntentId} carries the
      * charge's payment intent id (resolution then flows through the V33
      * {@code findByPspIntentId} link) and {@code refund} carries the
-     * snapshot; otherwise {@code refund} is null.
+     * snapshot — the ONE event whose {@code refundedAmountCents} is the
+     * financial cumulative total the books sync to.
+     *
+     * <p><b>CodeRabbit round 13 follow-up (the refund.* identity-only
+     * snapshot):</b> {@code refund.created} and {@code refund.updated}
+     * events ALSO carry a {@code refund} snapshot — but an IDENTITY-ONLY
+     * one: its {@code refundedAmountCents} is the literal {@code 0L} the
+     * channel answers for these events and is NOT a financial total (the
+     * Refund object these events carry has no charge cumulative). Consumers
+     * read the refund IDENTITIES (the operation keys) from these snapshots
+     * to settle the journal — never the amount; the cumulative total rides
+     * the {@code charge.refunded} snapshot alone (see
+     * {@link StripePspChannel#verifyWebhook}). For every other event type
+     * {@code refund} is null.</p>
      */
     record VerifiedWebhook(String eventId, String eventType, UUID marketplaceIntentId,
                            String pspIntentId, RefundSnapshot refund) {}

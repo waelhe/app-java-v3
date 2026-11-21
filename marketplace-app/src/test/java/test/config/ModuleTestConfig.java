@@ -33,6 +33,20 @@ import java.util.Optional;
  * testing guidance to reuse production {@code @Configuration} via {@code @Import}
  * rather than re-declaring {@code @Enable*} annotations.
  *
+ * <p><b>No shared Clock bean here — one Clock per slice context:</b> a
+ * {@code @ConditionalOnMissingBean(Clock.class)} fallback on this plain
+ * {@code @Configuration} class has NO processing-order guarantee (the Spring
+ * Boot reference limits {@code @ConditionalOnMissingBean} to auto-configuration
+ * classes; user configuration order is undefined). Measured on this branch's
+ * CI (head {@code dd01765fdd}, 2026-11-20): the fallback registered before
+ * the tests' own nested {@code ClockBean} beans (duplicate {@code clock}
+ * registration — six module slices) and before the production
+ * {@code ClockConfig#systemClock} surfaced in {@code ALL_DEPENDENCIES} slices
+ * (Moments ambiguity — two Clock beans). Slices that need a Clock therefore
+ * declare their own nested {@code ClockBean} (the pre-existing green pattern:
+ * one Clock per context, never two); slices booting all dependencies keep the
+ * production {@code systemClock} bean.
+ *
  * <p>Reference:
  * <a href="https://docs.spring.io/spring-boot/reference/testing/spring-boot-applications.html#testing.spring-boot-applications.user-configuration-and-slicing">
  * Spring Boot Reference — User Configuration and Slicing</a>

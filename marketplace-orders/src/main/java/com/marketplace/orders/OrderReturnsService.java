@@ -6,6 +6,7 @@ import com.marketplace.shared.api.OrderRefundPort;
 import com.marketplace.shared.api.ProductStockPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import io.micrometer.observation.annotation.Observed;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -208,6 +209,22 @@ public class OrderReturnsService {
      * return-scoped PSP idempotency key (stable across a rollback+retry —
      * see {@code OrderRefundPort}).
      */
+    // CodeRabbit round 2 then round 5 on #828: the refund path's concurrency
+    // gate rides HERE, on the carrier's public entry, BEFORE the carrier
+    // transaction begins — and round 5 made it ONE SHARED gate across every
+    // refund-carrying carrier (the dispute twins ride the same named
+    // bulkhead): the two independent @ConcurrencyLimit(5) gates could admit
+    // 10 concurrent completions = ~30 held connections against the
+    // 20-connection production pool. The shared "refundCarriers" semaphore
+    // bulkhead (resilience4j, config in application.yml) admits 5 total
+    // (staging 3 against its 10-connection pool). The bulkhead aspect's
+    // order — LOWEST_PRECEDENCE - 1 (measured in the resilience4j 2.4.0
+    // sources) — sorts OUTSIDE the transaction interceptor (LOWEST_PRECEDENCE
+    // default), so a caller waiting for a permit (max-wait 10s) holds NO
+    // connection. The refund's and ledger's REQUIRES_NEW transactions keep
+    // their independence — the gate changes WHERE waiting happens, never
+    // transaction boundaries.
+    @Bulkhead(name = "refundCarriers", type = Bulkhead.Type.SEMAPHORE)
     @Transactional
     @Observed(name = "order.return.complete")
     public OrderReturn complete(UUID returnId) {

@@ -108,6 +108,12 @@ class PaymentsServiceDisputeRefundJournalTest {
         return payment;
     }
 
+    /** Stub only the live-read path, which asks for the payment by intent id. */
+    private void stubPaymentLookupForLiveRead(Payment payment) {
+        when(paymentRepository.findByPaymentIntentId(payment.getPaymentIntentId()))
+                .thenReturn(Optional.of(payment));
+    }
+
     private static String disputeKey(UUID paymentId, UUID disputeId) {
         return "marketplace-refund-" + paymentId + "-dispute-" + disputeId;
     }
@@ -148,8 +154,17 @@ class PaymentsServiceDisputeRefundJournalTest {
         // shared transaction rollback-only and the attempts re-read the
         // caller's first-level cache), so the wait's retry vehicle is the
         // caller's FRESH re-invocation, which the 409 message prescribes.
+        // CodeRabbit round 16 (the retry-vehicle separation): this intent is
+        // channel-backed (pi_remote_dispute), so its wait rides the
+        // provider's own live cumulative — the unexposed cumulative answers
+        // the provider-total wording (the null-cumulative twin's own
+        // contract), never the webhook vehicle.
         UUID disputeId = UUID.randomUUID();
         Payment payment = collectedPayment(0L);
+        // the live read must find the payment row: the false verdict then
+        // comes from the unexposed cumulative itself, not a missing row
+        when(paymentRepository.findByPaymentIntentId(payment.getPaymentIntentId()))
+                .thenReturn(Optional.of(payment));
         PaymentRefundOperation executed =
                 new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
         executed.markExecuted("re_dispute_prior");
@@ -159,8 +174,9 @@ class PaymentsServiceDisputeRefundJournalTest {
         assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
                 PaymentsService.StableRefundScope.forDispute(disputeId)))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("charge.refunded")
+                .hasMessageContaining("has not reached the required amount yet")
                 .hasMessageContaining("re_dispute_prior");
+        verify(pspChannel).readRemoteRefundTotalCents("pi_remote_dispute");
 
         // nothing is re-submitted and the journal is untouched — the
         // operation is already answered by its EXECUTED record
@@ -177,11 +193,13 @@ class PaymentsServiceDisputeRefundJournalTest {
         // is still OPEN — the pre-fix cap check (3000 + 3000 > 5000) would
         // reject the very refund that already executed
         Payment payment = collectedPayment(3000L);
+        stubPaymentLookupForLiveRead(payment);
         PaymentRefundOperation executed =
                 new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
         executed.markExecuted("re_dispute_prior");
         when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
                 .thenReturn(Optional.of(executed));
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(3000L);
 
         PaymentsService.RefundedPayment refunded = service().refundPayment(payment.getId(), 3000L,
                 PaymentsService.StableRefundScope.forDispute(disputeId));
@@ -192,6 +210,97 @@ class PaymentsServiceDisputeRefundJournalTest {
         // and the journal is not re-marked either — the operation is already
         // answered by its EXECUTED record
         verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
+    }
+
+    /**
+     * CodeRabbit round 13 follow-up (the deliberate failure surface): the
+     * dispute re-completion's live grounding read FAILS — the books'
+     * arithmetic alone passed (3000 >= 0 + 3000), but the gate must NOT
+     * answer on it (an independent refund can saturate the arithmetic while
+     * this operation's money is not in the books), and the raw
+     * PspChannelException must NOT escape refundPayment as an undefined 500.
+     * The surface is the house 503 SERVICE_UNAVAILABLE: the message states
+     * the operation is EXECUTED and durable, that the reconciled answer
+     * stands on the provider's live cumulative — never the arithmetic alone
+     * — and prescribes the retry vehicle (the caller's fresh re-invocation,
+     * the same vehicle the books-sync wait's 409 prescribes). Nothing
+     * re-submits, nothing re-marks.
+     */
+    @Test
+    void aFailedLiveGroundingRead_surfacesTheDeliberate503_neverTheArithmeticNorARaw500() {
+        UUID disputeId = UUID.randomUUID();
+        // the books' arithmetic alone passes: 3000 >= 0 + 3000
+        Payment payment = collectedPayment(3000L);
+        PaymentRefundOperation executed =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(executed));
+        // the live grounding read FAILS — a transient provider outage
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute"))
+                .thenThrow(new PspChannelException("Stripe charge listing failed (simulated outage)"));
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ServiceUnavailableException.class)
+                .hasMessageContaining("EXECUTED and durable")
+                .hasMessageContaining("re_dispute_prior")
+                .hasMessageContaining("live books-grounding read failed")
+                .hasMessageContaining("never the books' arithmetic alone")
+                .hasMessageContaining("retry the resolution");
+
+        // the gate held: no re-submission, no re-marking — the EXECUTED
+        // record stays the operation's own execution fact
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+        verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
+    }
+
+    @Test
+    void anExecutedOperationWithNoLiveCumulativeDoesNotUseAlreadySyncedBooks() {
+        UUID disputeId = UUID.randomUUID();
+        // Local books already show the frozen amount, but this configured
+        // provider channel cannot expose a charge-backed cumulative. The
+        // local total may include an independent refund, so it is not proof
+        // that this EXECUTED operation's money reached the ledger.
+        Payment payment = collectedPayment(3000L);
+        stubPaymentLookupForLiveRead(payment);
+        PaymentRefundOperation executed =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(executed));
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(null);
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("has not reached the required amount yet");
+
+        verify(pspChannel).readRemoteRefundTotalCents("pi_remote_dispute");
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+        verify(journalRepository, never()).save(any(PaymentRefundOperation.class));
+    }
+
+    @Test
+    void anExecutedOperationRejectsALiveCumulativeThatDoesNotCoverItsFrozenAmount() {
+        UUID disputeId = UUID.randomUUID();
+        // The local books already meet the amount threshold, but the live PSP
+        // cumulative does not; stale local arithmetic cannot close the dispute.
+        Payment payment = collectedPayment(3000L);
+        stubPaymentLookupForLiveRead(payment);
+        PaymentRefundOperation executed =
+                new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
+        executed.markExecuted("re_dispute_prior");
+        when(journalRepository.findById(disputeKey(payment.getId(), disputeId)))
+                .thenReturn(Optional.of(executed));
+        when(pspChannel.readRemoteRefundTotalCents("pi_remote_dispute")).thenReturn(2500L);
+
+        assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
+                PaymentsService.StableRefundScope.forDispute(disputeId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("has not reached the required amount yet");
+
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
     }
 
     @Test
