@@ -154,14 +154,17 @@ class UserServiceSecurityTest {
     void pseudonymizeAccount_whenOwnAccount_thenProceedsToTheDomain() {
         UUID own = UUID.randomUUID();
         when(authHelper.isCurrentUser(eq(own), any())).thenReturn(true);
-        when(userRepository.findById(own)).thenReturn(Optional.of(domainUser("self@example.com")));
+        // The 2026-11-08 #810 round-5 review: the erasure rides the LOCKED
+        // account load (the address-create serialization point).
+        when(userRepository.findByIdForUpdate(own))
+                .thenReturn(Optional.of(domainUser("self@example.com")));
         when(userDetailsManager.loadUserByUsername("self@example.com")).thenReturn(storedLoginRow());
         when(subjectPseudonymizer.derive("self@example.com")).thenReturn("anon-derived");
 
         assertThatCode(() -> userService.pseudonymizeAccount(own, "self-deletion", "self"))
                 .as("the self-service deletion journey must reach the domain (the A-05 contract)")
                 .doesNotThrowAnyException();
-        verify(userRepository).findById(own);
+        verify(userRepository).findByIdForUpdate(own);
         verify(userDetailsManager).deleteUser("self@example.com");
     }
 
@@ -169,7 +172,9 @@ class UserServiceSecurityTest {
     @WithMockUser(roles = "ADMIN")
     void pseudonymizeAccount_whenAdmin_thenShortCircuitsWithoutOwnershipLookup() {
         UUID anyTarget = UUID.randomUUID();
-        when(userRepository.findById(anyTarget)).thenReturn(Optional.of(domainUser("target@example.com")));
+        // The 2026-11-08 #810 round-5 review: the LOCKED erasure load.
+        when(userRepository.findByIdForUpdate(anyTarget))
+                .thenReturn(Optional.of(domainUser("target@example.com")));
         when(userDetailsManager.loadUserByUsername("target@example.com")).thenReturn(storedLoginRow());
         when(subjectPseudonymizer.derive("target@example.com")).thenReturn("anon-derived");
 
