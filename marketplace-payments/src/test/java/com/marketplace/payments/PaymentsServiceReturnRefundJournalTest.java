@@ -172,6 +172,31 @@ class PaymentsServiceReturnRefundJournalTest {
     }
 
     @Test
+    void aChannelLessBooksWaitKeepsTheWebhookVehicleWording() {
+        // CodeRabbit round 16 (the OTHER half of the retry-vehicle
+        // separation): a channel-LESS deployment's books wait rides the
+        // webhook vehicle alone — no live read exists to consult, so the
+        // 409 keeps the charge.refunded reference (the inert deployment's
+        // books follow the webhook only, the gate's own documented rule).
+        PaymentsService svc = service();
+        Payment payment = collectedPayment(0L);
+        // the channel-less deployment overrides the helper's channel binding
+        when(boundChannel.getIfAvailable()).thenReturn(null);
+        UUID returnId = UUID.randomUUID();
+        String operationKey = PaymentsService.StableRefundScope.forReturn(returnId)
+                .idempotencyKey(payment.getId(), 2000L);
+        when(journalRepository.findById(operationKey))
+                .thenReturn(Optional.of(executedOperation(payment.getId(), 2000L, 0L)));
+
+        assertThatThrownBy(() ->
+                svc.refundPayment(payment.getId(), 2000L, PaymentsService.StableRefundScope.forReturn(returnId)))
+                .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
+                .hasMessageContaining("await the charge.refunded sync");
+        verify(pspChannel, never()).readRemoteRefundTotalCents(anyString());
+        verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
+    }
+
+    @Test
     void theFirstSubmissionFreezesTheRecordAndTheProviderAnswerMarksItExecuted() {
         // The first VALID submission: the journal row is born with the
         // return's amount and the books baseline (in the journal's own

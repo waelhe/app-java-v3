@@ -154,8 +154,17 @@ class PaymentsServiceDisputeRefundJournalTest {
         // shared transaction rollback-only and the attempts re-read the
         // caller's first-level cache), so the wait's retry vehicle is the
         // caller's FRESH re-invocation, which the 409 message prescribes.
+        // CodeRabbit round 16 (the retry-vehicle separation): this intent is
+        // channel-backed (pi_remote_dispute), so its wait rides the
+        // provider's own live cumulative — the unexposed cumulative answers
+        // the provider-total wording (the null-cumulative twin's own
+        // contract), never the webhook vehicle.
         UUID disputeId = UUID.randomUUID();
         Payment payment = collectedPayment(0L);
+        // the live read must find the payment row: the false verdict then
+        // comes from the unexposed cumulative itself, not a missing row
+        when(paymentRepository.findByPaymentIntentId(payment.getPaymentIntentId()))
+                .thenReturn(Optional.of(payment));
         PaymentRefundOperation executed =
                 new PaymentRefundOperation(disputeKey(payment.getId(), disputeId), payment.getId(), 3000L, 0L);
         executed.markExecuted("re_dispute_prior");
@@ -165,8 +174,9 @@ class PaymentsServiceDisputeRefundJournalTest {
         assertThatThrownBy(() -> service().refundPayment(payment.getId(), 3000L,
                 PaymentsService.StableRefundScope.forDispute(disputeId)))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("charge.refunded")
+                .hasMessageContaining("has not reached the required amount yet")
                 .hasMessageContaining("re_dispute_prior");
+        verify(pspChannel).readRemoteRefundTotalCents("pi_remote_dispute");
 
         // nothing is re-submitted and the journal is untouched — the
         // operation is already answered by its EXECUTED record
