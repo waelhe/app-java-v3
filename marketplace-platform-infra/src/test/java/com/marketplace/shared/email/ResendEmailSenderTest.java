@@ -164,7 +164,7 @@ class ResendEmailSenderTest {
                 .andExpect(request -> assertThat(request.getHeaders().getFirst("Idempotency-Key"))
                         .isEqualTo(occurrenceKey))
                 .andExpect(jsonPath("$.html").value("<p>29 minutes</p>"))
-                .andRespond(withSuccess("{\\"id\\":\\"email_first\\"}", MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("{\"id\":\"email_first\"}", MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://api.resend.com/emails"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(request -> assertThat(request.getHeaders().getFirst("Idempotency-Key"))
@@ -173,7 +173,7 @@ class ResendEmailSenderTest {
                 .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
                         .withStatus(org.springframework.http.HttpStatus.CONFLICT)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body("{\\"name\\":\\"invalid_idempotent_request\\"}"));
+                        .body("{\"name\":\"invalid_idempotent_request\"}"));
 
         ResendEmailSender sender = new ResendEmailSender(builder.build(), templateEngine,
                 new MailChannelProperties(null, FROM));
