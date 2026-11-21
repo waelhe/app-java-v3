@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -923,8 +924,8 @@ class NotificationServiceTest {
     }
 
     /**
-     * B-08: two messages in the same conversation are distinct delivery
-     * occurrences even when their notification text is identical.
+     * A-02: email verification retries use an opaque provider key; the
+     * bearer link belongs only in the rendered email body.
      */
     @Test
     void onEmailVerificationRequestedKeepsTheBearerLinkOutOfTheProviderKey() {
@@ -950,6 +951,10 @@ class NotificationServiceTest {
         assertThat(deliveryKeys.getValue()).doesNotContain("example.test");
     }
 
+    /**
+     * B-08: two messages in one conversation are distinct delivery
+     * occurrences even when their notification text is identical.
+     */
     @Test
     void onMessageReceivedUsesMessageIdentityForEmailDelivery() {
         NotificationRepository repository = mock(NotificationRepository.class);
@@ -988,6 +993,7 @@ class NotificationServiceTest {
                 "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + secondMessageId)
                 .doesNotHaveDuplicates();
     }
+
     /**
      * B-08 (0.10): the recipient's preference opt-out — the L22 matrix
      * gates the push channels per (recipient, MESSAGE_RECEIVED, channel);
