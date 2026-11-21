@@ -71,7 +71,7 @@ public record MailChannelProperties(String provider, String from) {
      * is absent) and {@code resend} (the HTTPS transport).
      */
     public MailChannelProperties {
-        if (provider == null || provider.isBlank()) {
+        if (provider == null) {
             // absent = the SMTP default (matchIfMissing on the SMTP
             // auto-configuration) — normalized here so the value check below
             // reads one shape
