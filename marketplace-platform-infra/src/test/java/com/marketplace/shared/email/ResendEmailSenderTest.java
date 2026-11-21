@@ -125,10 +125,12 @@ class ResendEmailSenderTest {
         AtomicReference<String> firstKey = new AtomicReference<>();
         server.expect(requestTo("https://api.resend.com/emails"))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.html").value("<p>Expires at 2026-11-21T12:30:00Z</p>"))
                 .andExpect(request -> firstKey.set(request.getHeaders().getFirst("Idempotency-Key")))
                 .andRespond(withSuccess("{\"id\":\"email_reset\"}", MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://api.resend.com/emails"))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.html").value("<p>Expires at 2026-11-21T12:30:00Z</p>"))
                 .andExpect(request -> assertThat(request.getHeaders().getFirst("Idempotency-Key"))
                         .isEqualTo(firstKey.get()))
                 .andRespond(withSuccess("{\"id\":\"email_reset\"}", MediaType.APPLICATION_JSON));
@@ -165,6 +167,7 @@ class ResendEmailSenderTest {
         AtomicReference<String> secondKey = new AtomicReference<>();
         server.expect(requestTo("https://api.resend.com/emails"))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.html").value("<p>29 minutes</p>"))
                 .andExpect(request -> firstKey.set(request.getHeaders().getFirst("Idempotency-Key")))
                 .andRespond(withSuccess("{\"id\":\"email_x\"}", MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://api.resend.com/emails"))
