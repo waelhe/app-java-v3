@@ -189,15 +189,39 @@ def processed_files(body):
     need(match is not None, "CodeRabbit omitted its explicit processed-file list")
     expected = int(match.group(1))
     marker = chr(96)
-    result = []
+    selected = []
     for line in match.group(2).splitlines():
         found = re.match(r"^\s*[*-]\s+" + re.escape(marker) + r"([^" + re.escape(marker) + r"]+)" +
                          re.escape(marker) + r"\s*$", line)
         if found:
-            result.append(found.group(1).strip())
-    need(len(result) == expected, f"CodeRabbit declared {expected} files but listed {len(result)}")
-    need(len(result) == len(set(result)), "CodeRabbit processed-file list contains duplicate paths")
-    return result
+            selected.append(found.group(1).strip())
+    need(len(selected) == expected, f"CodeRabbit declared {expected} files but listed {len(selected)}")
+    need(len(selected) == len(set(selected)), "CodeRabbit processed-file list contains duplicate paths")
+
+    # A selected path that CodeRabbit explicitly skips as similar to a prior
+    # change is not evidence that the current review inspected that path.
+    # Subtract skipped paths before exact-coverage checks and fail closed on
+    # malformed or contradictory skip declarations.
+    skipped_match = re.search(
+        r"Files skipped from review[^:]*:\s*(\d+).*?</summary>(.*?)(?:</details>|$)",
+        body or "", re.I | re.S,
+    )
+    if skipped_match is None:
+        return selected
+
+    skipped_expected = int(skipped_match.group(1))
+    skipped = []
+    for line in skipped_match.group(2).splitlines():
+        found = re.match(r"^\s*[*-]\s+(.+?)\s*$", line)
+        if found:
+            skipped.append(found.group(1).strip().strip(chr(96)))
+    need(len(skipped) == skipped_expected,
+         f"CodeRabbit declared {skipped_expected} skipped files but listed {len(skipped)}")
+    need(len(skipped) == len(set(skipped)), "CodeRabbit skipped-file list contains duplicate paths")
+    need(set(skipped).issubset(set(selected)),
+         "CodeRabbit skipped-file list contains paths absent from the selected-file list")
+    skipped_set = set(skipped)
+    return [path for path in selected if path not in skipped_set]
 
 
 def latest_review(reviews, sha, login):
