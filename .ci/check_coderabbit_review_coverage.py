@@ -202,12 +202,20 @@ def processed_files(body):
     # change is not evidence that the current review inspected that path.
     # Subtract skipped paths before exact-coverage checks and fail closed on
     # malformed or contradictory skip declarations.
+    #
+    # Presence vs absence (CodeRabbit round 1 on this PR): a body that
+    # carries the skipped-section HEADER with an unparseable count must
+    # fail closed — treating a malformed declaration as "no skipped files"
+    # would pass coverage the review never granted. Only a body with no
+    # skipped-section header at all keeps the plain selected list.
+    if not re.search(r"Files\s+skipped\s+from\s+review", body or "", re.I):
+        return selected
     skipped_match = re.search(
         r"Files skipped from review[^:]*:\s*(\d+).*?</summary>(.*?)(?:</details>|$)",
         body or "", re.I | re.S,
     )
-    if skipped_match is None:
-        return selected
+    need(skipped_match is not None,
+         "CodeRabbit skipped-file section is present but malformed (unparseable count or structure)")
 
     skipped_expected = int(skipped_match.group(1))
     skipped = []
