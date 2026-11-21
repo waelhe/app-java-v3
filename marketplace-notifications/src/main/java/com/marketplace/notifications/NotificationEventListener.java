@@ -301,7 +301,7 @@ public class NotificationEventListener {
      */
     @ApplicationModuleListener
     public void onMessageReceived(MessageReceivedEvent event) {
-        notificationService.onMessageReceived(event.conversationId(), event.recipientId());
+        notificationService.onMessageReceived(event.messageId(), event.conversationId(), event.recipientId());
         log.info("Notification sent for message received: messageId={}, conversationId={}",
                 event.messageId(), event.conversationId());
     }

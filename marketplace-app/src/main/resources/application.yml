@@ -965,7 +965,17 @@ marketplace:
   # staging still fail fast without the real identity (Boot's documented
   # precedence: profile-specific files win for the keys they carry).
   mail:
+    provider: ${MARKETPLACE_MAIL_PROVIDER:smtp}
     from: ${MAIL_FROM:Marketplace <no-reply@marketplace.local>}
+    # CodeRabbit round 1 (minor): the BASE profile binds the Resend
+    # credential too — a profile-less boot that selects
+    # MARKETPLACE_MAIL_PROVIDER=resend activates the Resend
+    # auto-configuration, and without this binding the key the startup
+    # error asks for never reaches the properties (only prod carried it).
+    # No default: an activated Resend channel without the key must fail
+    # STARTUP (the D6 fail-fast law), never boot and 401 at runtime.
+    resend:
+      api-key: ${RESEND_API_KEY}
   # L33 (realestate systems plan): the classifieds lifecycle policy. 90
   # days is the global classifieds convention range (Dubizzle ~60, market
   # standard 60-90); env-tunable (MARKETPLACE_CATALOG_EXPIRY_EXPIRY_DAYS).

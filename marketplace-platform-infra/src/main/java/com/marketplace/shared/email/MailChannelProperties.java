@@ -56,9 +56,35 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * submission at runtime.</p>
  */
 @ConfigurationProperties(prefix = "marketplace.mail")
-public record MailChannelProperties(String from) {
+public record MailChannelProperties(String provider, String from) {
 
+    /**
+     * CodeRabbit round 1 (major — stability): a typo'd provider value
+     * ({@code resned}) matched NEITHER auto-configuration's condition, the
+     * {@link EmailNotificationService} seam received {@code Optional.empty},
+     * and password-reset events completed as delivered with NO email and NO
+     * retry. The provider now validates at binding time — the framework's
+     * own property-validation failure shape (startup fails, the misconfig
+     * reads as configuration) instead of a silent no-channel runtime. The
+     * two legal values are exactly the two transports the codebase ships:
+     * {@code smtp} (the default — Boot's own convention when the property
+     * is absent) and {@code resend} (the HTTPS transport).
+     */
     public MailChannelProperties {
+        if (provider == null) {
+            // absent = the SMTP default (matchIfMissing on the SMTP
+            // auto-configuration) — normalized here so the value check below
+            // reads one shape
+            provider = "smtp";
+        }
+        if (!"smtp".equals(provider) && !"resend".equals(provider)) {
+            throw new IllegalArgumentException(
+                    "marketplace.mail.provider '" + provider + "' is not one of the two transports "
+                            + "this platform ships (smtp, resend) — a typo'd provider would leave "
+                            + "every mail-carrying event silently undelivered (no channel bean "
+                            + "matches, the notifications seam answers empty). Fix the value "
+                            + "(MARKETPLACE_MAIL_PROVIDER) or drop it to run the SMTP default.");
+        }
         if (from == null || from.isBlank()) {
             throw new IllegalArgumentException(
                     "marketplace.mail.from is required when the mail channel is active "

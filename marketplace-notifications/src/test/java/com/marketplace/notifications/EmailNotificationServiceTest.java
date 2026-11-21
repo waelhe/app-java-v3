@@ -2,7 +2,7 @@ package com.marketplace.notifications;
 
 import com.marketplace.shared.api.UserLookupPort;
 import com.marketplace.shared.api.UserSummary;
-import com.marketplace.shared.email.EmailService;
+import com.marketplace.shared.email.EmailSender;
 import com.marketplace.shared.email.EmailSendException;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyMap;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -35,18 +36,18 @@ class EmailNotificationServiceTest {
     }
 
     @Test
-    void sendEmailDelegatesToEmailService() {
-        EmailService emailService = mock(EmailService.class);
+    void sendEmailDelegatesToEmailSender() {
+        EmailSender emailService = mock(EmailSender.class);
         UserLookupPort userLookupPort = mockUserLookup();
         EmailNotificationService service = new EmailNotificationService(Optional.of(emailService), userLookupPort);
 
         service.sendEmail(USER_ID, "Test Subject", "email/template", Map.of("key", "value"));
 
-        verify(emailService).send(eq(USER_EMAIL), eq("Test Subject"), eq("email/template"), anyMap());
+        verify(emailService).send(eq(USER_EMAIL), eq("Test Subject"), eq("email/template"), anyMap(), any());
     }
 
     @Test
-    void sendEmailNoOpWhenEmailServiceNotPresent() {
+    void sendEmailNoOpWhenEmailSenderNotPresent() {
         UserLookupPort userLookupPort = mockUserLookup();
         EmailNotificationService service = new EmailNotificationService(Optional.empty(), userLookupPort);
 
@@ -57,21 +58,21 @@ class EmailNotificationServiceTest {
 
     @Test
     void sendEmailNoOpWhenUserNotFound() {
-        EmailService emailService = mock(EmailService.class);
+        EmailSender emailService = mock(EmailSender.class);
         UserLookupPort userLookupPort = mock(UserLookupPort.class);
         when(userLookupPort.findById(USER_ID)).thenReturn(Optional.empty());
         EmailNotificationService service = new EmailNotificationService(Optional.of(emailService), userLookupPort);
 
         service.sendEmail(USER_ID, "Test Subject", "email/template", Map.of("key", "value"));
 
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
     void sendEmailPropagatesExceptionOnFailure() {
-        EmailService emailService = mock(EmailService.class);
+        EmailSender emailService = mock(EmailSender.class);
         doThrow(new EmailSendException("SMTP error", new RuntimeException()))
-                .when(emailService).send(anyString(), anyString(), anyString(), anyMap());
+                .when(emailService).send(anyString(), anyString(), anyString(), anyMap(), any());
         UserLookupPort userLookupPort = mockUserLookup();
         EmailNotificationService service = new EmailNotificationService(Optional.of(emailService), userLookupPort);
 

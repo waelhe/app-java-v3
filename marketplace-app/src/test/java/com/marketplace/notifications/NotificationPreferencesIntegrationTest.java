@@ -175,8 +175,8 @@ class NotificationPreferencesIntegrationTest {
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
 
         // Email: the provider's goes, the consumer's is suppressed.
-        verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap());
-        verify(emailService, never()).send(eq(consumerEmail), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap(), any());
+        verify(emailService, never()).send(eq(consumerEmail), anyString(), anyString(), anyMap(), any());
 
         // Acceptance 3 — the Envers trace: the switch change left its revision.
         NotificationPreference stored = preferenceRepository
@@ -209,8 +209,8 @@ class NotificationPreferencesIntegrationTest {
         assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
                 providerId, Pageable.unpaged()).getContent()).hasSize(1);
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(consumerEmail), anyString(), anyString(), anyMap());
-        verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(consumerEmail), anyString(), anyString(), anyMap(), any());
+        verify(emailService, times(1)).send(eq(providerEmail), anyString(), anyString(), anyMap(), any());
 
         // The effective matrix reads all-enabled for a user with no overrides
         // (forty-eight rows: 16 types x 3 channels — L35 added SAVED_SEARCH_MATCH
@@ -308,7 +308,7 @@ class NotificationPreferencesIntegrationTest {
 
         // The ordinary email leg is held by the TOPIC-level mute — the
         // exact delivery the pre-fix type-only gate let through.
-        verify(emailService, never()).send(eq(recipientEmail), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(eq(recipientEmail), anyString(), anyString(), anyMap(), any());
 
         // The unmuted WS leg still pushes (the hierarchy answered EMAIL
         // and WS separately, as the §8.1 separate-policies rule demands).

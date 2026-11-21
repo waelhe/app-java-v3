@@ -1,7 +1,7 @@
 package com.marketplace.notifications;
 
 import com.marketplace.shared.api.UserLookupPort;
-import com.marketplace.shared.email.EmailService;
+import com.marketplace.shared.email.EmailSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -31,10 +31,10 @@ public class EmailNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailNotificationService.class);
 
-    private final Optional<EmailService> emailService;
+    private final Optional<EmailSender> emailService;
     private final UserLookupPort userLookupPort;
 
-    public EmailNotificationService(Optional<EmailService> emailService,
+    public EmailNotificationService(Optional<EmailSender> emailService,
                                      UserLookupPort userLookupPort) {
         this.emailService = emailService;
         this.userLookupPort = userLookupPort;
@@ -43,7 +43,7 @@ public class EmailNotificationService {
     /**
      * Sends an email notification to a user.
      *
-     * <p>If no {@link EmailService} is configured (e.g., in development),
+     * <p>If no {@link EmailSender} is configured (e.g., in development),
      * this method is a no-op. If sending fails, the exception propagates so
      * that the listener's transaction rolls back and the event publication
      * registry keeps the publication uncompleted for retry.
@@ -54,9 +54,22 @@ public class EmailNotificationService {
      * @param variables template model variables
      */
     public void sendEmail(UUID userId, String subject, String template, Map<String, Object> variables) {
+        sendEmail(userId, subject, template, variables, null);
+    }
+
+    /**
+     * CodeRabbit round 1 on #840 (the delivery identity): the notification's
+     * OCCURRENCE key rides through to the transport — the notification's own
+     * event identity (its type plus the occurrence-bearing identifiers), so
+     * the provider's idempotency distinguishes two distinct occurrences that
+     * render identically. Callers without a natural occurrence key keep the
+     * legacy overload (the transport's fallback fingerprint).
+     */
+    public void sendEmail(UUID userId, String subject, String template, Map<String, Object> variables,
+                          String deliveryKey) {
         emailService.ifPresent(es ->
                 userLookupPort.findById(userId).ifPresent(user -> {
-                    es.send(user.email(), subject, template, variables);
+                    es.send(user.email(), subject, template, variables, deliveryKey);
                     log.info("Email notification sent: userId={}, subject={}", userId, subject);
                 })
         );
