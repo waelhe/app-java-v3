@@ -884,11 +884,9 @@ class NotificationServiceTest {
     }
 
     /**
-     * B-08 (compliance plan 0.10 — the §3.4-8 defect): the arrival
-     * notification — the in-app row always lands (the conversation id in
-     * the message body), the push channels ride the L22 matrix with the
-     * defaults on. The handler itself is wired to the MessageReceivedEvent
-     * listener via CR-4 (the event type's cross-module placement).
+     * A-04: password-reset delivery must replay the immutable expiry
+     * instant and an opaque occurrence key. The raw reset link is a bearer
+     * credential and must never be copied into the provider header.
      */
     @Test
     void onPasswordResetRequestedReusesTheImmutableExpiryAndOpaqueDeliveryKey() {
@@ -902,14 +900,14 @@ class NotificationServiceTest {
                 currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
 
         UUID userId = CONSUMER_ID;
-        String resetLink = "https://example.test/reset-password?token=one-time-secret";
+        String resetLink = "https://example.test/reset";
         Instant expiresAt = Instant.parse("2026-11-21T12:30:00Z");
         String expectedExpiry = "2026-11-21T12:30:00Z";
 
         service.onPasswordResetRequested(userId, "Consumer", resetLink, expiresAt);
         service.onPasswordResetRequested(userId, "Consumer", resetLink, expiresAt);
 
-        org.mockito.ArgumentCaptor<Map<String, Object>> variables =
+        org.mockito.ArgumentCaptor<Map> variables =
                 org.mockito.ArgumentCaptor.forClass(Map.class);
         org.mockito.ArgumentCaptor<String> deliveryKeys =
                 org.mockito.ArgumentCaptor.forClass(String.class);
@@ -920,8 +918,36 @@ class NotificationServiceTest {
                 Map.of("name", "Consumer", "resetLink", resetLink, "expiresAtUtc", expectedExpiry),
                 Map.of("name", "Consumer", "resetLink", resetLink, "expiresAtUtc", expectedExpiry));
         assertThat(deliveryKeys.getAllValues()).hasSize(2).containsOnly(deliveryKeys.getAllValues().get(0));
-        assertThat(deliveryKeys.getValue()).doesNotContain("one-time-secret");
+        assertThat(deliveryKeys.getValue()).doesNotContain("example.test");
         assertThat(deliveryKeys.getValue()).contains("marketplace-email-PASSWORD_RESET-" + userId);
+    }
+
+    /**
+     * B-08: two messages in the same conversation are distinct delivery
+     * occurrences even when their notification text is identical.
+     */
+    @Test
+    void onEmailVerificationRequestedKeepsTheBearerLinkOutOfTheProviderKey() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        String verificationLink = "https://example.test/verify";
+        service.onEmailVerificationRequested(CONSUMER_ID, "Consumer", verificationLink);
+        service.onEmailVerificationRequested(CONSUMER_ID, "Consumer", verificationLink);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(2)).send(eq(CONSUMER_EMAIL),
+                eq("Welcome to Marketplace — verify your email"), eq("email/welcome"),
+                anyMap(), deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).hasSize(2).containsOnly(deliveryKeys.getAllValues().get(0));
+        assertThat(deliveryKeys.getValue()).doesNotContain("example.test");
     }
 
     @Test
