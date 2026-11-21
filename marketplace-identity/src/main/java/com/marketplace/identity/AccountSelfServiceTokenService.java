@@ -1,0 +1,233 @@
+package com.marketplace.identity;
+
+import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import io.micrometer.observation.annotation.Observed;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.provisioning.UserDetailsManager;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Duration;
+
+/**
+ * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696): the
+ * token-based account self-service legs — the Saleor
+ * {@code accountRequestDeletion}/{@code accountDelete} and
+ * {@code passwordChange} mutations' owning use case.
+ *
+ * <p>The deletion journey rides the V112 mechanism's ACCOUNT_DELETION
+ * purpose (V251): the request issues a one-time erasure right to the
+ * CALLER's own login and publishes the mail event; the redemption
+ * delegates to the standing I7 erasure
+ * ({@code UserService#pseudonymizeAccount}) — the same operation the
+ * password-verified REST surface triggers, with the one-time right as
+ * the proof, redeemed only by the account it was issued to (the pinned
+ * Saleor 3.23.45 AUTHENTICATED_USER contract on {@code accountDelete},
+ * the 12:44:42Z #806 review's caller-bound redemption).</p>
+ *
+ * <p>The password change: the caller's old password verified through the
+ * official {@code PasswordEncoder#matches} primitive, the new secret
+ * encoded by the same delegating encoder registration, the login row's
+ * PASSWORD COLUMN written alone (the {@code PasswordResetService}
+ * {@code UPDATE_PASSWORD_ONLY} shape — never the {@code updateUser}
+ * snapshot replay), the account's issued authorizations killed in the same
+ * transaction (the L23 refresh-resurrection kill every secret-rotating
+ * surface applies), and the rotation fact published for the AFTER_COMMIT
+ * session kill — a live browser session must not keep authorizing under
+ * the credential its owner just replaced.</p>
+ */
+@Service
+@Transactional
+public class AccountSelfServiceTokenService {
+
+    /**
+     * The 2026-11-05 #810 round review (Minor · Security & Privacy): the
+     * verify-and-swap password write — the same surgical column shape as
+     * {@code PasswordResetService.UPDATE_PASSWORD_ONLY} with the VERIFIED
+     * old hash in the predicate (a concurrent rotation makes the write
+     * match zero rows instead of silently overwriting the winner's hash).
+     */
+    private static final String UPDATE_PASSWORD_IF_UNCHANGED =
+            "UPDATE auth_users SET password = ? WHERE username = ? AND password = ?";
+
+
+    private static final Logger log = LoggerFactory.getLogger(AccountSelfServiceTokenService.class);
+
+    static final Duration DELETION_TTL = Duration.ofHours(24);
+
+    private final UserRepository userRepository;
+    private final UserDetailsManager userDetailsManager;
+    private final AuthActionTokenService authActionTokenService;
+    private final UserService userService;
+    private final ObjectProvider<PasswordEncoder> encoder;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final ApplicationEventPublisher eventPublisher;
+
+    public AccountSelfServiceTokenService(UserRepository userRepository,
+                                          UserDetailsManager userDetailsManager,
+                                          AuthActionTokenService authActionTokenService,
+                                          UserService userService,
+                                          ObjectProvider<PasswordEncoder> encoder,
+                                          org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+                                          ApplicationEventPublisher eventPublisher) {
+        this.userRepository = userRepository;
+        this.userDetailsManager = userDetailsManager;
+        this.authActionTokenService = authActionTokenService;
+        this.userService = userService;
+        this.encoder = encoder;
+        this.jdbcTemplate = jdbcTemplate;
+        this.eventPublisher = eventPublisher;
+    }
+
+    private static final String DELETE_AUTHORIZATIONS_BY_PRINCIPAL =
+            "DELETE FROM oauth2_authorization WHERE principal_name = ?";
+
+    /** {@code accountRequestDeletion}: the one-time erasure right, issued to the caller. */
+    @Observed(name = "account.deletion.request")
+    public void requestDeletion(Authentication caller) {
+        String subject = caller.getName();
+        User user = userRepository.findBySubject(subject)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No account for the authenticated subject: " + subject));
+        authActionTokenService.issue(subject, AuthActionTokenPurpose.ACCOUNT_DELETION, DELETION_TTL)
+                .ifPresent(issued -> {
+                    eventPublisher.publishEvent(new com.marketplace.shared.api
+                            .AccountDeletionRequestedEvent(user.getId(), user.getEmail(),
+                            issued.rawToken(), issued.expiresAt()));
+                    // The issued right's OWN expiry — never a recomputed
+                    // guess, and nothing is logged to expire when the
+                    // re-issue throttle silently declines (the 2026-11-03
+                    // adversarial scan's logging-honesty finding).
+                    log.info("Account deletion right issued: subject={}, expiresAt={}",
+                            subject, issued.expiresAt());
+                });
+    }
+
+    /**
+     * {@code accountDelete}: redeems the right through the standing I7
+     * erasure — the CALLER-BOUND redemption the pinned Saleor 3.23.45
+     * contract mandates ({@code AccountDelete.Meta.permissions =
+     * AuthorizationFilters.AUTHENTICATED_USER} and
+     * {@code try_generators(user=info.context.user, token=token)}: the
+     * one-time right is redeemed only by the account it was issued to).
+     * The ownership check rides the CWE-367 {@code accountOf} PRE-read —
+     * a foreign caller's possession of the raw value is rejected WITHOUT
+     * burning the single-use right (the mismatch is the caller's error,
+     * never the owner's), and the atomic {@code consume} stays the
+     * single source of the single-use verdict.
+     */
+    @Observed(name = "account.deletion.execute")
+    public void deleteByToken(Authentication caller, String token) {
+        String owner = authActionTokenService
+                .accountOf(token, AuthActionTokenPurpose.ACCOUNT_DELETION)
+                .orElseThrow(() -> new BadRequestException(
+                        "This account deletion link is invalid or has already been used"));
+        if (!owner.equals(caller.getName())) {
+            throw new BadRequestException(
+                    "This account deletion link is not valid for this account");
+        }
+        AuthActionToken redeemed = authActionTokenService
+                .consume(token, AuthActionTokenPurpose.ACCOUNT_DELETION);
+        String subject = redeemed.getUsername();
+        User user = userRepository.findBySubject(subject)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No live account for the redeemed deletion right: " + subject));
+        userService.pseudonymizeAccount(user.getId(), "account self-deletion (token redemption)",
+                "self");
+    }
+
+    /**
+     * {@code passwordChange}: the caller's own secret rotation — old
+     * verified, new encoded, login row updated, issued authorizations
+     * killed (the L23 basis).
+     */
+    @Observed(name = "account.password.change")
+    public void changePassword(Authentication caller, String oldPassword, String newPassword) {
+        String subject = caller.getName();
+        if (oldPassword == null) {
+            throw new IllegalArgumentException("The current password is required to change it");
+        }
+        if (!PasswordPolicy.withinSharedPolicy(newPassword)) {
+            throw PasswordPolicy.violation();
+        }
+        // The 2026-11-08 #810 round-6 review (Minor · Security & Privacy):
+        // the verify-then-rotate window serializes with the email-change
+        // request's verify-then-issue window on the SAME per-user advisory
+        // auth-state lock the M2 family rides (marketplace.user-auth:<id>,
+        // transaction-scoped) — without it, a concurrent requestChange that
+        // already verified the OLD password could ISSUE a fresh EMAIL_CHANGE
+        // right after this rotation's invalidateOutstanding ran, and the
+        // minted right would outlive the rotation. The users row carries the
+        // lock's stable id key; a caller without a projection row locks
+        // nothing (no EMAIL_CHANGE right can exist for such an account).
+        userRepository.findBySubject(subject)
+                .ifPresent(row -> userRepository.lockUserAuth(row.getId().toString()));
+        UserDetails stored;
+        try {
+            stored = userDetailsManager.loadUserByUsername(subject);
+        } catch (UsernameNotFoundException ex) {
+            throw new ResourceNotFoundException(
+                    "No authentication account for the subject: " + subject);
+        }
+        if (!encoder.getObject().matches(oldPassword, stored.getPassword())) {
+            throw new BadCredentialsException("Password verification failed");
+        }
+        // Rows 22 + 24 (agent findings 2026-10-26 14:33 export): the PASSWORD
+        // COLUMN ONLY — the pre-fix {@code updateUser} replay bound the
+        // verification-time snapshot's enabled flag and authorities into the
+        // write (measured 7.1.1 bytecode: updateUser binds password AND
+        // enabled from the one snapshot, then deletes/reinserts the
+        // authority rows), so an administrator's disablement or role removal
+        // landing between the load and the write was silently reverted. The
+        // {@code PasswordResetService} UPDATE_PASSWORD_ONLY shape verbatim:
+        // the flags and authorities stay exactly as their owning admin
+        // surfaces wrote them (each under the account row lock), this
+        // surface rotates the credential and nothing else.
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the rotation is a verify-and-swap — the UPDATE carries the
+        // VERIFIED old hash in its predicate, so a concurrent rotation
+        // that already replaced the password makes this write match ZERO
+        // rows (the old int math blindly overwrote the winner's hash with
+        // a password its owner never chose). A zero-row answer is the
+        // measured race: the caller re-verifies the CURRENT password.
+        String encoded = encoder.getObject().encode(newPassword);
+        int rotated = jdbcTemplate.update(
+                UPDATE_PASSWORD_IF_UNCHANGED, encoded, subject, stored.getPassword());
+        if (rotated == 0) {
+            throw new org.springframework.dao.OptimisticLockingFailureException(
+                    "The password changed concurrently — verify the current password and retry");
+        }
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the rotation kills the outstanding EMAIL_CHANGE rights too — the
+        // password-reset completion's own shape (an email-change link
+        // minted under the OLD secret must not outlive the rotation).
+        authActionTokenService.invalidateOutstanding(subject);
+        // Issued authorizations die with the change — the same measured SAS
+        // kill every secret-rotating surface applies: a refresh token minted
+        // under the OLD password must not survive the owner rotating the
+        // secret it guards.
+        jdbcTemplate.update(DELETE_AUTHORIZATIONS_BY_PRINCIPAL, subject);
+        // Row 22 (CWE-613): the surviving-session kill — a live browser
+        // session holds its authenticated principal and cached authorities
+        // across this credential write; without the expiry the pre-change
+        // cookie would keep minting fresh tokens through the
+        // authorization-server chain exactly as if the rotation never
+        // happened. The house R8 channel: the rotation fact published in
+        // THIS transaction, consumed AFTER_COMMIT by
+        // AccountStatusSessionInvalidator — every session of the account
+        // expires with the commit (the password-reset completion's own
+        // shape), and the framework's resubmission covers a failed expiry.
+        eventPublisher.publishEvent(new com.marketplace.shared.api
+                .AccountCredentialsRotated(subject));
+        log.info("Account password changed, authorizations and sessions killed: subject={}", subject);
+    }
+}

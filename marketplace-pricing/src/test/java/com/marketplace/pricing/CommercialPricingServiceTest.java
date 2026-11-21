@@ -301,6 +301,30 @@ class CommercialPricingServiceTest {
                 .hasMessageContaining("redemption limit");
     }
 
+    /**
+     * #810-H3 (the 2026-11-03 adversarial review's secondary risks —
+     * evaluated with W3-B15): the minimum spend re-validates under the
+     * SAME row lock. The unlocked validation half approved the placement
+     * against the voucher's OLD threshold; a concurrent administrative
+     * tightening lands before the settlement takes the lock — the locked
+     * settle then answers the honest refusal, never a redemption below
+     * the threshold the voucher row now carries.
+     */
+    @Test
+    void aSettleBelowTheTightenedMinimumSpendRefusesUnderTheLock() {
+        Voucher voucher = Voucher.of("TIGHT", null, "SAR", Voucher.DiscountType.FIXED,
+                500L, 20_000L, null, null, 10L, null, true);
+        when(vouchers.findByCodeForUpdate("TIGHT")).thenReturn(Optional.of(voucher));
+        when(redemptions.findByVoucherIdAndOrderId(org.mockito.ArgumentMatchers.eq(voucher.getId()), any(UUID.class)))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.settleVoucher(UUID.randomUUID(), consumer, "TIGHT",
+                10_000L, 500L, "SAR"))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("requires a minimum spend of 20000");
+        verify(redemptions, never()).save(any(VoucherRedemption.class));
+    }
+
     @Test
     void anExhaustedPerUserVoucherLimitAnswersTheHonest409() {
         Voucher voucher = Voucher.of("ONCEPERUSER", null, "SAR", Voucher.DiscountType.FIXED,
@@ -390,7 +414,7 @@ class CommercialPricingServiceTest {
         when(redemptions.countByVoucherId(voucher.getId())).thenReturn(3L);
         UUID order = UUID.randomUUID();
 
-        service.settleVoucher(order, consumer, "SAVE500", 500L, "SAR");
+        service.settleVoucher(order, consumer, "SAVE500", 10_000L, 500L, "SAR");
 
         verify(redemptions).save(any(VoucherRedemption.class));
     }
@@ -404,7 +428,7 @@ class CommercialPricingServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.settleVoucher(UUID.randomUUID(), consumer, "USDONLY",
-                500L, "SAR"))
+                10_000L, 500L, "SAR"))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("denominated in USD");
     }
@@ -419,7 +443,7 @@ class CommercialPricingServiceTest {
                 .thenReturn(Optional.of(VoucherRedemption.of(voucher.getId(), order, consumer,
                         500L, "SAR", Instant.now())));
 
-        service.settleVoucher(order, consumer, "SAVE500", 500L, "SAR");
+        service.settleVoucher(order, consumer, "SAVE500", 10_000L, 500L, "SAR");
 
         verify(redemptions, never()).save(any(VoucherRedemption.class));
     }
@@ -434,7 +458,7 @@ class CommercialPricingServiceTest {
         when(redemptions.countByVoucherId(voucher.getId())).thenReturn(1L);
 
         assertThatThrownBy(() -> service.settleVoucher(UUID.randomUUID(), consumer, "ONCE",
-                500L, "SAR"))
+                10_000L, 500L, "SAR"))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("redemption limit");
     }
