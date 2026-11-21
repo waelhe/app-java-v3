@@ -85,7 +85,7 @@ public class ResendEmailSender implements EmailSender {
             SendEmailRequest request = new SendEmailRequest(from, List.of(to), subject, html);
             String idempotencyKey = deliveryKey != null && !deliveryKey.isBlank()
                     ? deliveryKey
-                    : idempotencyKey(from, to, subject, template, variables, html);
+                    : idempotencyKey(from, to, subject, html);
 
             SendEmailResponse response = restClient.post()
                     .uri("/emails")
@@ -114,10 +114,8 @@ public class ResendEmailSender implements EmailSender {
      * (Resend returns 409 for that mismatch). Callers that need retry
      * deduplication must supply a stable occurrence key AND stable payload.
      */
-    private static String idempotencyKey(String from, String to, String subject,
-            String template, Map<String, Object> variables, String html) {
-        String fingerprint = String.join("\n", from, to, subject, template,
-                String.valueOf(variables), html);
+    private static String idempotencyKey(String from, String to, String subject, String html) {
+        String fingerprint = String.join("\n", from, to, subject, html);
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(fingerprint.getBytes(StandardCharsets.UTF_8));
