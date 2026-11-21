@@ -143,13 +143,20 @@ class PaymentsServiceReturnRefundJournalTest {
     }
 
     @Test
-    void anExecutedRecordAheadOfTheBooksAnswersTheExplicitWebhookWait() {
-        // The books-sync gate (the dispute twin's c62bdab9 round): the
-        // EXECUTED record with the books still at the pre-refund baseline
-        // answers the explicit wait — never a reconciled answer carrying
-        // numbers the provider already moved past.
+    void anExecutedRecordAheadOfTheBooksWaitsOnTheProviderTotal() {
+        // CodeRabbit round 16 (the retry-vehicle separation, the dispute
+        // twin's own contract): a channel-backed intent's EXECUTED record
+        // with the books still at the pre-refund baseline rides the
+        // provider's live cumulative — the unexposed cumulative answers the
+        // provider-total wait — never a reconciled answer carrying numbers
+        // the provider already moved past, and never the webhook vehicle
+        // (that wording belongs to the channel-less books wait alone).
         PaymentsService svc = service();
         Payment payment = collectedPayment(0L); // the webhook has not synced the books yet
+        // the live read must find the payment row: the false verdict then
+        // comes from the unexposed cumulative itself, not a missing row
+        when(paymentRepository.findByPaymentIntentId(payment.getPaymentIntentId()))
+                .thenReturn(Optional.of(payment));
         UUID returnId = UUID.randomUUID();
         String operationKey = PaymentsService.StableRefundScope.forReturn(returnId)
                 .idempotencyKey(payment.getId(), 2000L);
@@ -159,7 +166,8 @@ class PaymentsServiceReturnRefundJournalTest {
         assertThatThrownBy(() ->
                 svc.refundPayment(payment.getId(), 2000L, PaymentsService.StableRefundScope.forReturn(returnId)))
                 .isInstanceOf(com.marketplace.shared.api.ConflictException.class)
-                .hasMessageContaining("await the charge.refunded sync");
+                .hasMessageContaining("has not reached the required amount yet");
+        verify(pspChannel).readRemoteRefundTotalCents("pi_remote_return");
         verify(pspChannel, never()).createRemoteRefund(anyString(), any(), anyString());
     }
 
