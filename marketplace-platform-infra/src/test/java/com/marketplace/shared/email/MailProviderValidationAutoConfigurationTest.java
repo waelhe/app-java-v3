@@ -50,6 +50,16 @@ class MailProviderValidationAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void aPresentButBlankProviderFailsStartupThroughTheRealAutoConfigurations() {
+        runner.withPropertyValues("marketplace.mail.provider=")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(chainMessagesOf(context)).contains("marketplace.mail.provider")
+                            .contains("smtp, resend");
+                });
+    }
+
     /**
      * The absent provider keeps the documented default: the guard
      * normalizes to {@code smtp} and the context boots — the matchIfMissing
