@@ -117,12 +117,30 @@ jobs:
               return;
             }
 
-            // Wait-for-CI: skipped/neutral never block; cancelled blocks only
-            // when no other workflow on the same commit succeeded.
-            const succeeded = gate.filter(r => r.conclusion === 'success');
-            const cancelled = gate.filter(r => r.conclusion === 'cancelled');
-            if (cancelled.length > 0 && succeeded.length === 0) {
-              core.setFailed(`All suites cancelled and none succeeded — deployment skipped: ${cancelled.map(r => r.name).join(', ')}`);
+            // Wait-for-CI: skipped/neutral never block (a path-filtered
+            // workflow's own configuration says it does not apply to this
+            // commit; a neutral verdict is an explicit non-failure). A
+            // CANCELLED run blocks unless a NEWER run of the SAME workflow
+            // on this commit succeeded — the concurrency supersession: the
+            // latest run is the verdict of record, so a cancelled run with
+            // a succeeding newer sibling is retired history, while a
+            // cancelled run that is its workflow's latest (a manually
+            // aborted or timed-out suite with no re-run) leaves the commit
+            // UNVERIFIED. The pre-fix condition waved any cancelled suite
+            // through whenever any OTHER workflow on the commit succeeded
+            // (the 2026-11-21 full review's Major: this step's own name
+            // promises every suite green).
+            const latestPerWorkflow = new Map();
+            for (const run of gate) {
+              const prev = latestPerWorkflow.get(run.name);
+              if (!prev || String(run.created_at) > String(prev.created_at)) {
+                latestPerWorkflow.set(run.name, run);
+              }
+            }
+            const unverified = [...latestPerWorkflow.values()]
+              .filter(r => r.conclusion === 'cancelled');
+            if (unverified.length > 0) {
+              core.setFailed(`Latest run cancelled without a succeeding re-run — the commit stays unverified, deployment skipped: ${unverified.map(r => r.name).join(', ')}`);
               return;
             }
 
