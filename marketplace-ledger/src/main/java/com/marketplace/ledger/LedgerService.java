@@ -46,20 +46,56 @@ public class LedgerService {
     @Observed(name = "ledger.credit.payment")
     public ProviderBalanceResponse creditFromPayment(UUID providerId, UUID paymentIntentId,
                                                      long amountCents, String currency) {
+        // CodeRabbit round 3 (2026-11-14T21:06Z review): the thin public
+        // contract stays for the callers that only need the balance (the
+        // controller's endpoint and the AD-origin settlement); the
+        // settlement legs ride {@link #creditFromPaymentPosting} so their
+        // debit decisions bind to the credit write's own outcome.
+        return creditFromPaymentPosting(providerId, paymentIntentId, amountCents, currency).balance();
+    }
+
+    /**
+     * CodeRabbit round 3 (the 2026-11-14T21:06Z full review): the credit
+     * write's own outcome — {@code createdThisRun} is TRUE only when THIS
+     * execution inserted the PAYMENT_CREDIT row (the atomic first-delivery
+     * signal). The pre-fix settlement read {@code paymentCreditPosted}
+     * BEFORE the write — a read-then-decide window the review closed: the
+     * commission and fee debits now ride the write's own result, and the
+     * idempotency guards stay exactly as they were (the deterministic
+     * intent-id source key, the V19 UNIQUE backstop).
+     *
+     * <p>The twin {@code @Observed} name is deliberate: the same business
+     * command observed on both entry points (the delegate keeps the
+     * controller/AD path observed; this entry serves the settlement
+     * listener) — the internal delegation bypasses the aspect, so exactly
+     * one observation fires per call path.</p>
+     */
+    @Observed(name = "ledger.credit.payment")
+    public PaymentCreditPosting creditFromPaymentPosting(UUID providerId, UUID paymentIntentId,
+                                                          long amountCents, String currency) {
         String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
         requireNonNegativeAmount(amountCents);
         if (amountCents == 0) {
-            return ProviderBalanceResponse.from(
-                    balanceOf(providerId, normalized));
+            return new PaymentCreditPosting(
+                    ProviderBalanceResponse.from(balanceOf(providerId, normalized)), false);
         }
         if (entryRepository.findBySourceId(paymentIntentId).isPresent()) {
-            return ProviderBalanceResponse.from(
-                    balanceOf(providerId, normalized));
+            return new PaymentCreditPosting(
+                    ProviderBalanceResponse.from(balanceOf(providerId, normalized)), false);
         }
         entryRepository.save(LedgerEntry.paymentCredit(providerId, paymentIntentId, amountCents, normalized));
         ProviderBalance balance = balanceOf(providerId, normalized);
         balance.credit(amountCents);
-        return ProviderBalanceResponse.from(balanceRepository.save(balance));
+        return new PaymentCreditPosting(
+                ProviderBalanceResponse.from(balanceRepository.save(balance)), true);
+    }
+
+    /**
+     * CodeRabbit round 3: the credit posting's own result — the touched
+     * balance beside whether THIS execution created the PAYMENT_CREDIT row
+     * (the settlement leg's atomic decision signal).
+     */
+    public record PaymentCreditPosting(ProviderBalanceResponse balance, boolean createdThisRun) {
     }
 
     /**
@@ -144,6 +180,53 @@ public class LedgerService {
     }
 
     /**
+     * Major-2 (CodeRabbit round 8 on the D4 modeling branch — the
+     * 2026-11-20T17:53Z review, Data Integrity): the ORDER settlement's
+     * own ZERO-commission decision of record — a NON-money marker row
+     * (amount 0, NO balance movement) written by the settlement
+     * transaction in the SAME write that creates the PAYMENT_CREDIT row.
+     * The reviewer's measured defect: a legacy null-rate row settled at
+     * a zero live rate writes no COMMISSION_DEBIT row (the zero-amount
+     * rule), so a later rate change made the refund gate's old
+     * {@code commissionNotDue} infer a DUE commission from TODAY'S live
+     * rate and reject the refund forever — an inferred decision is never
+     * the settlement's own. The marker is the settlement's ONLY own
+     * evidence for the zero shape: the manual credit path cannot forge
+     * it, and the deterministic
+     * {@code nameUUIDFromBytes("settlement-zero-commission-<intentId>")}
+     * source id makes replayed listeners no-ops (the commission/refund
+     * siblings' own structural idempotency). Deliberately NOT written on
+     * redelivery (a pre-existing credit row): the marker records THIS
+     * settlement's first-delivery decision, never rewrites history a
+     * later replay cannot know.
+     */
+    public void markSettlementZeroCommission(UUID providerId, UUID paymentIntentId, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        UUID sourceId = settlementZeroCommissionSourceKey(paymentIntentId);
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return;
+        }
+        entryRepository.save(LedgerEntry.settlementZeroCommission(providerId, sourceId, normalized));
+    }
+
+    /**
+     * Major-2: the marker's reader — the refund gate's ONLY admissible
+     * zero-commission evidence for legacy null-rate rows (never a live
+     * rate inference). {@code postedCommissionCents}'s own read shape:
+     * the deterministic source key plus the entry-type filter.
+     */
+    @Transactional(readOnly = true)
+    public boolean settlementZeroCommissionMarked(UUID paymentIntentId) {
+        return entryRepository.findBySourceId(settlementZeroCommissionSourceKey(paymentIntentId))
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.SETTLEMENT_ZERO_COMMISSION)
+                .isPresent();
+    }
+
+    private static UUID settlementZeroCommissionSourceKey(UUID paymentIntentId) {
+        return UUID.nameUUIDFromBytes(("settlement-zero-commission-" + paymentIntentId.toString()).getBytes());
+    }
+
+    /**
      * A2 (adversarial review 2026-11-10, owner-gate batch 6a — the
      * ADR-0013 D3 §3 mirror rule): the full refund's commission REVERSAL
      * credit — the exact mirror image of {@link #debitFromCommission},
@@ -186,6 +269,117 @@ public class LedgerService {
             return balanceOf(providerId, normalized);
         }
         entryRepository.save(LedgerEntry.commissionReversalCredit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
+        balance.credit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
+    /**
+     * A1 (adversarial review 2026-11-10, owner-gate batch 6a — the
+     * ADR-0013 D4 execution): the platform-delivery fee debit — the
+     * checkout-frozen fee the ONE order intent collected, charged to the
+     * seller's balance at settlement. Per D1/D4 the platform is the
+     * merchant of record and the fee is its own charge funding the
+     * carrier: the seller's allocation is the goods (+tax) value NET of
+     * the fee, and the commission computes on the goods base — the
+     * pre-fix settlement inflated the seller's owed balance by the fee
+     * and computed the commission on it (the ledger's own finding A1).
+     *
+     * <p>The deterministic
+     * {@code nameUUIDFromBytes("delivery-fee-<intentId>")} source id
+     * never collides with the commission debit's own key and makes
+     * replayed listeners no-ops — {@link #debitFromCommission}'s own
+     * idempotent shape verbatim (the pre-check is the optimization, the
+     * V19 {@code source_id UNIQUE} backstop the guarantee). B2 amount
+     * guard: negative amounts are rejected with VALIDATION (400); zero
+     * amounts return the current balance without writing an entry (a
+     * PICKUP order's zero fee posts nothing).</p>
+     *
+     * <p><b>R9:</b> the fee is debited in the payment's own currency —
+     * the same currency the credit wrote — so the fee moves the same
+     * {@code (provider, currency)} balance the settlement's pair
+     * moved.</p>
+     */
+    @Observed(name = "ledger.debit.delivery_fee")
+    public ProviderBalance debitFromDeliveryFee(UUID providerId, UUID paymentIntentId,
+                                                long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceOf(providerId, normalized);
+        }
+        UUID sourceId = UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceOf(providerId, normalized);
+        }
+        entryRepository.save(LedgerEntry.deliveryFeeDebit(providerId, sourceId, amountCents, normalized));
+        ProviderBalance balance = balanceOf(providerId, normalized);
+        balance.debit(amountCents);
+        return balanceRepository.save(balance);
+    }
+
+    /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the
+     * posted delivery fee the refund's mirror must reverse — read from
+     * the ledger's OWN DELIVERY_FEE_DEBIT row (the deterministic
+     * {@code delivery-fee-<intentId>} source key
+     * {@link #debitFromDeliveryFee} wrote), never recomputed from live
+     * order facts. {@link #postedCommissionCents}' own discipline
+     * verbatim: the posted ENTRY is the ledger's own truth (the ADR's
+     * D2 discipline — the posted value is the disclosure of record);
+     * the mirror reads it, and an intent whose fee was never posted
+     * (a PICKUP order's zero fee, or a pre-D4 settlement) answers
+     * empty — the caller's {@code orElse(0L)} makes the reversal the
+     * documented no-op it is (nothing posted, nothing to reverse).
+     */
+    @Transactional(readOnly = true)
+    public Optional<Long> postedDeliveryFeeCents(UUID paymentIntentId) {
+        UUID sourceId = UUID.nameUUIDFromBytes(("delivery-fee-" + paymentIntentId.toString()).getBytes());
+        return entryRepository.findBySourceId(sourceId)
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.DELIVERY_FEE_DEBIT)
+                .map(LedgerEntry::getAmountCents);
+    }
+
+    /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1 — the
+     * ADR-0013 D4 mirror rule the settlement's own fee leg owes): the
+     * full refund's delivery-fee REVERSAL credit — the exact mirror
+     * image of {@link #debitFromDeliveryFee}, posted in the SAME refund
+     * transaction {@link #debitFromRefund} and
+     * {@link #creditFromCommissionReversal} run in, so a full refund of
+     * a platform-delivery order returns the seller's balance to its
+     * pre-settlement zero instead of a fee-sized negative (the buyer
+     * got his fee back; the seller must not keep paying for it).
+     *
+     * <p>The deterministic
+     * {@code nameUUIDFromBytes("delivery-fee-reversal-<intentId>")}
+     * source id never collides with the fee debit's own
+     * {@code "delivery-fee-<intentId>"} key and makes replayed
+     * listeners no-ops — {@link #creditFromCommissionReversal}'s own
+     * idempotent shape verbatim (the pre-check is the optimization, the
+     * V19 {@code source_id UNIQUE} backstop the guarantee — the #252
+     * concurrent-delivery contract rides here too). B2 amount guard:
+     * negative amounts are rejected with VALIDATION (400); zero amounts
+     * return the current balance without writing an entry.</p>
+     *
+     * <p><b>R9:</b> the reversal is credited in the payment's own
+     * currency — the same currency the settlement's fee debit moved —
+     * so the mirror lands on the same {@code (provider, currency)}
+     * balance.</p>
+     */
+    @Observed(name = "ledger.credit.delivery_fee_reversal")
+    public ProviderBalance creditFromDeliveryFeeReversal(UUID providerId, UUID paymentIntentId,
+                                                          long amountCents, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        requireNonNegativeAmount(amountCents);
+        if (amountCents == 0) {
+            return balanceOf(providerId, normalized);
+        }
+        UUID sourceId = UUID.nameUUIDFromBytes(("delivery-fee-reversal-" + paymentIntentId.toString()).getBytes());
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return balanceOf(providerId, normalized);
+        }
+        entryRepository.save(LedgerEntry.deliveryFeeReversalCredit(providerId, sourceId, amountCents, normalized));
         ProviderBalance balance = balanceOf(providerId, normalized);
         balance.credit(amountCents);
         return balanceRepository.save(balance);

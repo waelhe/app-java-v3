@@ -3,6 +3,7 @@ package com.marketplace.ledger;
 import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.OrderSellerPort;
+import com.marketplace.shared.api.OrderSettlementFacts;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
@@ -22,6 +23,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -39,6 +41,19 @@ class LedgerPaymentEventListenerTest {
     private final LedgerPaymentEventListener listener = new LedgerPaymentEventListener(
             ledgerService, paymentIntentLookupPort, bookingParticipantProvider, orderSellerPort,
             loanOwnerPort, COMMISSION_RATE);
+
+    // CodeRabbit round 3: the settlement legs now ride the credit posting's
+    // own outcome — the default first-delivery answer for every settlement
+    // test (the redelivery test re-stubs it to false).
+    {
+        when(ledgerService.creditFromPaymentPosting(any(), any(), anyLong(), any()))
+                .thenReturn(new LedgerService.PaymentCreditPosting(null, true));
+    }
+
+    private void firstDelivery(boolean created) {
+        when(ledgerService.creditFromPaymentPosting(any(), any(), anyLong(), any()))
+                .thenReturn(new LedgerService.PaymentCreditPosting(null, created));
+    }
 
     @Test
     void ignoresNonCompletedEvents() {
@@ -115,7 +130,7 @@ class LedgerPaymentEventListenerTest {
 
         // R9: the booking's currency rides EVERY money call — the pre-fix
         // listener was measured to ignore the field it already had.
-        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents, "USD");
+        verify(ledgerService).creditFromPaymentPosting(providerId, paymentIntentId, priceCents, "USD");
         verify(ledgerService).debitFromCommission(providerId, paymentIntentId,
                 BigDecimal.valueOf(priceCents)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
@@ -157,7 +172,7 @@ class LedgerPaymentEventListenerTest {
 
         assertThrows(RuntimeException.class, () -> listener.onPaymentCompleted(event));
 
-        verify(ledgerService).creditFromPayment(providerId, paymentIntentId, priceCents, "USD");
+        verify(ledgerService).creditFromPaymentPosting(providerId, paymentIntentId, priceCents, "USD");
         verify(ledgerService).debitFromCommission(eq(providerId), eq(paymentIntentId), anyLong(), eq("USD"));
     }
 
@@ -198,12 +213,15 @@ class LedgerPaymentEventListenerTest {
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
                 "ORDER", 17400L, "SAR", orderId, null, null);
-        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        // A1: the settlement reads the widened facts seam (PICKUP shape —
+        // no fee, the legacy-equivalent split).
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, 17400L, "SAR");
         verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
                 BigDecimal.valueOf(17400L)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
@@ -211,6 +229,200 @@ class LedgerPaymentEventListenerTest {
                         .longValue(),
                 "SAR");
         verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
+    }
+
+    // ---- A1 (owner-gate batch 6a — the ADR-0013 D4 execution) ----
+
+    @Test
+    void a1_platformDeliveryOrderSettlementSplitsTheFeeAndComputesCommissionOnTheGoodsBase() {
+        // ADR-0013 D4: the checkout-frozen platform-delivery fee (already
+        // inside the intent's amount) is the PLATFORM's own charge funding
+        // the carrier — the seller is credited the full collected amount,
+        // the commission computes on the GOODS base (amount net of the
+        // fee), and the fee itself rides its OWN disclosed debit
+        // (DELIVERY_FEE_DEBIT — the commission debit's disclosure
+        // discipline). The pre-fix branch computed the commission on the
+        // full amount and never moved the fee (finding A1).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long feeCents = 4000L;
+        long totalCents = 17400L;
+        long goodsCents = totalCents - feeCents;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        // The credit keeps the collected amount (the payment's own entry).
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
+        // The commission computes on the GOODS base — never on the fee.
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
+                BigDecimal.valueOf(goodsCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
+        // The fee rides its own disclosed debit — the platform keeps it.
+        verify(ledgerService).debitFromDeliveryFee(sellerId, paymentIntentId, feeCents, "SAR");
+    }
+
+    @Test
+    void cr2_theRedeliveryOfAPreChangeSettlementNeverDebitsTheFee() {
+        // CodeRabbit round 2 (major — data integrity) + round 3 (the atomic
+        // binding): a COMPLETED redelivery for a settlement recorded BEFORE
+        // this change (its PAYMENT_CREDIT row already landed) must never
+        // produce a NEW financial effect: the credit write's own outcome —
+        // createdThisRun=false — skips the WHOLE debit leg (commission and
+        // fee alike; the keys' idempotency stays the second line of
+        // defense), or the balance would drop by exactly the fee on a
+        // redelivery (17400 settled pre-change at 15660 net → 11660).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long totalCents = 17400L;
+        long feeCents = 4000L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // the PRE-CHANGE settlement's durable signal: THIS execution did
+        // not create the credit row (the write's own outcome — a
+        // redelivery, not the first delivery)...
+        firstDelivery(false);
+        // ...and its commission row EXISTS (round 4's disambiguator: the
+        // legacy shape always posted commission on the full amount —
+        // 10% of 17400 = 1740 — so the redelivery is recognizable as a
+        // settled intent, not a foreign write).
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.of(1740L));
+
+        listener.onPaymentCompleted(event);
+
+        // the credit leg still runs (its key makes it a no-op)...
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
+        // ...but the WHOLE debit leg never runs on a redelivery — neither
+        // the commission nor the fee moves money a second time.
+        verify(ledgerService, org.mockito.Mockito.never())
+                .debitFromCommission(any(), any(), anyLong(), any());
+        verify(ledgerService, org.mockito.Mockito.never())
+                .debitFromDeliveryFee(any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void cr4_aForeignCreditDoesNotConsumeTheSettlementsDebitLegs() {
+        // CodeRabbit round 4 (2026-11-15T07:13Z review): the admin
+        // controller's manual credit (`creditFromPayment` — the controller
+        // entry) writes the SAME PAYMENT_CREDIT row the settlement keys.
+        // Under the round-3 gate alone that pre-existing row made the
+        // settlement skip the commission and fee debits FOREVER — the
+        // completion path the review demanded. The disambiguator: a
+        // pre-existing credit whose DUE commission is still unposted is a
+        // FOREIGN write (every settled redelivery carries its commission
+        // row once commission is due) — the settlement posts the debits it
+        // owes: commission on the goods base (10% of 13400 = 1340) and the
+        // fee (4000).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long totalCents = 17400L;
+        long feeCents = 4000L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // the credit row pre-exists (the admin controller's write — not
+        // this run)...
+        firstDelivery(false);
+        // ...and the commission it carries is STILL UNPOSTED — the foreign
+        // write's own signature (a settled redelivery would carry it).
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+
+        listener.onPaymentCompleted(event);
+
+        // the credit leg stays idempotent (no second entry)...
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
+        // ...and BOTH debit legs post: the commission on the goods base...
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId, 1340L, "SAR");
+        // ...and the fee the platform keeps to fund the carrier.
+        verify(ledgerService).debitFromDeliveryFee(sellerId, paymentIntentId, feeCents, "SAR");
+    }
+
+    @Test
+    void cr4_theZeroCommissionForeignCreditKeepsTheDebitLegsSkipped() {
+        // Round 4's residual, held as the second line after round 5's front
+        // door: a pre-existing credit on an intent whose due commission is
+        // ZERO is row-identical to a legacy zero-commission settlement's
+        // redelivery — no ledger row can tell them apart, so the debits stay
+        // skipped (never a retroactive fee — the round-2 law). The endpoint
+        // now REFUSES to create this state (the listener-level skip stays as
+        // defense in depth for any writer the door cannot see).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long totalCents = 17400L;
+        long feeCents = 4000L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        // the frozen rate is zero — the platform charges no commission on
+        // this intent (the D2 freeze on the intent itself).
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, BigDecimal.ZERO, null, 0L);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, feeCents, true));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        firstDelivery(false);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+
+        listener.onPaymentCompleted(event);
+
+        // the credit leg runs (idempotent no-op on its key)...
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
+        // ...but neither debit leg ever runs — the zero-commission residual
+        // stays skipped, deliberately.
+        verify(ledgerService, org.mockito.Mockito.never())
+                .debitFromCommission(any(), any(), anyLong(), any());
+        verify(ledgerService, org.mockito.Mockito.never())
+                .debitFromDeliveryFee(any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void a1_pickupOrderSettlementStaysTheFullAmountShape() {
+        // The PICKUP twin: no fee exists (the V224 placement law — no
+        // destination and no fee), the full amount IS the goods base, and
+        // no fee debit is ever posted (the zero-fee path's own no-op).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        long totalCents = 17400L;
+        var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "COMPLETED",
+                "ORDER", totalCents, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, totalCents, "SAR");
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
+                BigDecimal.valueOf(totalCents)
+                        .multiply(BigDecimal.valueOf(COMMISSION_RATE))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValue(),
+                "SAR");
+        verify(ledgerService, never()).debitFromDeliveryFee(any(), any(), anyLong(), any());
     }
 
     @Test
@@ -231,6 +443,11 @@ class LedgerPaymentEventListenerTest {
         when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
         when(ledgerService.postedCommissionCents(paymentIntentId))
                 .thenReturn(Optional.of(1740L));
+        // F-832-1: this journey settled with NO delivery fee (a PICKUP
+        // order's zero fee posts no row) — the fee reversal is the
+        // documented zero no-op.
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId))
+                .thenReturn(Optional.empty());
 
         listener.onPaymentCompleted(event);
 
@@ -241,8 +458,238 @@ class LedgerPaymentEventListenerTest {
         // pre-settlement zero, not to a commission-sized negative).
         verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
                 1740L, "SAR");
+        // F-832-1: nothing posted, nothing to reverse — the 0L call is the
+        // documented no-op shape (never a skipped call: the leg is structural).
+        verify(ledgerService).creditFromDeliveryFeeReversal(sellerId, paymentIntentId,
+                0L, "SAR");
         verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
         verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
+    }
+
+    // ---- F-832-1 (the 2026-11-14 adversarial behavioral review, P1) ----
+
+    @Test
+    void f832_1_theOrderRefundReversesThePostedDeliveryFeeInTheSameMirrorTransaction() {
+        // The measured defect: a platform-delivery order settles as
+        // credit 17400 − commission 1340 (on the goods base) − fee 4000,
+        // and the full refund used to reverse ONLY the credit and the
+        // commission — leaving the seller's balance at −4000 (the buyer
+        // got his fee back while the seller kept paying for it). The
+        // refund's third mirror reverses the POSTED fee row's own amount,
+        // postedCommissionCents' discipline verbatim.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID buyerId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        var intent = new PaymentIntentDetails(paymentIntentId, null, buyerId, null, "REFUNDED",
+                "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId))
+                .thenReturn(Optional.of(1340L));
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId))
+                .thenReturn(Optional.of(4000L));
+
+        listener.onPaymentCompleted(event);
+
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
+                1340L, "SAR");
+        // the third mirror: the posted DELIVERY_FEE_DEBIT row's own amount
+        // (4000), never a recomputation from live order facts — the journey
+        // returns the seller's balance to its pre-settlement zero.
+        verify(ledgerService).creditFromDeliveryFeeReversal(sellerId, paymentIntentId,
+                4000L, "SAR");
+        verify(ledgerService, never()).creditFromPayment(any(), any(), anyLong(), any());
+        verifyNoInteractions(bookingParticipantProvider, loanOwnerPort);
+    }
+
+    /**
+     * CodeRabbit round 7 (the 2026-11-19T13:33Z review, minor — the refund
+     * gate's settlement proof): the exact ordering the review prescribed —
+     * a MANUAL credit first (the foreign write: the PAYMENT_CREDIT row
+     * alone, no debit legs), THEN the refund (it must NOT admit on the
+     * credit row alone: it would debit the full amount while the reversals
+     * read the still-absent posted rows — a negative balance until the
+     * reconciliation sweep repaired it), THEN the settlement (the round-4
+     * foreign-writer rule posts the legs under the pre-existing credit),
+     * THEN the refund REPLAY (the legs exist now — the mirror admits and
+     * reverses the POSTED amounts).
+     */
+    @Test
+    void cr7_aRefundThatOvertakesTheSettlementsDebitLegsWaitsForThem() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // the manual credit landed the credit row ALONE — no commission
+        // row, no fee row (the foreign write's exact shape)
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId)).thenReturn(Optional.empty());
+        // Major-2 (round 8): this legacy null-rate row carries NO marker —
+        // its settlement's decision of record never ran (the manual credit
+        // landed the row alone), and no live-rate due computation can ever
+        // stand in for it — so the debit-legs gate cannot admit on the
+        // credit row alone
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new com.marketplace.shared.api.OrderSettlementFacts(sellerId, 0L, false));
+
+        var refund = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> listener.onPaymentCompleted(refund))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no debit legs yet");
+
+        // no ledger movement at all — the publication stays recoverable
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromDeliveryFeeReversal(any(), any(), anyLong(), any());
+
+        // the settlement arrives: the round-4 foreign-writer rule posts the
+        // commission leg under the pre-existing credit
+        when(ledgerService.creditFromPaymentPosting(any(), any(), anyLong(), any()))
+                .thenReturn(new LedgerService.PaymentCreditPosting(null, false));
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId, 1740L, "SAR");
+
+        // the refund REPLAY: the legs exist now — the mirror admits and
+        // reverses the POSTED amount
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.of(1740L));
+        listener.onPaymentCompleted(refund);
+
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
+                1740L, "SAR");
+    }
+
+    /**
+     * Major-2 (CodeRabbit round 8 — the 2026-11-20T17:53Z review, the
+     * eternal-rejection reproducer verbatim): a LEGACY null-rate row
+     * settles while the live rate is ZERO (no commission row exists by
+     * the zero-amount law — the settlement writes its zero-commission
+     * MARKER instead), the operator then changes the rate to 0.10, and
+     * the full refund arrives. The pre-fix gate inferred a DUE 1740
+     * commission from TODAY'S live rate and rejected every retry — a
+     * decision inferred from a live value is never the settlement's own.
+     * The marker is the settlement's own decision of record: the refund
+     * admits on it and debits the full amount with the zero reversal
+     * no-op, exactly as it did before the rate changed.
+     */
+    @Test
+    void major2_aRateChangeBetweenSettlementAndRefundNeverInfersFromTheLiveRate() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        // the LEGACY pre-V220 shape: no frozen rate on the row
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        // the settlement runs at the ZERO live rate (first delivery)
+        LedgerPaymentEventListener atSettlementTime = new LedgerPaymentEventListener(
+                ledgerService, paymentIntentLookupPort, bookingParticipantProvider, orderSellerPort,
+                loanOwnerPort, 0.0);
+        atSettlementTime.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+
+        // the settlement posted the credit, NO commission row (zero — the
+        // leg call is the service's documented ZERO no-op, never a write),
+        // and its own zero-commission decision of record
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId, 0L, "SAR");
+        verify(ledgerService).markSettlementZeroCommission(sellerId, paymentIntentId, "SAR");
+
+        // the operator changes the rate; the refund arrives at the NEW rate
+        // (the refund path resolves the seller first — its own hop)
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.settlementZeroCommissionMarked(paymentIntentId)).thenReturn(true);
+
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED"));
+
+        // the marker — never the live rate — admits the refund: the full
+        // debit mirrors the credit, the reversal is the zero no-op
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId, 0L, "SAR");
+    }
+
+    /**
+     * Major-2 (round 8, the fail-closed residual): a legacy null-rate row
+     * whose settlement predates the marker wave carries NO decision of
+     * record — the credit row alone (its only ledger shape) is exactly
+     * the manual credit's shape too, and no live inference can separate
+     * them. The refund keeps waiting (the documented owner-gate residual):
+     * an unknowable historical decision is never reconstructed from the
+     * live configuration.
+     */
+    @Test
+    void major2_aLegacyRowWithoutTheMarkerFailsClosed() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // the pre-marker settlement's only shape: the credit row alone
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.settlementZeroCommissionMarked(paymentIntentId)).thenReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no debit legs yet");
+
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
+    }
+
+    /**
+     * Major-2 (the marker's write discipline): the decision of record
+     * belongs to the settlement's FIRST delivery alone — the credit row's
+     * own creating run. A redelivery (the publication replay of an
+     * already-settled intent) computes against a live rate it can no
+     * longer trust for history it did not write, so it never rewrites a
+     * marker — the deterministic source key makes the write itself
+     * idempotent even if it raced.
+     */
+    @Test
+    void major2_theMarkerIsWrittenOnTheFirstDeliveryOnly() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        // the redelivery of a SETTLED intent: the credit row pre-exists AND
+        // its commission row is already posted — no new legs (the round-4
+        // settled-redelivery shape), and no marker (the original run's
+        // decision alone owns it)
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.of(1740L));
+        firstDelivery(false);
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        verify(ledgerService, never()).markSettlementZeroCommission(any(), any(), any());
+        verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong(), any());
+
+        // a fresh settlement at a NON-zero commission writes legs, not the marker
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        firstDelivery(true);
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        verify(ledgerService, never()).markSettlementZeroCommission(any(), any(), any());
+        verify(ledgerService, times(1)).debitFromCommission(sellerId, paymentIntentId, 1740L, "SAR");
     }
 
     // ---- Stage 8 (ADR-0004): the loan-origin branches ----
@@ -263,7 +710,7 @@ class LedgerPaymentEventListenerTest {
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(ownerId, paymentIntentId, 9000L, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(ownerId, paymentIntentId, 9000L, "SAR");
         verify(ledgerService).debitFromCommission(ownerId, paymentIntentId,
                 BigDecimal.valueOf(9000L)
                         .multiply(BigDecimal.valueOf(COMMISSION_RATE))
@@ -321,12 +768,13 @@ class LedgerPaymentEventListenerTest {
         var event = new PaymentStateChangedEvent(paymentIntentId, "COMPLETED");
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
                 "COMPLETED", "ORDER", 20000L, "SAR", orderId, null, frozenRate);
-        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
         listener.onPaymentCompleted(event);
 
-        verify(ledgerService).creditFromPayment(sellerId, paymentIntentId, 20000L, "SAR");
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, 20000L, "SAR");
         verify(ledgerService).debitFromCommission(sellerId, paymentIntentId,
                 BigDecimal.valueOf(20000L)
                         .multiply(frozenRate)
@@ -481,8 +929,11 @@ class LedgerPaymentEventListenerTest {
         UUID orderId = UUID.randomUUID();
         UUID sellerId = UUID.randomUUID();
         var event = new PaymentStateChangedEvent(paymentIntentId, "REFUNDED");
+        // the frozen ZERO rate is the settlement's own premise (the
+        // commission-freeze shape): the round-7 debit-legs gate reads it
+        // and admits without a facts lookup — no row was ever expected.
         var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
-                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, null);
+                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, BigDecimal.ZERO);
         when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
         // The settlement landed (its credit row exists); its commission is
@@ -563,6 +1014,99 @@ class LedgerPaymentEventListenerTest {
         listener.onPaymentCompleted(event);
 
         verifyNoInteractions(ledgerService, bookingParticipantProvider, orderSellerPort, loanOwnerPort);
+    }
+
+    @Test
+    void cr5_theGuardRefusesTheZeroCommissionFeeBearingTarget() {
+        // Round 5's front door: the ONE state a manual credit must never
+        // create — an ORDER intent whose due commission is zero while a
+        // delivery fee is due — throws (VAL-001 400 at the endpoint).
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null, "COMPLETED",
+                "ORDER", 17400L, "SAR", orderId, null, BigDecimal.ZERO, null, 0L);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(UUID.randomUUID(), 4000L, true));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId));
+    }
+
+    @Test
+    void cr5_theGuardPassesTheCommissionBearingTarget() {
+        // The normal fee-bearing shape (commission due): the round-4
+        // disambiguator covers it — the manual credit does not consume the
+        // settlement's debit legs, so the door stays open.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null, "COMPLETED",
+                "ORDER", 17400L, "SAR", orderId, null, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(UUID.randomUUID(), 4000L, true));
+
+        listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
+        // no throw — and nothing else moves.
+    }
+
+    @Test
+    void cr6_theGuardPassesTheSettledReplay_EvenOnTheZeroCommissionFeeBearingIntent() {
+        // Round 6 (2026-11-15T10:47Z): a credit request repeated AFTER the
+        // settlement completed (its PAYMENT_CREDIT row exists — the existing
+        // verification mechanism) is the endpoint's documented idempotent
+        // replay answering the balance without a second entry, so it passes
+        // even on the zero-commission fee-bearing intent the guard would
+        // otherwise refuse: the refusal guards the CREATION of the ambiguous
+        // state only.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null, "COMPLETED",
+                "ORDER", 17400L, "SAR", orderId, null, BigDecimal.ZERO, null, 0L);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(UUID.randomUUID(), 4000L, true));
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+
+        listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
+        // no throw — the settled replay passes; the service's own key
+        // idempotency (findBySourceId no-op) answers the balance without a
+        // new credit write.
+    }
+
+    @Test
+    void cr5_theGuardIgnoresNonOrderTargets() {
+        // A booking intent's manual credit never touches the fee ambiguity
+        // (no fee exists there) — the guard is a no-op for every non-ORDER
+        // origin, and an unknown intent id passes through untouched.
+        UUID paymentIntentId = UUID.randomUUID();
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.empty());
+
+        listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
+        verifyNoInteractions(orderSellerPort);
+    }
+
+    @Test
+    void cr7_theGuardFailsOpenForTheLegacyNoSellerOrder() {
+        // Round 7 (2026-11-19T13:33Z review, major): a legacy order without
+        // a seller answers settlementFactsOf's documented 404 — that shape
+        // is NOT fee-bearing (the placement invariant: "a fee-bearing
+        // seller-less row cannot exist"), so the guard's refusal rule cannot
+        // apply and the manual credit keeps its main-branch availability.
+        // The guard fails OPEN on the facts lookup's 404: an accidental
+        // not-found from the converter must never decide the credit path.
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null, "COMPLETED",
+                "ORDER", 17400L, "SAR", orderId, null, null);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenThrow(new com.marketplace.shared.api.ResourceNotFoundException("Order seller", orderId));
+
+        listener.assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
+        // no throw — the legacy no-seller shape keeps the credit available,
+        // exactly as the main-branch path (which never consulted the facts)
+        // always did
     }
 
 }

@@ -38,8 +38,9 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
     /**
      * R9 (comprehensive-review-ar-fix plan §4/R9 — the ledger's currency):
      * the provider's windowed net movement PER CURRENCY — credits (the payment
-     * credit AND the full refund's commission REVERSAL credit, A2 round 6)
-     * minus debits (commission, refund, ad bill — the L25 sign convention),
+     * credit AND the full refund's commission REVERSAL credit, A2 round 6;
+     * AND the delivery-fee REVERSAL credit, F-832-1) minus debits
+     * (commission, delivery fee, refund, ad bill — the L25 sign convention),
      * grouped by the entry's ISO 4217 currency (the plan's own wording:
      * aggregations group by the {@code (provider, currency)} pair). The
      * pre-fix single-currency sum mixed different currencies into one
@@ -55,6 +56,7 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
             SELECT e.currency AS currency,
                    COALESCE(SUM(CASE WHEN e.entryType = com.marketplace.ledger.LedgerEntryType.PAYMENT_CREDIT
                                         OR e.entryType = com.marketplace.ledger.LedgerEntryType.COMMISSION_REVERSAL_CREDIT
+                                        OR e.entryType = com.marketplace.ledger.LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT
                                      THEN e.amountCents ELSE -e.amountCents END), 0) AS netCents
             FROM LedgerEntry e
             WHERE e.providerId = :providerId
@@ -158,4 +160,76 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID>,
                               updated_at = now()
             """, nativeQuery = true)
     int reconcileMissingCommissionReversals();
+
+    /**
+     * CodeRabbit round 6 (2026-11-15T10:47Z): the sweep is now the audited
+     * JPA writer {@link LedgerService#creditFromDeliveryFeeReversal} applied
+     * per discovered row — the previous one-statement native INSERT bypassed
+     * the Envers audit trail (ledger_entries_aud / provider_balances_aud
+     * stayed empty for the reconciliation movements), the review finding.
+     * This query is the DISCOVERY leg, read-only: the same eligibility cut
+     * (a REFUNDED intent holding the settlement DELIVERY_FEE_DEBIT and the
+     * refund REFUND_DEBIT but not the reversal mirror), with the source
+     * derivations kept byte-identical to {@code UUID.nameUUIDFromBytes}
+     * (the md5 / version-3 / variant construction LedgerService itself
+     * uses) so rows the native shape may have written in earlier deploys
+     * are recognized by the same deterministic keys.
+     */
+    @Query(value = """
+            WITH per_intent AS (
+                -- the commission-sweep eligibility cut (reviewed rounds
+                -- 1-9): only REFUNDED intents can hold a deserving refund;
+                -- the cut spares the derivation work over the rest of the
+                -- table without excluding a single deserving row. NOTE: no
+                -- apostrophes inside these SQL comments — Spring Data
+                -- ValueExpressionQueryRewriter does not skip SQL comments
+                -- and treats the quote as opening an unterminated range
+                -- (the measured Container Scan boot failure).
+                SELECT pi.id AS intent_id,
+                       (substr(md5('delivery-fee-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('delivery-fee-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('delivery-fee-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('delivery-fee-' || pi.id::text), 18, 3)
+                           || substr(md5('delivery-fee-' || pi.id::text), 21, 12))::uuid AS fee_source,
+                       (substr(md5('refund-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('refund-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('refund-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('refund-' || pi.id::text), 18, 3)
+                           || substr(md5('refund-' || pi.id::text), 21, 12))::uuid AS refund_source,
+                       (substr(md5('delivery-fee-reversal-' || pi.id::text), 1, 12) || '3'
+                           || substr(md5('delivery-fee-reversal-' || pi.id::text), 14, 3)
+                           || substr('89ab', ((('x' || substr(md5('delivery-fee-reversal-' || pi.id::text), 17, 1))::bit(4)::int & 3) + 1), 1)
+                           || substr(md5('delivery-fee-reversal-' || pi.id::text), 18, 3)
+                           || substr(md5('delivery-fee-reversal-' || pi.id::text), 21, 12))::uuid AS reversal_source
+                FROM payment_intents pi
+                WHERE pi.status = 'REFUNDED'
+            ),
+            missing AS (
+                SELECT ps.intent_id AS payment_intent_id, fd.provider_id, fd.currency, fd.amount_cents
+                FROM per_intent ps
+                JOIN ledger_entries fd ON fd.source_id = ps.fee_source
+                                       AND fd.entry_type = 'DELIVERY_FEE_DEBIT'
+                JOIN ledger_entries rd ON rd.source_id = ps.refund_source
+                                       AND rd.entry_type = 'REFUND_DEBIT'
+                LEFT JOIN ledger_entries rv ON rv.source_id = ps.reversal_source
+                WHERE rv.id IS NULL
+            )
+            SELECT m.payment_intent_id AS "paymentIntentId", m.provider_id AS "providerId",
+                   m.currency, m.amount_cents AS "amountCents"
+            FROM missing m
+            """, nativeQuery = true)
+    List<MissingDeliveryFeeReversal> findMissingDeliveryFeeReversals();
+
+    /**
+     * The sweep discovery projection — one row per intent whose fee mirror
+     * is still missing: the intent (the reversal key), the provider and
+     * currency (the balance to credit), and the posted fee amount (the
+     * reversal value).
+     */
+    interface MissingDeliveryFeeReversal {
+        java.util.UUID getPaymentIntentId();
+        java.util.UUID getProviderId();
+        String getCurrency();
+        long getAmountCents();
+    }
 }
