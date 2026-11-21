@@ -162,12 +162,48 @@ public class MediaAsset extends BaseEntity {
     }
 
     /**
+     * The 2026-11-06 #809 round (Major · Functional Correctness): expires
+     * an abandoned pending upload — only legal from PENDING_UPLOAD, and
+     * only the SYSTEM cleanup job reaches it (an upload past the presign
+     * horizon plus the grace window its owner never confirmed). The
+     * transition law makes the row permanently un-confirmable
+     * ({@code confirmUpload}'s PENDING_UPLOAD gate refuses it), and the
+     * caller best-effort deletes the storage object first.
+     */
+    public void expirePending() {
+        this.status.validateTransitionTo(MediaAssetStatus.EXPIRED);
+        this.status = MediaAssetStatus.EXPIRED;
+    }
+
+    /**
      * L28: pins the thumbnail key after processing — write-once: an existing
      * value makes the whole processing idempotent (the listener re-running
      * after a resubmission must not re-store or flip the pointer).
      */
     public void recordThumbKey(String thumbKey) {
         this.thumbObjectKey = thumbKey;
+    }
+
+    /**
+     * N-slice (the canonical Saleor plan §5-P2 — the Saleor
+     * {@code productMediaReorder} root): moves the row within its
+     * target's display order — the position column's own managed move,
+     * the write side of the same ordering fact the upload allocation
+     * appends to (max+1) and the display read orders by. The use case
+     * derives the new position itself (the compacted 1..n
+     * re-derivation under the target's advisory position lock — never a
+     * client-supplied absolute position); this seam only writes the
+     * derived fact, keeping the column behind the entity's own law
+     * exactly like the catalog option registry's {@code reposition}
+     * precedent.
+     *
+     * @param position the use-case-derived 1-based display position
+     */
+    public void reposition(int position) {
+        if (position <= 0) {
+            throw new IllegalArgumentException("A display position is 1-based");
+        }
+        this.position = position;
     }
 
     @Override

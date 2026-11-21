@@ -1,0 +1,191 @@
+# =====================================================================
+# Saleor Products domain — P2 wave, packet A2: the product-type read
+# roots (the canonical plan §5-P2: "product types and typed attributes,
+# products, variants/options ... map to existing catalog/search/media
+# owners").
+# PROPOSAL to A0 (the one SDL steward): the Query fields below append to
+# the shared root type Query; every other declaration in this fragment
+# is a PURE ADDITION — no existing shared type is redeclared (PageInfo,
+# PermissionEnum, OrderDirection, the User/Group families and the
+# StoreProduct* family keep their existing declarations).
+# Root names, argument names/types/nullability and the connection
+# envelope are the pinned Saleor 3.23.43 wire contract
+# (saleor/graphql/schema.graphql, blob b8fa0dd8 — the measured roots
+# productType/productTypes, the ProductType type at schema line 3907,
+# ProductTypeCountableConnection/Edge, ProductTypeFilterInput at line
+# 16256, ProductTypeSortingInput/ProductTypeSortField at lines
+# 16278/16286); the platform's catalog owner remains the single source
+# of truth behind them. The GLOBAL IDs on this surface are the typed
+# Relay-style codec's (SaleorGlobalIdCodec): opaque
+# base64("ProductType:<uuid>") values — never raw UUIDs.
+#
+# The bounded ProductType projection (the honest method the User/Group
+# read slices established): the platform's product_types row owns
+# id/code/nameEn/nameAr/description. DECLARED fields are owned facts
+# only:
+#   - id: the typed global ID over the native UUID primary key;
+#   - name: the rendered primary display name (nameEn when present, else
+#     nameAr — the bilingual row's own at-least-one guarantee makes it
+#     non-null; the AR dimension stays with the owning bilingual model
+#     until a translation owner exists — the registered translation
+#     divergence row);
+#   - slug: the row's immutable public code (the entity's own lowercase
+#     slug validation IS the Saleor slug contract).
+# UNDECLARED fields, each with its reason (a declared-but-fake field
+# would be the violation, not the absence):
+#   - hasVariants/isShippingRequired/isDigital/kind/weight/taxType/
+#     productAttributes/variantAttributes/digitalContents/...: the
+#     product_types row owns none of these facts today. The attribute
+#     assignments (product_type_attribute_assignments with
+#     PRODUCT/VARIANT scope) exist and WILL carry
+#     productAttributes/variantAttributes — declared when the Attribute
+#     read-roots packet lands its own bounded Attribute type closure,
+#     not silently faked here.
+#   - the metadata family (metadata/privateMetadata/metafield(s)): no
+#     owning metadata capability on product types yet.
+# The declared-but-unexecuted root arguments (filter, before, last)
+# answer explicit classified IllegalArgumentExceptions at runtime — the
+# staffUsers precedent — never a silent no-op, never fake success. The
+# sort vocabulary is Saleor's own ProductTypeSortField enum (NAME,
+# DIGITAL, SHIPPING_REQUIRED): NAME executes as the real forward-only
+# keyset sort (rendered name, id tiebreaker); DIGITAL (deprecated
+# upstream) and SHIPPING_REQUIRED have no owning column and answer the
+# explicit classified not-implemented error. Both roots require Saleor
+# staff permissions (MANAGE_PRODUCTS-class) — enforced server-side as
+# the platform's ADMIN capability at the catalog use-case boundary (the
+# RBAC mapping registry row), never as a UI route guard.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Query additions (append to the shared root type Query)
+# ---------------------------------------------------------------------
+type Query {
+    # "List of the shop's product types." — the Saleor product-type list
+    # with its countable-connection envelope (edges/pageInfo/totalCount,
+    # byte-shape from the pinned schema). FORWARD-ONLY keyset paging on
+    # this first slice: first/after ride the platform's ScrollPosition
+    # keyset contract (the staffUsers/permissionGroups precedent —
+    # cursors identify a row's sort key (name, id), never an absolute
+    # offset); before/last stay declared (the exact Saleor argument
+    # shape) but answer an explicit classified error until a backward
+    # scroll exists — a recorded, tested boundary, not a silent no-op.
+    # filter is likewise the declared wire shape with an explicit
+    # not-yet-supported error. The sort vocabulary is Saleor's
+    # ProductTypeSortField enum: NAME executes as the real keyset sort,
+    # deterministic with the id tiebreaker; DIGITAL/SHIPPING_REQUIRED
+    # answer the explicit not-implemented error.
+    productTypes(
+    """Filtering options for product types."""
+    filter: ProductTypeFilterInput
+
+    """Sort product types."""
+    sortBy: ProductTypeSortingInput
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): ProductTypeCountableConnection
+
+    # "Look up a product type by ID." — the staff lookup over the typed
+    # global ID (Saleor requires staff permissions → ADMIN here, enforced
+    # in the owning catalog use case). An unknown but well-formed ID
+    # answers null (the safe absence); a malformed or mistyped global ID
+    # answers the codec's classified validation error — never a raw UUID
+    # fallback.
+    productType(
+    """ID of the product type."""
+    id: ID!
+    ): ProductType
+}
+
+# ---------------------------------------------------------------------
+# The bounded ProductType projection — see the block comment above for
+# the closure policy. id is the typed global ID over the native
+# product_types key; name is the bilingual row's rendered primary
+# display name; slug is the row's immutable public code.
+# ---------------------------------------------------------------------
+type ProductType {
+    """The ID of the product type — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """Name of the product type (the rendered primary display name)."""
+    name: String!
+
+    """Slug of the product type (the row's immutable public code)."""
+    slug: String!
+}
+
+# Saleor's connection envelope for countable product-type lists —
+# declared (not runtime-generated) so the exact Saleor shape stands,
+# including totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the UserCountableConnection/GroupCountableConnection
+# declarations recorded), so this declaration wins and the generated
+# connections elsewhere are untouched. pageInfo reuses the EXISTING
+# shared PageInfo type — not redeclared.
+type ProductTypeCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [ProductTypeCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type ProductTypeCountableEdge {
+    """The item at the end of the edge."""
+    node: ProductType!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's product-type filter input — the declared wire shape of the
+# filter argument (see productTypes: an explicit classified error until
+# the owning query capability exists). BOUNDED closure: search/ids/slugs
+# carry the scalar filter surface; configurable (deprecated upstream,
+# no effect), metadata (its heavy MetadataFilter closure), kind and
+# productType (tied to unowned ProductTypeKind/digital facts) stay
+# undeclared until an owning capability exists — any filter use answers
+# the classified not-implemented error before field-level semantics
+# matter, and a Dashboard query naming an undeclared sub-field fails
+# schema validation loudly (never a silent no-op).
+input ProductTypeFilterInput {
+    search: String
+    ids: [ID!]
+    slugs: [String!]
+}
+
+# Saleor's product-type sorting input and field vocabulary — the full
+# pinned enum is declared verbatim (NAME/DIGITAL/SHIPPING_REQUIRED with
+# upstream's own deprecation note on DIGITAL); NAME executes as the real
+# keyset sort, the other two answer the explicit not-implemented error.
+# direction reuses the EXISTING shared OrderDirection enum — not
+# redeclared.
+input ProductTypeSortingInput {
+    """Specifies the direction in which to sort product types."""
+    direction: OrderDirection!
+
+    """Sort product types by the selected field."""
+    field: ProductTypeSortField!
+}
+
+enum ProductTypeSortField {
+    """Sort products by name."""
+    NAME
+
+    """Sort products by type."""
+    DIGITAL @deprecated(reason: "DIGITAL will removed in Saleor 3.24.0. Use SHIPPING_REQUIRED instead.")
+
+    """Sort products by shipping."""
+    SHIPPING_REQUIRED
+}

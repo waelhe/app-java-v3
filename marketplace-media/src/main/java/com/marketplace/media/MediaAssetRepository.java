@@ -107,4 +107,31 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
 
     /** A-17 (C.7): the owner-gated product read — UPLOADED assets in display order. */
     List<MediaAsset> findByProductIdAndStatusOrderByPositionAsc(UUID productId, MediaAssetStatus status);
+
+    /**
+     * B19 (CAT-07 — the 2026-11-03 adversarial review, review-pr-809): the
+     * product twin of {@code countByListingId} — EVERY asset row the product
+     * carries (PENDING uploads included, the {@code maxAssetsPerReview}
+     * posture), read under the product's own advisory allocation lock so the
+     * per-product cap holds under concurrent requests. Deleted rows are hard
+     * deletes — they free their slots.
+     */
+    long countByProductId(UUID productId);
+
+    /**
+     * The 2026-11-06 #809 round (Major · Functional Correctness): the
+     * product cap's LIVE count — every status except the system-expired
+     * terminal one (an abandoned pending upload the cleanup job already
+     * retired never occupies a slot again; PENDING rows still do, exactly
+     * as before — presign expiry alone never frees a slot, only the job's
+     * expiry does).
+     */
+    long countByProductIdAndStatusNot(UUID productId, MediaAssetStatus status);
+
+    /**
+     * The 2026-11-06 #809 round's cleanup feed: the PENDING uploads whose
+     * age passed the cutoff — the job's own derived lookup (BaseEntity's
+     * {@code createdAt} against the presign-plus-grace horizon).
+     */
+    java.util.List<MediaAsset> findByStatusAndCreatedAtBefore(MediaAssetStatus status, java.time.Instant cutoff);
 }
