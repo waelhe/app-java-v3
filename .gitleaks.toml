@@ -62,5 +62,31 @@ paths = [
 regexTarget = "line"
 regexes = [
   '''Collected git\.commit\.id with value [a-fA-F0-9]{40}\s*$''',
-  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"\);\s*$'''
+  '''^\s*[\w.]+\s+\w+\s*=\s*new WebSocketUserIdentity\(token, "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"\);\s*$''',
+#
+# CI unblock (measured 2026-11-07): the OpenRewrite publisher's pushed commit
+# (bf26090d) made the Build job's gitleaks step walk the FULL fetched ref
+# surface (1073 commits, `git log -p -U0 --full-history --all` — the same
+# dispatched-validation surface the 2026-10-26 note measured), and the
+# shard-recut commits (which re-stage their whole file scope per cut) carried
+# the IT suites' pseudonymization fixture into fresh diff hunks: the
+# @TestPropertySource element
+# "marketplace.security.pseudonymization.subject-hmac-key=b4-supply-pseudonymization-key"
+# trips the default generic-api-key rule at entropy 4.03 (the high fail
+# level). The key is a TEST fixture, not a credential — the production
+# channel binds the real key through the environment (the property's own
+# comment in every carrier file documents the AccountPseudonymization
+# IntegrationTest precedent). The allow is the COMPLETE string-literal
+# element, anchored line-start to line-end, with the value an EXACT
+# alternation of the four fixture values measured in the tree (the
+# 2026-11-08 #806 round-9 review: a generic lowercase-alphanumerics-and-
+# dashes shape ending in -key would also exempt a hypothetical production
+# HMAC key of that same shape; the measured fixture family is closed —
+# it-pseudonymization-key, it-self-deletion-key, it-mail-leg-journey-key,
+# b4-supply-pseudonymization-key) and the optional -- command-arg prefix
+# (the launch-arg carrier line). Measured against the family's 8 carrier
+# lines: all exempted; an appended AWS key on the same line, a sk_live
+# value, a ghp_ token, or any other -key value all stay DETECTED (the $
+# anchor and the exact alternation carry the whole burden).
+  '''^\s*"(?:--)?marketplace\.security\.pseudonymization\.subject-hmac-key=(?:it-pseudonymization-key|it-self-deletion-key|it-mail-leg-journey-key|b4-supply-pseudonymization-key)"\)?[,;]?\s*$'''
 ]
