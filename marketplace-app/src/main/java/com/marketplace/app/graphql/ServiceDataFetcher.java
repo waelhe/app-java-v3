@@ -88,6 +88,13 @@ import java.util.UUID;
 @DgsComponent
 public class ServiceDataFetcher {
 
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the services connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "services";
+
     private final CatalogSpi catalogSpi;
     private final CurrentUserProvider currentUserProvider;
     private final ServiceMapper serviceMapper;
@@ -171,8 +178,17 @@ public class ServiceDataFetcher {
             return Window.from(List.of(), index -> ScrollPosition.keyset(), false);
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        return catalogSpi.scrollActiveListings(keysetPosition(after), Limit.of(pageSize))
+        Window<Service> page = catalogSpi.scrollActiveListings(keysetPosition(after), Limit.of(pageSize))
                 .map(serviceMapper::toResponse);
+        // B18 (CAT-06 — the 2026-11-03 adversarial review, review-pr-808):
+        // the framework's connection adaptation encodes the window's own
+        // positions — stamp each with the scroll's fingerprint (the fixed
+        // createdAt DESC/id DESC contract) so the gate refuses the emitted
+        // cursor on any other scroll, sort, or direction.
+        return Window.from(page.getContent(),
+                index -> KeysetCursorGate.stamped(page.positionAt(index),
+                        SCROLL_ID, "createdAt", false),
+                page.hasNext());
     }
 
     /**
@@ -241,7 +257,7 @@ public class ServiceDataFetcher {
         if (after == null) {
             return ScrollPosition.keyset();
         }
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, "services");
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, SCROLL_ID, false);
     }
 }
 
