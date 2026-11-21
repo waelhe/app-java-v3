@@ -473,18 +473,20 @@ public class NotificationService {
      */
     public void onPasswordResetRequested(UUID userId, String displayName,
                                          String resetLink, java.time.Instant expiresAt) {
-        long expirationMinutes = Math.max(0,
-                java.time.Duration.between(java.time.Instant.now(), expiresAt).toMinutes());
+        // The event carries the token's immutable expiry instant. Render
+        // that exact instant (UTC) rather than "minutes remaining": a
+        // Modulith resubmission must send the identical Resend payload under
+        // the same idempotency key, or Resend correctly rejects it with
+        // 409 invalid_idempotent_request.
+        String expiresAtUtc = java.time.format.DateTimeFormatter.ISO_INSTANT.format(expiresAt);
         emailNotificationService.sendEmail(userId, "Reset Your Password", "email/password-reset",
                 Map.of("name", displayName == null ? "" : displayName,
                         "resetLink", resetLink,
-                        "expirationMinutes", expirationMinutes),
-                // round 1: the reset REQUEST's own occurrence — the link the
-                // token minted, stable across the registry's resubmission of
-                // this SAME event. The time-varying remaining-minutes stays in
-                // the payload only: a resubmission re-derives the SAME key
-                // (a replay), never a second email for one link.
-                deliveryKey("PASSWORD_RESET", userId, resetLink));
+                        "expiresAtUtc", expiresAtUtc),
+                // Hash the one-time link for an opaque, stable delivery
+                // identity. Never put the raw reset credential in the
+                // Resend Idempotency-Key header.
+                deliveryKey("PASSWORD_RESET", userId, opaqueDeliveryPart(resetLink)));
     }
 
     /**
@@ -694,7 +696,7 @@ public class NotificationService {
      * unconditionally, so the delivery contract stays one shape for every
      * caller (the onPostCommented criterion-4 precedent).
      */
-    public void onMessageReceived(UUID conversationId, UUID recipientId) {
+    public void onMessageReceived(UUID messageId, UUID conversationId, UUID recipientId) {
         // B-11: the composed text rides the module's MessageSource channel
         // at the platform locale.
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
@@ -707,7 +709,7 @@ public class NotificationService {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.MESSAGE_RECEIVED.subject", platform),
                     "email/notification", Map.of("message", message),
-                    deliveryKey("MESSAGE_RECEIVED", recipientId, conversationId));
+                    deliveryKey("MESSAGE_RECEIVED", recipientId, conversationId, messageId));
         }
         sendWebSocket(recipientId, NotificationType.MESSAGE_RECEIVED, message);
         sendPush(recipientId, NotificationType.MESSAGE_RECEIVED, message);
@@ -986,6 +988,17 @@ public class NotificationService {
      * delivering to two participants (the booking pair, the payment pair)
      * sends two emails, one per recipient, each with its own record.
      */
+    /** Return a non-reversible identity part for one-time credentials. */
+    private static String opaqueDeliveryPart(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
     private static String deliveryKey(String type, UUID recipientId, Object... occurrenceIds) {
         StringBuilder key = new StringBuilder("marketplace-email-").append(type).append('-').append(recipientId);
         for (Object id : occurrenceIds) {
