@@ -891,7 +891,41 @@ class NotificationServiceTest {
      * listener via CR-4 (the event type's cross-module placement).
      */
     @Test
-    void onMessageReceivedDeliversTheArrivalNotification() {
+    void onPasswordResetRequestedReusesTheImmutableExpiryAndOpaqueDeliveryKey() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID userId = CONSUMER_ID;
+        String resetLink = "https://example.test/reset-password?token=one-time-secret";
+        Instant expiresAt = Instant.parse("2026-11-21T12:30:00Z");
+        String expectedExpiry = "2026-11-21T12:30:00Z";
+
+        service.onPasswordResetRequested(userId, "Consumer", resetLink, expiresAt);
+        service.onPasswordResetRequested(userId, "Consumer", resetLink, expiresAt);
+
+        org.mockito.ArgumentCaptor<Map<String, Object>> variables =
+                org.mockito.ArgumentCaptor.forClass(Map.class);
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(2)).send(eq(CONSUMER_EMAIL), eq("Reset Your Password"),
+                eq("email/password-reset"), variables.capture(), deliveryKeys.capture());
+
+        assertThat(variables.getAllValues()).containsExactly(
+                Map.of("name", "Consumer", "resetLink", resetLink, "expiresAtUtc", expectedExpiry),
+                Map.of("name", "Consumer", "resetLink", resetLink, "expiresAtUtc", expectedExpiry));
+        assertThat(deliveryKeys.getAllValues()).hasSize(2).containsOnly(deliveryKeys.getAllValues().get(0));
+        assertThat(deliveryKeys.getValue()).doesNotContain("one-time-secret");
+        assertThat(deliveryKeys.getValue()).contains("marketplace-email-PASSWORD_RESET-" + userId);
+    }
+
+    @Test
+    void onMessageReceivedUsesMessageIdentityForEmailDelivery() {
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
@@ -903,19 +937,31 @@ class NotificationServiceTest {
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
 
         UUID conversationId = create(UUID.class);
+        UUID firstMessageId = create(UUID.class);
+        UUID secondMessageId = create(UUID.class);
 
-        service.onMessageReceived(conversationId, CONSUMER_ID);
+        service.onMessageReceived(firstMessageId, conversationId, CONSUMER_ID);
+        service.onMessageReceived(secondMessageId, conversationId, CONSUMER_ID);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
-        verify(repository, times(1)).save(saved.capture());
-        assertThat(saved.getValue().getType()).isEqualTo("MESSAGE_RECEIVED");
-        assertThat(saved.getValue().getMessage()).contains(conversationId.toString());
-        verify(messagingTemplate, times(1)).convertAndSend(
+        verify(repository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues()).allSatisfy(notification -> {
+            assertThat(notification.getType()).isEqualTo("MESSAGE_RECEIVED");
+            assertThat(notification.getMessage()).contains(conversationId.toString());
+        });
+        verify(messagingTemplate, times(2)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
-    }
 
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(2)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + firstMessageId,
+                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + secondMessageId)
+                .doesNotHaveDuplicates();
+    }
     /**
      * B-08 (0.10): the recipient's preference opt-out — the L22 matrix
      * gates the push channels per (recipient, MESSAGE_RECEIVED, channel);
@@ -940,7 +986,7 @@ class NotificationServiceTest {
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
                 preferences);
 
-        service.onMessageReceived(create(UUID.class), CONSUMER_ID);
+        service.onMessageReceived(create(UUID.class), create(UUID.class), CONSUMER_ID);
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
