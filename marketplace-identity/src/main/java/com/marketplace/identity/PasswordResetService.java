@@ -115,12 +115,9 @@ public class PasswordResetService {
      * burnt on an encoder failure the caller cannot answer.
      */
     private static boolean passwordWithinSharedPolicy(String password) {
-        if (password == null || password.length() < 8 || password.length() > 72) {
-            return false;
-        }
-        // The bcrypt byte ceiling (Spring Security's own bound): at most 72
-        // UTF-8 bytes of password material reach the hasher.
-        return password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 72;
+        // The shared shape policy (the identity owner's single bound — the
+        // same PasswordPolicy every password entry point applies).
+        return PasswordPolicy.withinSharedPolicy(password);
     }
 
     private final UserRepository userRepository;
@@ -170,20 +167,44 @@ public class PasswordResetService {
      */
     @Observed(name = "password.reset.request")
     public void requestReset(String email) {
-        String subject = email.trim();
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): the case-insensitive account-identifier discipline
+        // (the registration leg lowercases before storing; the login
+        // lookups are case-sensitive) — a mixed-case address here would
+        // MISS the account and silently no-op the reset mail. The SAME
+        // normalization at the service seam covers both transports (the
+        // GraphQL root and the REST controller), the exact shape
+        // AccountEmailChangeService:95 documents.
+        String subject = email.trim().toLowerCase(java.util.Locale.ROOT);
+        // The 2026-11-06 #810 round review (Major · Functional
+        // Correctness): registration now normalizes the subject before
+        // storing, so the normalized lookup resolves every NEW account.
+        // A LEGACY mixed-case store (written before the normalization
+        // landed) still resolves through its exact-case subject — the
+        // recovery right is preserved for accounts that already exist;
+        // both misses stay the enumeration-safe silent no-op.
         if (!userDetailsManager.userExists(subject)) {
-            log.info("Password reset requested for an address with no login account — silent no-op");
-            return;
+            String legacySubject = email.trim();
+            if (!legacySubject.equals(subject) && userDetailsManager.userExists(legacySubject)) {
+                subject = legacySubject;
+            } else {
+                log.info("Password reset requested for an address with no login account — silent no-op");
+                return;
+            }
         }
-        userRepository.findBySubject(subject).ifPresent(user -> {
+        // The lambda's own capture contract: the resolved subject (normalized,
+        // or the legacy exact-case store the fallback recovered) rides ONE
+        // effectively-final variable.
+        final String resolvedSubject = subject;
+        userRepository.findBySubject(resolvedSubject).ifPresent(user -> {
             authActionTokenService
-                    .issue(subject, AuthActionTokenPurpose.PASSWORD_RESET,
+                    .issue(resolvedSubject, AuthActionTokenPurpose.PASSWORD_RESET,
                             properties.passwordResetTtl())
                     .ifPresent(issued -> {
                         String resetLink = properties.mailBaseUrl() + RESET_ROUTE + issued.rawToken();
                         eventPublisher.publishEvent(new PasswordResetRequestedEvent(
                                 user.getId(), user.getDisplayName(), resetLink, issued.expiresAt()));
-                        log.info("Password reset token issued: subject={}", subject);
+                        log.info("Password reset token issued: subject={}", resolvedSubject);
                     });
         });
     }
@@ -226,6 +247,20 @@ public class PasswordResetService {
         // the token's account is gone (the consumption rolls back with the
         // transaction: nothing half-spent, the honest retry contract).
         userDetailsManager.loadUserByUsername(username);
+        // The 2026-11-08 #810 round-6 review (Minor · Security & Privacy):
+        // the rotation serializes with the email-change request's
+        // verify-then-issue window on the SAME per-user advisory auth-state
+        // lock the M2 family rides (marketplace.user-auth:<id>,
+        // transaction-scoped). Without it, a concurrent requestChange that
+        // already verified the OLD password could ISSUE a fresh
+        // EMAIL_CHANGE right after the invalidateOutstanding below ran —
+        // the minted right would outlive the rotation that should have
+        // killed it. The users row carries the lock's stable id key; a
+        // redeemed token without a projection row locks nothing (no
+        // EMAIL_CHANGE right can exist for such an account — the request
+        // leg requires the row before it issues).
+        userRepository.findBySubject(username)
+                .ifPresent(row -> userRepository.lockUserAuth(row.getId().toString()));
         // Row 46 (agent findings 2026-10-26): the PASSWORD COLUMN ONLY — the
         // authority and status snapshot loaded above is read for the
         // existence gate and DISCARDED, never replayed: an admin's role
@@ -234,6 +269,13 @@ public class PasswordResetService {
         // updateUser replay could restore a removed authority).
         jdbcTemplate.update(UPDATE_PASSWORD_ONLY,
                 passwordEncoder.getObject().encode(newPassword), username);
+        // The 2026-11-05 #810 round review (Minor · Security & Privacy):
+        // the rotation kills the outstanding EMAIL_CHANGE rights too — a
+        // password reset means the OLD secret was compromised-shaped; a
+        // pre-issued email-change link minted under that secret regime
+        // must not outlive it (the attacker-with-inbox path: transfer the
+        // login to his address, then reset the password again through it).
+        authActionTokenService.invalidateOutstanding(username);
         // Issued authorizations die with the change — the same measured SAS
         // kill the role/status/pseudonymize surfaces run: a refresh token
         // minted under the OLD password must not survive the owner rotating
