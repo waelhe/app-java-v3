@@ -25,9 +25,10 @@ import org.thymeleaf.context.Context;
  * notification's occurrence identity (CodeRabbit round 1: two distinct
  * occurrences that render identically must never collapse into one provider
  * idempotency record). Callers without an occurrence key fall back to a
- * SHA-256 fingerprint of the STABLE request shape (the rendered HTML
- * excluded — its time-varying fragments must not turn a resubmission into a
- * double-send). Resend retains keys for 24 hours; this is a bounded retry
+ * SHA-256 fingerprint of the exact provider request body (from, to, subject,
+ * and rendered HTML). Resend rejects a reused key with a different body.
+ * Event callers therefore supply an occurrence key and keep the body stable
+ * across retries. Resend retains keys for 24 hours; this is a bounded retry
  * safeguard, not a claim of permanent exactly-once delivery. A durable
  * event/delivery identifier is still required for stronger long-term
  * deduplication.
