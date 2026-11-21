@@ -31,6 +31,18 @@ The verifier requires every shard PR's recorded `base.sha` to equal the candidat
 
 The earlier 2026-11-01 alignment to `1fcb6b87` (the then-current main tip after #785) is historical. Before final manifest verification, the candidate and all listed shards must share the same frozen base SHA. If `main` advances before verification, repeat the alignment and re-cut only affected shards under the v2 rules.
 
+ 
+**Post-repair measurement — 2026-11-13T16:52:20Z (GitHub live):**
+
+- Candidate #787 is open at `44cf56ab144b9d6abc1afc422026d3d70cf65702`, base `main@f92873c947e94c76ed3e7ea211db40a985ea3d63`, 568 changed paths, 432 ahead / 0 behind. The last integration commit is the squash merge of repair PR #836.
+- Repair #836 removed the duplicate governance-test declaration. Its JDK 25 build, full CI, integration suite, and CodeRabbit review passed before it was squash-merged into the integration branch.
+- PR #811 alone was re-cut after that code change at `a443a601c673239d30767334487b813d4e950ca2`; the target test file now has the exact candidate blob.
+- A fresh recursive-tree comparison against the common base confirms exact six-shard coverage: **97 / 98 / 87 / 89 / 98 / 99 = 568** paths, with zero missing, extra, overlapping, or mismatched paths.
+- No current-head CodeRabbit review is available for any of #806–#811, and the coverage manifest has not been written. Do not reuse review IDs or processed-file lists from earlier heads.
+- **This documentation refresh itself changes `PROJECT_MAP.md` and this lifecycle file, both in shard #811's partition. After this documentation PR merges into the candidate branch, re-cut #811 once more from the resulting candidate head and repeat the exact-tree comparison. Do not re-cut the other five shards.**
+
+The check states above are a dated snapshot. Always re-fetch the candidate and shard refs, workflow runs, reviews, and base SHA before the next state-changing action.
+
 ## Review quota model (measured)
 
 One `@coderabbitai` trigger per driver run. After a completed review or a rate-limit reply, the next trigger waits: measured on #788, rejections at +47/+53 min, acceptance at +56/+104 min; the driver uses ≥45 min after a review and ≥75 min after a rate-limit reply. This repository gets no automatic reviews (fewer than 10 stars), so every review is an explicit trigger.
