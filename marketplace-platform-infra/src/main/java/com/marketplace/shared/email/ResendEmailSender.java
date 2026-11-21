@@ -110,7 +110,7 @@ public class ResendEmailSender implements EmailSender {
 
     /**
      * The fallback fingerprint covers the complete Resend request body:
-     * sender, recipient, subject, template variables, and rendered HTML.
+     * sender, recipient, subject, and rendered HTML.
      * This guarantees that a changed payload cannot reuse a provider key
      * (Resend returns 409 for that mismatch). Callers that need retry
      * deduplication must supply a stable occurrence key AND stable payload.
