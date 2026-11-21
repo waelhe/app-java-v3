@@ -444,7 +444,7 @@ class NotificationEventListenerTest {
 
         listener.onMessageReceived(event);
 
-        verify(notificationService).onMessageReceived(conversationId, recipientId);
+        verify(notificationService).onMessageReceived(messageId, conversationId, recipientId);
     }
 
     @Test
@@ -453,7 +453,7 @@ class NotificationEventListenerTest {
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
 
         doThrow(new RuntimeException("Notification error"))
-                .when(notificationService).onMessageReceived(any(), any());
+                .when(notificationService).onMessageReceived(any(), any(), any());
 
         assertThrows(RuntimeException.class,
                 () -> listener.onMessageReceived(event));
