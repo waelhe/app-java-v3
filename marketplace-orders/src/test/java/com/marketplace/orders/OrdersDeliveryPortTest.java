@@ -45,6 +45,7 @@ class OrdersDeliveryPortTest {
     @Mock private com.marketplace.shared.api.CommercialPricingPort commercialPricingPort;
     @Mock private OrderPriceComponentRepository orderPriceComponentRepository;
     @Mock private com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort;
+    @Mock private jakarta.persistence.EntityManager entityManager;
     @Mock private Authentication authentication;
 
     private final UUID buyerId = UUID.randomUUID();
@@ -54,7 +55,8 @@ class OrdersDeliveryPortTest {
     private OrdersService service() {
         return new OrdersService(cartRepository, cartItemRepository, orderRepository, orderItemRepository,
                 currentUserProvider, eventPublisher, productPricingPort, productStockPort, orderPaymentPort,
-                commercialPricingPort, orderPriceComponentRepository, checkoutDeliveryPort);
+                commercialPricingPort, orderPriceComponentRepository, checkoutDeliveryPort,
+                entityManager);
     }
 
     private Order confirmedOrder() {
