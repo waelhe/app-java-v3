@@ -39,6 +39,15 @@ import org.hibernate.envers.Audited;
  * AGENTS.md rule (the V219 {@code product_variants_aud} mirror).
  */
 @Entity
+// The 2026-11-06 #808 round review (Major · Data Integrity & Integration):
+// the scope-move guard's recombine() manages the row and flushes beside a
+// concurrent reserve/commit/restock — the default full-column UPDATE would
+// rewrite the stock counters with the values AS LOADED (a lost update: an
+// open reservation vanishing, a shelf drifting). Hibernate's documented
+// @DynamicUpdate narrows the UPDATE to the DIRTY columns alone (here:
+// option_combination_key), so the money-path counters stay the atomic
+// writes' own.
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "product_variants")
 @Audited
 public class ProductVariant extends BaseEntity {
@@ -179,6 +188,43 @@ public class ProductVariant extends BaseEntity {
                     "Stock %d cannot fall below the reserved %d".formatted(quantity, reservedQuantity));
         }
         this.stockQuantity = quantity;
+    }
+
+    /**
+     * The assignment-scope move's own re-derivation ({@code
+     * ProductTypeAttributeWriteService.updateAssignments} — the
+     * 2026-11-06 #808 round review, Major · Data Integrity &amp;
+     * Integration): re-binds the canonical combination key to the
+     * product type's CURRENT variant-selection schema. The move guard
+     * verified the variant's coverage of the post-move selection set and
+     * the per-product uniqueness FIRST — this write is the schema
+     * change's own completion, never a free mutation (the registration
+     * path's own {@code VariantCombinationKeys.canonical} bytes, so a
+     * recomputed key and a fresh registration under the same schema are
+     * the same key — the move's whole guarantee: no variant keeps a
+     * key the new schema can no longer produce, and no duplicate
+     * combination can slip past the unique index by key-shape drift).
+     */
+    public void recombine(String optionCombinationKey) {
+        this.optionCombinationKey = optionCombinationKey;
+    }
+
+    /**
+     * The display amendment — the row's own amendable facts (the
+     * {@code Product.updateDetails} twin, the Saleor
+     * {@code productVariantUpdate} root's movable set): the SKU, the
+     * display name and the authoritative unit price. The ownership
+     * facts (productId, providerId, currency — the denormalized
+     * copies), the reserved counter and the lifecycle are NOT movable
+     * here — each is its own owning capability. The shapes are the
+     * SERVICE's own re-checks (the entity's own column contracts);
+     * the SKU's namespace freedom is the service's own precheck (the
+     * V219 unique index remains the concurrent-write backstop).
+     */
+    public void reviseDetails(String sku, String name, long priceMinor) {
+        this.sku = sku;
+        this.name = name;
+        this.priceMinor = priceMinor;
     }
 
     /** The availability writes — the guarded transitions (the service gates ownership). */

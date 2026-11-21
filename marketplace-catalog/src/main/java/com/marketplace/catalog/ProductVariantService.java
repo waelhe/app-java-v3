@@ -1,13 +1,8 @@
 package com.marketplace.catalog;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +48,7 @@ public class ProductVariantService {
     private final CatalogAttributeDefinitionRepository definitions;
     private final CatalogAttributeOptionRepository options;
     private final ProductVariantAttributeValueRepository attributeValues;
+    private final ProductTypeRepository productTypes;
 
     public ProductVariantService(ProductVariantRepository variantRepository,
                                  ProductRepository productRepository,
@@ -60,7 +56,8 @@ public class ProductVariantService {
                                  ProductTypeAttributeAssignmentRepository assignments,
                                  CatalogAttributeDefinitionRepository definitions,
                                  CatalogAttributeOptionRepository options,
-                                 ProductVariantAttributeValueRepository attributeValues) {
+                                 ProductVariantAttributeValueRepository attributeValues,
+                                 ProductTypeRepository productTypes) {
         this.variantRepository = variantRepository;
         this.productRepository = productRepository;
         this.currentUserProvider = currentUserProvider;
@@ -68,6 +65,7 @@ public class ProductVariantService {
         this.definitions = definitions;
         this.options = options;
         this.attributeValues = attributeValues;
+        this.productTypes = productTypes;
     }
 
     /**
@@ -80,15 +78,38 @@ public class ProductVariantService {
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant register(UUID productId, RegisterVariantCommand command,
                                    Authentication authentication) {
-        Product product = requireOwnedProduct(productId, authentication);
+        Product product = requireOwnedProductForShare(productId, authentication);
         UUID providerId = product.getProviderId();
         variantRepository.findByProviderIdAndSku(providerId, command.sku()).ifPresent(existing -> {
             throw new ConflictException("SKU '" + command.sku() + "' is already used by variant "
                     + existing.getId() + " in this seller's namespace");
         });
+        // The 2026-11-06 #808 round (Minor · Data Integrity), extended to
+        // this register surface by the same proven root cause: V219's
+        // unique index is GLOBAL (a soft-deleted variant keeps its SKU
+        // reserved) while the derived probe above is filtered to live
+        // rows — the raw-table count answers the same friendly 409
+        // BEFORE the save dies on the constraint (the write service's
+        // own correction, mirrored here).
+        if (variantRepository.countSkuReservationsIncludingDeleted(providerId, command.sku()) > 0) {
+            throw new ConflictException("SKU '" + command.sku()
+                    + "' is already reserved in this seller's namespace");
+        }
         List<ProductTypeAttributeAssignment> typeAssignments = product.getProductTypeId() == null
                 ? List.of()
-                : assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(product.getProductTypeId());
+                // The 2026-11-06 #808 round review (Major · Data Integrity &
+                // Integration): the type row is read FOR SHARE BEFORE the
+                // assignments and held to COMMIT — updateAssignments holds
+                // the same row FOR UPDATE while it moves scopes and
+                // re-keys the affected variants, so this registration
+                // either sees the post-move schema whole (the share lock
+                // waited for the move's commit) or commits its variant
+                // before the move's guard walks it (the move's re-key
+                // covers it). An unlocked read let the registration derive
+                // its combination key on a stale schema and commit a
+                // duplicate under the new one. The type-less legacy
+                // product path stays unlocked (nothing to derive).
+                : readAssignmentsUnderTypeShareLock(product.getProductTypeId());
         List<ValidatedVariantAttribute> preparedValues = validateVariantAttributes(
                 product, typeAssignments, command.attributeValues());
         String combinationKey = canonicalCombinationKey(typeAssignments, preparedValues);
@@ -104,6 +125,32 @@ public class ProductVariantService {
                     .toList());
         }
         return saved;
+    }
+
+    /**
+     * The 2026-11-06 #808 round review (Major · Data Integrity &amp;
+     * Integration): the type row's FOR-SHARE read followed by the
+     * assignment load — the share lock is HELD to the registration's
+     * commit (the updateAssignments FOR-UPDATE writer serializes against
+     * it), so the schema this registration derives its combination key
+     * from is the schema the move-guarded writers themselves committed.
+     *
+     * <p>The 2026-11-06 #808 round-3 review (Major · Stability &amp;
+     * Availability): a row that answers EMPTY (a soft-deleted type — a
+     * product whose schema the registry withdrew) owns NO live schema:
+     * the delete gate refuses while live assignments exist, so the
+     * assignment read below answers empty and the registration rides the
+     * legacy free-form path exactly as the unlocked read always did (the
+     * pre-share-lock behavior this path must keep answering — the
+     * ResourceNotFoundException the orElseThrow produced was a regression
+     * the finding names: registration used to accept this state). The
+     * share lock is taken only when the row is live — a dead row has no
+     * updateAssignments writer to synchronize with (its locked read
+     * answers empty too).</p>
+     */
+    private List<ProductTypeAttributeAssignment> readAssignmentsUnderTypeShareLock(UUID productTypeId) {
+        productTypes.findByIdForShare(productTypeId);
+        return assignments.findAllByProductTypeIdOrderByScopeAscPositionAsc(productTypeId);
     }
 
     private List<ValidatedVariantAttribute> validateVariantAttributes(
@@ -138,7 +185,15 @@ public class ProductVariantService {
             if (value.populatedValueCount() != 1) {
                 throw new ConflictException("Exactly one typed value must be supplied for assignment " + assignment.getId());
             }
-            CatalogAttributeDefinition definition = definitions.findById(assignment.getAttributeDefinitionId())
+            // The 2026-11-07 #808 round-8 review: the definition load itself
+            // takes the row FOR SHARE — EVERY value load serializes against
+            // the attribute-delete wall's FOR-UPDATE read (the previous
+            // shape loaded unlocked and re-locked only the CHOICE branch,
+            // leaving the TEXT/NUMBER/BOOLEAN legs' shape checks racing
+            // the delete's children cascade; the CHOICE branch's own
+            // duplicate share read is gone — this ONE read covers it).
+            CatalogAttributeDefinition definition = definitions
+                    .findByIdForShare(assignment.getAttributeDefinitionId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "CatalogAttributeDefinition", assignment.getAttributeDefinitionId()));
             boolean valid = switch (definition.getValueType()) {
@@ -159,6 +214,13 @@ public class ProductVariantService {
                 throw new ConflictException("VARIANT_SELECTION values must be CHOICE attributes");
             }
             if (definition.getValueType() == CatalogAttributeType.CHOICE) {
+                // The 2026-11-06 #808 round review (Major · Data Integrity
+                // & Integration) + the round-8 consolidation: the share
+                // read above ALREADY serializes this reference-creating
+                // load against the option-delete guard's FOR-UPDATE read
+                // of the same row (the probe's verdict is
+                // COMMITTED-stable) — the CHOICE leg keeps only its own
+                // option-validation reads.
                 CatalogAttributeOption option = options.findById(value.optionId())
                         .orElseThrow(() -> new ResourceNotFoundException("CatalogAttributeOption", value.optionId()));
                 if (!option.getAttributeDefinitionId().equals(definition.getId())) {
@@ -184,17 +246,14 @@ public class ProductVariantService {
         if (selectionAssignments.isEmpty()) return null;
         Map<UUID, CatalogAttributeValueInput> byAssignment = new HashMap<>();
         values.forEach(v -> byAssignment.put(v.assignment().getId(), v.input()));
-        String canonical = selectionAssignments.stream()
-                .filter(a -> byAssignment.containsKey(a.getId()))
-                .sorted(Comparator.comparing(a -> a.getId().toString()))
-                .map(a -> a.getId() + "=" + byAssignment.get(a.getId()).optionId())
-                .reduce((left, right) -> left + "\n" + right).orElse("");
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException("JDK SHA-256 implementation is required", impossible);
-        }
+        // The 2026-11-06 #808 round review (Major · Data Integrity &
+        // Integration): the derivation itself moved to the ONE shared
+        // home (VariantCombinationKeys) — the assignment-scope move guard
+        // re-derives existing variants' keys over the post-move schema
+        // with the SAME bytes this registration path computes, so a
+        // recomputed key and a fresh registration's key can never diverge
+        // by accident of a duplicated algorithm.
+        return VariantCombinationKeys.canonical(selectionAssignments, byAssignment);
     }
 
     private record ValidatedVariantAttribute(ProductTypeAttributeAssignment assignment,
@@ -227,7 +286,17 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant setStock(UUID variantId, int quantity, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The 2026-11-06 #808 round-3 review (Minor · Data Integrity &amp;
+        // Integration): the LOCKED ownership read — the reservation is a
+        // native UPDATE that never touches the @Version column, so an
+        // unlocked read's restock(quantity) guard checked the reserved
+        // set AS LOADED and the save could answer the V219 CHECK's raw
+        // violation instead of the entity's own IllegalArgumentException
+        // (a reservation landing between the read and the write). The
+        // pessimistic row lock serializes this guard against the
+        // placement's UPDATE (the ownedRowForUpdate precedent the delete
+        // paths ride).
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.restock(quantity);
         return variantRepository.save(variant);
     }
@@ -236,7 +305,17 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant suspend(UUID variantId, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The 2026-11-09 #808 round-26 review (Minor · Stability &
+        // Availability): the availability writes join the setStock
+        // discipline — the UNLOCKED requireOwnedVariant read let a
+        // concurrent delete of the SAME variant commit between the read
+        // and the save, and the state change then rode the stale managed
+        // row (the raw OptimisticLockException, or a soft-delete UPDATE
+        // matching zero rows). The locked read serializes the pair: the
+        // delete either waits (this state change lands first, the
+        // delete's cascade carries it away) or has already committed
+        // (the locked load answers the honest 404).
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.suspend();
         return variantRepository.save(variant);
     }
@@ -244,7 +323,9 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant reactivate(UUID variantId, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The same round-26 law: the locked ownership read, the setStock
+        // precedent verbatim.
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.reactivate();
         return variantRepository.save(variant);
     }
@@ -252,7 +333,9 @@ public class ProductVariantService {
     @Transactional
     @PreAuthorize("hasRole('PROVIDER') or hasRole('ADMIN')")
     public ProductVariant archive(UUID variantId, Authentication authentication) {
-        ProductVariant variant = requireOwnedVariant(variantId, authentication);
+        // The same round-26 law: the locked ownership read, the setStock
+        // precedent verbatim.
+        ProductVariant variant = requireOwnedVariantForUpdate(variantId, authentication);
         variant.archive();
         return variantRepository.save(variant);
     }
@@ -272,6 +355,35 @@ public class ProductVariantService {
         return product;
     }
 
+    /**
+     * The WRITE paths' own ownership gate — the 2026-11-08 #808 round-23
+     * review (Minor · Data Integrity &amp; Integration): the registration
+     * reads the owning product FOR SHARE, held to the transaction's end,
+     * so the product delete's FOR-UPDATE guard-plus-cascade serializes
+     * with the registration (never a live variant committed under a
+     * dead product — the same law the untyped createVariant leg just
+     * adopted). The read-only roster keeps the unlocked shape (the
+     * {@code requireOwnedProduct} above) — a shared lock on every read
+     * would serialize deletes behind browsing for no integrity gain.
+     */
+    private Product requireOwnedProductForShare(UUID productId, Authentication authentication) {
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the ownership-scoped FOR-SHARE twin — the
+        // registration's parent read locks only the caller's OWN row (a
+        // skipped foreign row never locks, so the stranger's id answers
+        // the safe absence without waiting on its share lock), while the
+        // ADMIN capability keeps the unscoped read (an admin's
+        // registration under any provider's product is the same access
+        // rule the variant legs carry).
+        if (currentUserProvider.isAdmin(authentication)) {
+            return productRepository.findByIdForShare(productId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
+        }
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return productRepository.findByIdAndProviderIdForShare(productId, caller)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
+    }
+
     /** The variant's own ownership gate — rides the owning product's provider (the same shape). */
     private ProductVariant requireOwnedVariant(UUID variantId, Authentication authentication) {
         ProductVariant variant = variantRepository.findById(variantId)
@@ -281,6 +393,33 @@ public class ProductVariantService {
             throw new ResourceNotFoundException("ProductVariant", variantId);
         }
         return variant;
+    }
+
+    /**
+     * The shelf write's own ownership gate — the SAME ownership law on
+     * the LOCKED row (the 2026-11-06 #808 round-3 review, Minor · Data
+     * Integrity &amp; Integration: setStock's reservation-sensitive guard
+     * reads the row FOR UPDATE, serializing against the placement's
+     * native reservation UPDATE — the delete paths' own
+     * ownedRowForUpdate twin, the ownership verdict kept intact).
+     */
+    private ProductVariant requireOwnedVariantForUpdate(UUID variantId, Authentication authentication) {
+        // The 2026-11-08 #808 round-25 review (Minor · Stability &
+        // Availability): the provider predicate rides INSIDE the locking
+        // query — the previous lock-then-filter shape took the WRITE lock
+        // on the addressed row before the ownership verdict, so a provider
+        // naming another provider's variant WAITED on the stranger's row
+        // lock before the honest 404 (the ProductService round-24 law,
+        // applied to the variant legs). The ADMIN capability keeps the
+        // unscoped lock (an admin legitimately manages any provider's
+        // shelf — the two HTTP paths' own access rule).
+        if (currentUserProvider.isAdmin(authentication)) {
+            return variantRepository.findByIdForUpdate(variantId)
+                    .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
+        }
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        return variantRepository.findByIdAndProviderIdForUpdate(variantId, caller)
+                .orElseThrow(() -> new ResourceNotFoundException("ProductVariant", variantId));
     }
 
     /**
