@@ -38,9 +38,10 @@ concurrency:
 
 env:
   RAILWAY_API: https://backboard.railway.com/graphql/v2
-  RAILWAY_PROJECT_ID: a218e156-0aa1-487a-855d-3f798856d5ef
-  RAILWAY_ENVIRONMENT_ID: 60fb0197-fc76-4e72-b18d-dca7532e343d
-  RAILWAY_SERVICE_APP: 3efcf70c-56d5-4d87-ada5-6bba32022229
+  # Live production target verified in Railway on 2026-11-15.
+  RAILWAY_PROJECT_ID: c8985750-82a2-42eb-8431-ee0f49352818
+  RAILWAY_ENVIRONMENT_ID: c324c1a0-e4db-4a9a-8dc0-30ca1f3935d0
+  RAILWAY_SERVICE_APP: 43b1b64b-9087-45d4-88ca-358a40c5a583
 
 jobs:
   deploy:
@@ -57,6 +58,16 @@ jobs:
       github.repository == 'waelhe/app-java-v3'
     runs-on: ubuntu-latest
     steps:
+      - name: Guard — production deployment must be dispatched from main
+        uses: actions/github-script@v9
+        with:
+          script: |
+            if (context.ref !== 'refs/heads/main') {
+              core.setFailed(`Production Railway deployments are restricted to refs/heads/main; received ${context.ref}.`);
+              return;
+            }
+            core.info(`Approved production ref: ${context.ref}; target commit: ${context.sha}`);
+
       - name: Gate — every GitHub Actions suite on the commit must be green
         uses: actions/github-script@v9
         id: gate
@@ -106,12 +117,30 @@ jobs:
               return;
             }
 
-            // Wait-for-CI: skipped/neutral never block; cancelled blocks only
-            // when no other workflow on the same commit succeeded.
-            const succeeded = gate.filter(r => r.conclusion === 'success');
-            const cancelled = gate.filter(r => r.conclusion === 'cancelled');
-            if (cancelled.length > 0 && succeeded.length === 0) {
-              core.setFailed(`All suites cancelled and none succeeded — deployment skipped: ${cancelled.map(r => r.name).join(', ')}`);
+            // Wait-for-CI: skipped/neutral never block (a path-filtered
+            // workflow's own configuration says it does not apply to this
+            // commit; a neutral verdict is an explicit non-failure). A
+            // CANCELLED run blocks unless a NEWER run of the SAME workflow
+            // on this commit succeeded — the concurrency supersession: the
+            // latest run is the verdict of record, so a cancelled run with
+            // a succeeding newer sibling is retired history, while a
+            // cancelled run that is its workflow's latest (a manually
+            // aborted or timed-out suite with no re-run) leaves the commit
+            // UNVERIFIED. The pre-fix condition waved any cancelled suite
+            // through whenever any OTHER workflow on the commit succeeded
+            // (the 2026-11-21 full review's Major: this step's own name
+            // promises every suite green).
+            const latestPerWorkflow = new Map();
+            for (const run of gate) {
+              const prev = latestPerWorkflow.get(run.name);
+              if (!prev || String(run.created_at) > String(prev.created_at)) {
+                latestPerWorkflow.set(run.name, run);
+              }
+            }
+            const unverified = [...latestPerWorkflow.values()]
+              .filter(r => r.conclusion === 'cancelled');
+            if (unverified.length > 0) {
+              core.setFailed(`Latest run cancelled without a succeeding re-run — the commit stays unverified, deployment skipped: ${unverified.map(r => r.name).join(', ')}`);
               return;
             }
 
