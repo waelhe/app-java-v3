@@ -506,7 +506,7 @@ public class NotificationService {
                 // round 1: the verification REQUEST's own occurrence — the
                 // one-time link the token minted; a resubmission of the same
                 // event replays, a fresh request mints a fresh link and sends.
-                deliveryKey("EMAIL_VERIFICATION", userId, verificationLink));
+                deliveryKey("EMAIL_VERIFICATION", userId, opaqueDeliveryPart(verificationLink)));
     }
 
     /**
