@@ -123,6 +123,25 @@ public class LedgerEntry extends BaseEntity {
                 amountCents, currency);
     }
 
+    /**
+     * Major-2 (CodeRabbit round 8 on the D4 modeling branch — the
+     * 2026-11-20T17:53Z review, Data Integrity): the ORDER settlement's
+     * own ZERO-commission decision of record — a NON-money marker row
+     * (amount ALWAYS zero, no balance movement) written by the
+     * settlement transaction in the SAME write that creates the
+     * PAYMENT_CREDIT row. It is the only admissible evidence for the
+     * refund gate's legacy null-rate path: a decision inferred from the
+     * live configuration rate is never a settlement's own decision. The
+     * source id is the DETERMINISTIC key the service derives
+     * ({@code UUID.nameUUIDFromBytes("settlement-zero-commission-<intentId>")})
+     * — the commission/refund siblings' own V82 discipline — so the V19
+     * {@code source_id UNIQUE} index makes replays structural no-ops.
+     */
+    public static LedgerEntry settlementZeroCommission(UUID providerId, UUID sourceId, String currency) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.SETTLEMENT_ZERO_COMMISSION,
+                0L, currency);
+    }
+
     @Override public UUID getId(){return id;}
     public UUID getProviderId(){return providerId;}
     public UUID getSourceId(){return sourceId;}

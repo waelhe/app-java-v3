@@ -23,5 +23,10 @@ class LedgerEntryTypeTest {
         // full refund's fee-reversal mirror joins the closed set (the V301/V302
         // pair widens the CHECK to match — the sibling pairs' own shape).
         assertEquals("DELIVERY_FEE_REVERSAL_CREDIT", LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT.name());
+        // Major-2 (CodeRabbit round 8 on the D4 modeling branch — the
+        // 2026-11-20T17:53Z review): the settlement's own zero-commission
+        // decision of record joins the closed set (the V303/V304 pair widens
+        // the CHECK to match — the sibling pairs' own shape verbatim).
+        assertEquals("SETTLEMENT_ZERO_COMMISSION", LedgerEntryType.SETTLEMENT_ZERO_COMMISSION.name());
     }
 }

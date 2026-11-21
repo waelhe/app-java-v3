@@ -531,9 +531,11 @@ class LedgerPaymentEventListenerTest {
         when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
         when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
         when(ledgerService.postedDeliveryFeeCents(paymentIntentId)).thenReturn(Optional.empty());
-        // the commission IS due (the live 0.10 rate on the goods base of a
-        // PICKUP shape: fee 0, goods 17400, due 1740) — so the debit-legs
-        // gate cannot admit on the credit row alone
+        // Major-2 (round 8): this legacy null-rate row carries NO marker —
+        // its settlement's decision of record never ran (the manual credit
+        // landed the row alone), and no live-rate due computation can ever
+        // stand in for it — so the debit-legs gate cannot admit on the
+        // credit row alone
         when(orderSellerPort.settlementFactsOf(orderId))
                 .thenReturn(new com.marketplace.shared.api.OrderSettlementFacts(sellerId, 0L, false));
 
@@ -562,6 +564,126 @@ class LedgerPaymentEventListenerTest {
         verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
         verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId,
                 1740L, "SAR");
+    }
+
+    /**
+     * Major-2 (CodeRabbit round 8 — the 2026-11-20T17:53Z review, the
+     * eternal-rejection reproducer verbatim): a LEGACY null-rate row
+     * settles while the live rate is ZERO (no commission row exists by
+     * the zero-amount law — the settlement writes its zero-commission
+     * MARKER instead), the operator then changes the rate to 0.10, and
+     * the full refund arrives. The pre-fix gate inferred a DUE 1740
+     * commission from TODAY'S live rate and rejected every retry — a
+     * decision inferred from a live value is never the settlement's own.
+     * The marker is the settlement's own decision of record: the refund
+     * admits on it and debits the full amount with the zero reversal
+     * no-op, exactly as it did before the rate changed.
+     */
+    @Test
+    void major2_aRateChangeBetweenSettlementAndRefundNeverInfersFromTheLiveRate() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        // the LEGACY pre-V220 shape: no frozen rate on the row
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        // the settlement runs at the ZERO live rate (first delivery)
+        LedgerPaymentEventListener atSettlementTime = new LedgerPaymentEventListener(
+                ledgerService, paymentIntentLookupPort, bookingParticipantProvider, orderSellerPort,
+                loanOwnerPort, 0.0);
+        atSettlementTime.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+
+        // the settlement posted the credit, NO commission row (zero — the
+        // leg call is the service's documented ZERO no-op, never a write),
+        // and its own zero-commission decision of record
+        verify(ledgerService).creditFromPaymentPosting(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId, 0L, "SAR");
+        verify(ledgerService).markSettlementZeroCommission(sellerId, paymentIntentId, "SAR");
+
+        // the operator changes the rate; the refund arrives at the NEW rate
+        // (the refund path resolves the seller first — its own hop)
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.settlementZeroCommissionMarked(paymentIntentId)).thenReturn(true);
+
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED"));
+
+        // the marker — never the live rate — admits the refund: the full
+        // debit mirrors the credit, the reversal is the zero no-op
+        verify(ledgerService).debitFromRefund(sellerId, paymentIntentId, 17400L, "SAR");
+        verify(ledgerService).creditFromCommissionReversal(sellerId, paymentIntentId, 0L, "SAR");
+    }
+
+    /**
+     * Major-2 (round 8, the fail-closed residual): a legacy null-rate row
+     * whose settlement predates the marker wave carries NO decision of
+     * record — the credit row alone (its only ledger shape) is exactly
+     * the manual credit's shape too, and no live inference can separate
+     * them. The refund keeps waiting (the documented owner-gate residual):
+     * an unknowable historical decision is never reconstructed from the
+     * live configuration.
+     */
+    @Test
+    void major2_aLegacyRowWithoutTheMarkerFailsClosed() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "REFUNDED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.sellerOf(orderId)).thenReturn(sellerId);
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+        // the pre-marker settlement's only shape: the credit row alone
+        when(ledgerService.paymentCreditPosted(paymentIntentId)).thenReturn(true);
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.postedDeliveryFeeCents(paymentIntentId)).thenReturn(Optional.empty());
+        when(ledgerService.settlementZeroCommissionMarked(paymentIntentId)).thenReturn(false);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "REFUNDED")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no debit legs yet");
+
+        verify(ledgerService, never()).debitFromRefund(any(), any(), anyLong(), any());
+        verify(ledgerService, never()).creditFromCommissionReversal(any(), any(), anyLong(), any());
+    }
+
+    /**
+     * Major-2 (the marker's write discipline): the decision of record
+     * belongs to the settlement's FIRST delivery alone — the credit row's
+     * own creating run. A redelivery (the publication replay of an
+     * already-settled intent) computes against a live rate it can no
+     * longer trust for history it did not write, so it never rewrites a
+     * marker — the deterministic source key makes the write itself
+     * idempotent even if it raced.
+     */
+    @Test
+    void major2_theMarkerIsWrittenOnTheFirstDeliveryOnly() {
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID sellerId = UUID.randomUUID();
+        var intent = new PaymentIntentDetails(paymentIntentId, null, UUID.randomUUID(), null,
+                "COMPLETED", "ORDER", 17400L, "SAR", orderId, null, null);
+        when(orderSellerPort.settlementFactsOf(orderId))
+                .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
+        when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
+
+        // the redelivery: the credit row pre-exists — no marker, no legs
+        firstDelivery(false);
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        verify(ledgerService, never()).markSettlementZeroCommission(any(), any(), any());
+
+        // a fresh settlement at a NON-zero commission writes legs, not the marker
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
+        firstDelivery(true);
+        listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
+        verify(ledgerService, never()).markSettlementZeroCommission(any(), any(), any());
+        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId, 1740L, "SAR");
     }
 
     // ---- Stage 8 (ADR-0004): the loan-origin branches ----

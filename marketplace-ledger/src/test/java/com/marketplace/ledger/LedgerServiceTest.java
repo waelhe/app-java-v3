@@ -785,4 +785,74 @@ class LedgerServiceTest {
         when(entryRepository.findBySourceId(feeKey)).thenReturn(Optional.empty());
         assertThat(service.postedDeliveryFeeCents(paymentIntentId)).isEmpty();
     }
+
+    // ---- Major-2 (CodeRabbit round 8 on the D4 modeling branch — the
+    // 2026-11-20T17:53Z review, Data Integrity) ----
+
+    /**
+     * The settlement's own zero-commission decision of record: a NON-money
+     * marker row (amount 0, NO balance movement — the balance repository is
+     * never touched) keyed by the deterministic
+     * "settlement-zero-commission-<intentId>" source id, idempotent on the
+     * duplicate read exactly like its commission/refund siblings.
+     */
+    @Test
+    void major2_markSettlementZeroCommissionWritesTheMarkerOnceAndMovesNoBalance() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID markerKey = UUID.nameUUIDFromBytes(
+                ("settlement-zero-commission-" + paymentIntentId.toString()).getBytes());
+
+        when(entryRepository.findBySourceId(markerKey)).thenReturn(Optional.empty());
+        service.markSettlementZeroCommission(providerId, paymentIntentId, USD);
+
+        org.mockito.ArgumentCaptor<LedgerEntry> captor = org.mockito.ArgumentCaptor.forClass(LedgerEntry.class);
+        verify(entryRepository).save(captor.capture());
+        LedgerEntry marker = captor.getValue();
+        assertThat(marker.getEntryType()).isEqualTo(LedgerEntryType.SETTLEMENT_ZERO_COMMISSION);
+        assertThat(marker.getAmountCents()).isZero();
+        assertThat(marker.getProviderId()).isEqualTo(providerId);
+        assertThat(marker.getSourceId()).isEqualTo(markerKey);
+        assertThat(marker.getCurrency()).isEqualTo(USD);
+        // a NON-money marker: no balance row is read or written, ever
+        verifyNoInteractions(balanceRepository);
+
+        // the duplicate read is a structural no-op (the replay sibling)
+        when(entryRepository.findBySourceId(markerKey)).thenReturn(Optional.of(marker));
+        service.markSettlementZeroCommission(providerId, paymentIntentId, USD);
+        verify(entryRepository, times(1)).save(any(LedgerEntry.class));
+    }
+
+    /**
+     * The marker's reader filters by the entry type beside the deterministic
+     * key — postedCommissionCents's own read discipline verbatim: a foreign
+     * row squatting on the key never answers as the settlement's decision.
+     */
+    @Test
+    void major2_settlementZeroCommissionMarkedFiltersByTheEntryType() {
+        LedgerEntryRepository entryRepository = mock(LedgerEntryRepository.class);
+        ProviderBalanceRepository balanceRepository = mock(ProviderBalanceRepository.class);
+        LedgerService service = new LedgerService(entryRepository, balanceRepository);
+
+        UUID paymentIntentId = UUID.randomUUID();
+        UUID markerKey = UUID.nameUUIDFromBytes(
+                ("settlement-zero-commission-" + paymentIntentId.toString()).getBytes());
+
+        LedgerEntry marker = mock(LedgerEntry.class);
+        when(marker.getEntryType()).thenReturn(LedgerEntryType.SETTLEMENT_ZERO_COMMISSION);
+        when(entryRepository.findBySourceId(markerKey)).thenReturn(Optional.of(marker));
+        assertThat(service.settlementZeroCommissionMarked(paymentIntentId)).isTrue();
+
+        LedgerEntry foreign = mock(LedgerEntry.class);
+        when(foreign.getEntryType()).thenReturn(LedgerEntryType.COMMISSION_DEBIT);
+        when(entryRepository.findBySourceId(markerKey)).thenReturn(Optional.of(foreign));
+        assertThat(service.settlementZeroCommissionMarked(paymentIntentId)).isFalse();
+
+        when(entryRepository.findBySourceId(markerKey)).thenReturn(Optional.empty());
+        assertThat(service.settlementZeroCommissionMarked(paymentIntentId)).isFalse();
+    }
 }

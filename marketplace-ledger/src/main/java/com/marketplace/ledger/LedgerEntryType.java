@@ -67,5 +67,28 @@ public enum LedgerEntryType {
      * house shape: DROP/ADD NOT VALID, then the VALIDATE under its own
      * SHARE UPDATE EXCLUSIVE scan).
      */
-    DELIVERY_FEE_REVERSAL_CREDIT
+    DELIVERY_FEE_REVERSAL_CREDIT,
+    /**
+     * Major-2 (CodeRabbit round 8 on this branch — the 2026-11-20T17:53Z
+     * review, Data Integrity): the ORDER settlement's own ZERO-commission
+     * decision of record — a NON-money marker row (amount 0, no balance
+     * movement) written by the settlement transaction itself exactly when
+     * it creates the PAYMENT_CREDIT row with a computed commission of
+     * zero. It closes the refund gate's measured defect: a legacy
+     * null-rate row settled at a zero live rate writes NO commission row
+     * (the zero-amount rule), so a later rate change made the gate's old
+     * {@code commissionNotDue} infer a DUE commission from TODAY'S live
+     * rate and reject the refund forever — a decision inferred from a
+     * live value is never a settlement's own decision. The marker is the
+     * only writer the settlement itself owns: the manual credit path
+     * cannot forge it, and the deterministic
+     * {@code "settlement-zero-commission-<intentId>"} source key makes
+     * replays no-ops. Pre-marker legacy rows (settled before this wave)
+     * carry no decision of record — their refunds stay fail-closed
+     * (the documented owner-gate residual: no live inference can
+     * reconstruct an unknowable historical decision). The database's
+     * closed set widens with this member through the V303/V304 pair
+     * (the sibling pairs' own house shape verbatim).
+     */
+    SETTLEMENT_ZERO_COMMISSION
 }

@@ -167,6 +167,20 @@ public class LedgerPaymentEventListener {
                     ledgerService.debitFromDeliveryFee(sellerId, intent.paymentIntentId(), feeCents, intent.currency());
                 }
             }
+            // Major-2 (CodeRabbit round 8 — the 2026-11-20T17:53Z review,
+            // Data Integrity): the settlement's OWN zero-commission
+            // decision of record, written in the SAME transaction that
+            // created the credit row. The zero shape posts no
+            // COMMISSION_DEBIT row (the zero-amount rule), so without this
+            // marker a later rate change left the refund gate inferring a
+            // DUE commission from TODAY'S live rate for legacy null-rate
+            // rows — an eternal rejection with no repair row. First
+            // delivery ONLY: a redelivery (a pre-existing credit row)
+            // never rewrites a decision the original run alone knows.
+            if (credit.createdThisRun() && commissionCents == 0) {
+                ledgerService.markSettlementZeroCommission(
+                        sellerId, intent.paymentIntentId(), intent.currency());
+            }
             log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission on the "
                             + "goods base {} — the order settlement (intent {}, fee {} {} kept by the platform{})",
                     intent.amountCents(), intent.currency(), sellerId,
@@ -475,23 +489,45 @@ public class LedgerPaymentEventListener {
 
     /**
      * CodeRabbit round 7 (the refund gate's settlement proof,
-     * 2026-11-19T13:33Z review): whether a commission debit leg is EVER
-     * expected for this intent — the zero-commission shapes whose
-     * settlement deliberately posts no COMMISSION_DEBIT row (the round-2
-     * law), so the refund's debit-legs gate cannot wait for a row that
-     * will never exist. A frozen zero rate needs no facts (no goods base
-     * can make it due); otherwise the due is computed on the goods base
-     * exactly as the settlement computed it (the fee from the order's
-     * settlement facts — safe here: the refund path resolved the seller
-     * first, so the facts lookup cannot hit the legacy no-seller 404).
+     * 2026-11-19T13:33Z review) + round 8 Major-2 (2026-11-20T17:53Z
+     * review): whether a commission debit leg is EVER expected for this
+     * intent — the zero-commission shapes whose settlement deliberately
+     * posts no COMMISSION_DEBIT row (the round-2 law), so the refund's
+     * debit-legs gate cannot wait for a row that will never exist. A
+     * FROZEN zero rate needs no facts (no goods base can make it due);
+     * a frozen non-zero rate computes the due on the goods base exactly
+     * as the settlement computed it (the fee from the order's settlement
+     * facts — safe here: the refund path resolved the seller first, so
+     * the facts lookup cannot hit the legacy no-seller 404). A LEGACY
+     * null-rate row never computes from the live rate (round 8's
+     * measured defect): its zero-commission evidence is the
+     * settlement's own persisted marker alone.
      */
     private boolean commissionNotDue(PaymentIntentDetails intent) {
-        if (BigDecimal.ZERO.compareTo(effectiveCommissionRate(intent)) == 0) {
-            return true;
+        // Major-2 (CodeRabbit round 8 — the 2026-11-20T17:53Z review): the
+        // settlement's OWN decision of record, never a live-rate inference.
+        // The FROZEN-rate path is deterministic — the settlement computed
+        // the same arithmetic from the same frozen value (ADR-0013 D2), so
+        // the recomputation here is the settlement's own decision replayed,
+        // not an inference. The LEGACY null-rate path's decision is
+        // unknowable from any live value: only the settlement's own
+        // persisted zero-commission marker (written by the settlement
+        // transaction itself, unforgeable by the manual credit path)
+        // admits the refund — the reviewer's measured defect was exactly
+        // the old code's fallback to TODAY'S live rate here (a zero-rate
+        // settlement + a later 0.10 change = an eternal refund rejection).
+        // A legacy row without the marker keeps the refund waiting — the
+        // documented owner-gate residual: fail closed, because an
+        // inferred historical decision is never evidence.
+        if (intent.commissionRate() != null) {
+            if (BigDecimal.ZERO.compareTo(intent.commissionRate()) == 0) {
+                return true;
+            }
+            OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
+            long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
+            return commissionCents(intent.amountCents() - feeCents, intent) == 0L;
         }
-        OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
-        long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
-        return commissionCents(intent.amountCents() - feeCents, intent) == 0L;
+        return ledgerService.settlementZeroCommissionMarked(intent.paymentIntentId());
     }
 
     /**

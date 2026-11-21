@@ -180,6 +180,53 @@ public class LedgerService {
     }
 
     /**
+     * Major-2 (CodeRabbit round 8 on the D4 modeling branch — the
+     * 2026-11-20T17:53Z review, Data Integrity): the ORDER settlement's
+     * own ZERO-commission decision of record — a NON-money marker row
+     * (amount 0, NO balance movement) written by the settlement
+     * transaction in the SAME write that creates the PAYMENT_CREDIT row.
+     * The reviewer's measured defect: a legacy null-rate row settled at
+     * a zero live rate writes no COMMISSION_DEBIT row (the zero-amount
+     * rule), so a later rate change made the refund gate's old
+     * {@code commissionNotDue} infer a DUE commission from TODAY'S live
+     * rate and reject the refund forever — an inferred decision is never
+     * the settlement's own. The marker is the settlement's ONLY own
+     * evidence for the zero shape: the manual credit path cannot forge
+     * it, and the deterministic
+     * {@code nameUUIDFromBytes("settlement-zero-commission-<intentId>")}
+     * source id makes replayed listeners no-ops (the commission/refund
+     * siblings' own structural idempotency). Deliberately NOT written on
+     * redelivery (a pre-existing credit row): the marker records THIS
+     * settlement's first-delivery decision, never rewrites history a
+     * later replay cannot know.
+     */
+    public void markSettlementZeroCommission(UUID providerId, UUID paymentIntentId, String currency) {
+        String normalized = Currencies.normalizeOrDefault(currency, Currencies.DEFAULT_CODE);
+        UUID sourceId = settlementZeroCommissionSourceKey(paymentIntentId);
+        if (entryRepository.findBySourceId(sourceId).isPresent()) {
+            return;
+        }
+        entryRepository.save(LedgerEntry.settlementZeroCommission(providerId, sourceId, normalized));
+    }
+
+    /**
+     * Major-2: the marker's reader — the refund gate's ONLY admissible
+     * zero-commission evidence for legacy null-rate rows (never a live
+     * rate inference). {@code postedCommissionCents}'s own read shape:
+     * the deterministic source key plus the entry-type filter.
+     */
+    @Transactional(readOnly = true)
+    public boolean settlementZeroCommissionMarked(UUID paymentIntentId) {
+        return entryRepository.findBySourceId(settlementZeroCommissionSourceKey(paymentIntentId))
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.SETTLEMENT_ZERO_COMMISSION)
+                .isPresent();
+    }
+
+    private static UUID settlementZeroCommissionSourceKey(UUID paymentIntentId) {
+        return UUID.nameUUIDFromBytes(("settlement-zero-commission-" + paymentIntentId.toString()).getBytes());
+    }
+
+    /**
      * A2 (adversarial review 2026-11-10, owner-gate batch 6a — the
      * ADR-0013 D3 §3 mirror rule): the full refund's commission REVERSAL
      * credit — the exact mirror image of {@link #debitFromCommission},
