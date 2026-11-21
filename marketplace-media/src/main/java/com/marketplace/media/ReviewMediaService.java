@@ -1,6 +1,7 @@
 package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.api.ReviewLookupPort;
 import com.marketplace.shared.security.CurrentUserProvider;
@@ -81,6 +82,10 @@ public class ReviewMediaService {
 
         UUID authorId = reviewLookupPort.findAuthorId(reviewId)
                 .orElseThrow(() -> new ResourceNotFoundException("Review not found: " + reviewId));
+        // Re-resolve the caller's identity only after acquiring the same
+        // account lock as erasure; a pre-erasure JWT check must not authorize
+        // a write queued behind the committed erasure event.
+        reviewMediaRepository.lockAccountMediaMutation(authorId.toString());
         verifyReviewOwnership(authorId, authentication);
 
         // Position allocation must serialize per review (the MediaAsset
@@ -101,15 +106,16 @@ public class ReviewMediaService {
         }
 
         String objectKey = MediaUploadRules.buildObjectKey(OBJECT_KEY_PREFIX, reviewId, normalizedType);
+        String uploadObjectKey = buildUploadStagingKey();
         ReviewMedia asset = reviewMediaRepository.save(ReviewMedia.create(
-                reviewId, authorId, objectKey, normalizedType,
+                reviewId, authorId, objectKey, uploadObjectKey, normalizedType,
                 // The highest allocated position — deleted rows included — plus
                 // one: never re-issue a position a remaining row already holds
                 // (greptile W1 r10).
                 sizeBytes, reviewMediaRepository.findMaxPositionByReviewId(reviewId) + 1));
 
-        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
-        return new ReviewMediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+        String uploadUrl = s3.presignUpload(uploadObjectKey, normalizedType);
+        return new ReviewMediaUploadView(asset.getId(), uploadObjectKey, uploadUrl, properties.limits().presignTtl());
     }
 
     /**
@@ -126,6 +132,10 @@ public class ReviewMediaService {
         if (!authorId.equals(currentUserId)) {
             throw new AccessDeniedException("You do not own this review's media");
         }
+    }
+
+    private String buildUploadStagingKey() {
+        return "media-upload-staging/" + UUID.randomUUID();
     }
 
     private void verifyAssetOwnership(ReviewMedia asset, Authentication authentication) {
@@ -149,16 +159,51 @@ public class ReviewMediaService {
     @PreAuthorize("isAuthenticated()")
     public ReviewMediaView confirmUpload(UUID mediaId, Authentication authentication) {
         S3MediaStorage s3 = MediaUploadRules.requireStorage(storage);
-        ReviewMedia asset = getById(mediaId);
+        ReviewMedia asset = reviewMediaRepository.findByIdForUpdate(mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Review media not found: " + mediaId));
         verifyAssetOwnership(asset, authentication);
+        if (asset.getStatus() != MediaAssetStatus.PENDING_UPLOAD) {
+            throw new ConflictException("Review media upload is not pending confirmation: " + mediaId);
+        }
 
-        boolean verified = s3.verifyUploaded(asset.getObjectKey(), asset.getContentType(), asset.getSizeBytes());
+        String uploadObjectKey = asset.getUploadObjectKey() == null
+                ? asset.getObjectKey() : asset.getUploadObjectKey();
+        boolean verified = s3.verifyUploaded(uploadObjectKey, asset.getContentType(), asset.getSizeBytes());
         if (!verified) {
             throw new BadRequestException(
                     "Object not found in storage (or type/size mismatch) for media: " + mediaId);
         }
+        boolean promotedFromStaging = !uploadObjectKey.equals(asset.getObjectKey());
+        if (promotedFromStaging) {
+            s3.copyVerifiedObject(uploadObjectKey, asset.getObjectKey(),
+                    asset.getContentType(), asset.getSizeBytes());
+        }
         asset.markUploaded();
+        if (promotedFromStaging) {
+            deleteStagingObjectAfterCommit(s3, uploadObjectKey);
+        }
         return toView(asset, s3.presignDownload(asset.getObjectKey()));
+    }
+
+    private void deleteStagingObjectAfterCommit(S3MediaStorage s3, String stagingKey) {
+        Runnable cleanup = () -> {
+            try {
+                s3.deleteObjects(List.of(stagingKey));
+            } catch (RuntimeException ex) {
+                log.warn("Review staging cleanup failed for key {} (bucket lifecycle will own it): {}",
+                        stagingKey, ex.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+        } else {
+            cleanup.run();
+        }
     }
 
     /**
@@ -203,16 +248,17 @@ public class ReviewMediaService {
 
         reviewMediaRepository.delete(asset);
         String objectKey = asset.getObjectKey();
+        String uploadKey = asset.getUploadObjectKey();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    removeStorageObject(s3, objectKey);
+                    removeStorageObjects(s3, objectKey, uploadKey);
                 }
             });
         } else {
             // No active transaction (unit tests) — remove immediately.
-            removeStorageObject(s3, objectKey);
+            removeStorageObjects(s3, objectKey, uploadKey);
         }
     }
 
@@ -232,6 +278,13 @@ public class ReviewMediaService {
      * Storage-side removal failure is logged, never fatal — bucket
      * lifecycle rules own orphans (the MediaService D3 contract).
      */
+    private void removeStorageObjects(S3MediaStorage s3, String objectKey, String uploadKey) {
+        removeStorageObject(s3, objectKey);
+        if (uploadKey != null && !uploadKey.equals(objectKey)) {
+            removeStorageObject(s3, uploadKey);
+        }
+    }
+
     private void removeStorageObject(S3MediaStorage s3, String objectKey) {
         try {
             s3.deleteObject(objectKey);
@@ -247,8 +300,8 @@ public class ReviewMediaService {
             @Schema(description = "The persisted review-media asset id",
                     example = "f47ac10b-58cc-4372-a567-0e02b2c3d479")
             UUID mediaId,
-            @Schema(description = "Server-generated object key",
-                    example = "review-media/7c9e6679-7425-40de-944b-e07fc1f90ae7/1b2c3d4e-....jpg")
+            @Schema(description = "Temporary server-generated staging key accepted only by the presigned PUT",
+                    example = "media-upload-staging/1b2c3d4e-....")
             String objectKey,
             @Schema(description = "Presigned PUT URL (the TTL is urlLifetime)")
             String uploadUrl,

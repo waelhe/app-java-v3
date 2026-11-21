@@ -1,0 +1,68 @@
+package com.marketplace.identity;
+
+import com.marketplace.shared.api.AccountIdentityErased;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+/**
+ * Completes the account-erasure flow after the identity transaction commits.
+ *
+ * <p>The identity command publishes {@link AccountIdentityErased} in the same
+ * transaction that pseudonymizes the user and removes the login identity.
+ * Spring Modulith persists a publication for this listener atomically with
+ * that transaction. This consumer therefore cannot observe an uncommitted
+ * account state, and a process failure does not silently lose the purge.</p>
+ *
+ * <p>The listener deliberately suspends transaction resources after commit.
+ * {@link AuthoredContentPurgeService} fans out to module-owned adapters, each
+ * of which commits independently. It runs before {@link AuditHistoryPurgeService}
+ * because b-4 must recover the original subject closure from {@code users_aud}
+ * before scrubbing audit columns and deleting that mirror. Both stages are
+ * idempotent; a failed stage leaves completed statements committed and the
+ * failed event publication is recovered by the existing
+ * {@code EventPublicationResubmission} sweep. The administrator's
+ * {@code POST /users/{id}/purge-content} surface remains available as an
+ * explicit idempotent repair/retry operation.</p>
+ */
+@Component
+public class AccountIdentityContentPurger {
+
+    private static final Logger log = LoggerFactory.getLogger(AccountIdentityContentPurger.class);
+    private static final String REASON = "account identity erased";
+    private static final String ACTOR = "system";
+
+    private final AuthoredContentPurgeService authoredContentPurgeService;
+    private final AuditHistoryPurgeService auditHistoryPurgeService;
+
+    public AccountIdentityContentPurger(AuthoredContentPurgeService authoredContentPurgeService,
+                                        AuditHistoryPurgeService auditHistoryPurgeService) {
+        this.authoredContentPurgeService = authoredContentPurgeService;
+        this.auditHistoryPurgeService = auditHistoryPurgeService;
+    }
+
+    /**
+     * Completes b-3 authored-content purge and b-4 audit-identity purge only
+     * after pseudonymization is committed. The content stage runs first so the
+     * audit stage can recover the original subject closure from users_aud
+     * before deleting the mirror. Both services reject a live account and
+     * both stages are idempotent, so a resubmitted publication safely resumes.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void onAccountIdentityErased(AccountIdentityErased event) {
+        int contentRowsPurged = authoredContentPurgeService.purge(event.userId(), REASON, ACTOR);
+        // b-4 is deliberately second: its closure is recovered from users_aud
+        // before deleting that mirror, and its scrub must include every audit
+        // column left by the b-3 authored-content adapters.
+        var auditResult = auditHistoryPurgeService.purge(event.userId(), REASON, ACTOR);
+        log.info("Account erasure purge completed: userId={}, contentRowsPurged={}, "
+                        + "auditCellsScrubbed={}, userAuditRowsDeleted={}",
+                event.userId(), contentRowsPurged, auditResult.scrubbedRows(),
+                auditResult.usersAudRowsDeleted());
+    }
+}

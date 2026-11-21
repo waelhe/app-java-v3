@@ -118,7 +118,7 @@ class MediaServiceOwnershipTest {
         UUID owner = UUID.randomUUID();
         MediaAsset asset = MediaAsset.create(
                 UUID.randomUUID(), owner, "listings/x/y.jpg", "image/jpeg", 1L, 1);
-        when(mediaAssetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(mediaAssetRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(null)).thenReturn(UUID.randomUUID());
         when(currentUserProvider.isAdmin(null)).thenReturn(false);
         // no provider profile resolves the caller's claim on the owner's id
@@ -138,7 +138,7 @@ class MediaServiceOwnershipTest {
     void confirmUpload_postAsset_whenNotAuthor_thenAccessDenied() {
         MediaAsset asset = MediaAsset.createForPost(
                 UUID.randomUUID(), UUID.randomUUID(), "posts/x/y.jpg", "image/jpeg", 1L, 1);
-        when(mediaAssetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(mediaAssetRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(null)).thenReturn(UUID.randomUUID());
         when(currentUserProvider.isAdmin(null)).thenReturn(false);
 
@@ -160,7 +160,7 @@ class MediaServiceOwnershipTest {
         UUID postId = UUID.randomUUID();
         MediaAsset asset = MediaAsset.createForPost(
                 postId, author, "posts/x/y.jpg", "image/jpeg", 1L, 1);
-        when(mediaAssetRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(mediaAssetRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(currentUserProvider.getCurrentUserId(null)).thenReturn(author);
         when(currentUserProvider.isAdmin(null)).thenReturn(false);
         // The #484 review round: the confirm path re-resolves the post fresh

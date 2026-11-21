@@ -261,12 +261,15 @@ class AccountPseudonymizationIntegrationTest {
         assertThat(loginIsRejected(target, PASSWORD))
                 .as("the next login attempt must be rejected").isTrue();
 
-        // The Envers mirror wrote the revision with the V46 column (V33
-        // lesson guard): the audit history keeps flowing post-V46.
+        // The durable AFTER_COMMIT erasure consumer has run b-4 only after
+        // recovering the subject closure and scrubbing every audit column.
+        // Therefore no users_aud revision remains after the pseudonymization
+        // command returns; the stable domain records below are retained.
         Integer audRows = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM users_aud WHERE id = ? AND subject = ?",
-                Integer.class, targetId, derivedSubject);
-        assertThat(audRows).as("users_aud must carry the pseudonymized revision").isPositive();
+                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, targetId);
+        assertThat(audRows)
+                .as("automatic b-4 removes the audit mirror after using it to recover the subject closure")
+                .isZero();
 
         // Records stay: the booking still references the stable UUID and is
         // readable through the administrative surface (reference integrity —

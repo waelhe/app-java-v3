@@ -99,10 +99,10 @@ class MediaPostTargetFlywayIntegrationTest {
                 postId, "image/jpeg", 8486L, auth);
 
         assertThat(view.mediaId()).isNotNull();
-        assertThat(view.objectKey()).startsWith("posts/" + postId + "/");
+        assertThat(view.objectKey()).startsWith("media-upload-staging/");
 
         var row = jdbcTemplate.queryForMap(
-                "SELECT listing_id, post_id, owner_kind, provider_id, status, position "
+                "SELECT listing_id, post_id, owner_kind, provider_id, status, position, object_key, upload_object_key "
                         + "FROM media_assets WHERE id = ?", view.mediaId());
         assertThat(row.get("listing_id"))
                 .as("V77: the POST target carries no listing — the one-target CHECK's own demand")
@@ -112,5 +112,7 @@ class MediaPostTargetFlywayIntegrationTest {
         assertThat(row.get("provider_id")).isEqualTo(POST_AUTHOR);
         assertThat(row.get("status")).isEqualTo("PENDING_UPLOAD");
         assertThat(((Number) row.get("position")).intValue()).isEqualTo(1);
+        assertThat(row.get("object_key").toString()).startsWith("posts/" + postId + "/");
+        assertThat(row.get("upload_object_key")).isEqualTo(view.objectKey());
     }
 }

@@ -176,13 +176,48 @@ class AccountSelfDeletionIntegrationTest {
         assertThat(gate.accessToken()).isNotBlank();
         UUID targetId = syncProjectionIdViaMe(gate.accessToken());
 
+        // Seed a shared conversation before deletion. The target's own
+        // message must be purged by the AccountIdentityErased AFTER_COMMIT
+        // consumer, while the counterparty's message on the same conversation
+        // must survive under the existing Art. 20(4) shared-record rule.
+        String counterparty = "it-self-delete-counterparty";
+        registerUser(counterparty, "USER");
+        GateResult counterpartyGate = loginGate(counterparty, PASSWORD);
+        UUID counterpartyId = syncProjectionIdViaMe(counterpartyGate.accessToken());
+        UUID conversationId = UUID.randomUUID();
+        UUID targetMessageId = UUID.randomUUID();
+        UUID counterpartyMessageId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO conversations (id, participant_a, participant_b) VALUES (?, ?, ?)",
+                conversationId, targetId, counterpartyId);
+        jdbcTemplate.update(
+                "INSERT INTO messages (id, conversation_id, sender_id, content) VALUES (?, ?, ?, ?)",
+                targetMessageId, conversationId, targetId, "self-deletion authored message");
+        jdbcTemplate.update(
+                "INSERT INTO messages (id, conversation_id, sender_id, content) VALUES (?, ?, ?, ?)",
+                counterpartyMessageId, conversationId, counterpartyId, "counterparty message survives");
+
         // The action — real HTTP through the self-service surface, the login
         // gate's session cookie riding the request (the official logout
-        // prescription's measurable).
+        // prescription's measurable). Its committed AccountIdentityErased
+        // event runs the same module-owned content purge as the admin path.
         HttpResponse<String> deletion = deleteMyAccount(
                 gate.accessToken(), gate.sessionCookie(), PASSWORD);
         assertThat(deletion.statusCode())
                 .as("self-deletion call: %s", body(deletion)).isEqualTo(204);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT content FROM messages WHERE id = ?", String.class, targetMessageId))
+                .as("self-deletion automatically purges the subject's authored message")
+                .isEqualTo("[purged]");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT content FROM messages WHERE id = ?", String.class, counterpartyMessageId))
+                .as("the counterparty's text on the same shared conversation survives")
+                .isEqualTo("counterparty message survives");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversations WHERE id = ?", Integer.class, conversationId))
+                .as("shared conversation structure is preserved")
+                .isEqualTo(1);
 
         // The standing I7 erasure's every consequence (§5-أ): the row's
         // direct identifiers are gone, the status column is stamped, the

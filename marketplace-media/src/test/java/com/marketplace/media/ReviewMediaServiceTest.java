@@ -86,10 +86,18 @@ class ReviewMediaServiceTest {
         ReviewMediaService.ReviewMediaUploadView view =
                 service.requestUpload(reviewId, "IMAGE/JPEG", 1024L, authentication);
 
-        assertTrue(view.objectKey().startsWith("review-media/" + reviewId + "/"));
-        assertTrue(view.objectKey().endsWith(".jpg"));
+        assertTrue(view.objectKey().startsWith("media-upload-staging/"));
+        var saved = org.mockito.ArgumentCaptor.forClass(ReviewMedia.class);
+        verify(reviewMediaRepository).save(saved.capture());
+        assertTrue(saved.getValue().getObjectKey().startsWith("review-media/" + reviewId + "/"));
+        assertEquals(view.objectKey(), saved.getValue().getUploadObjectKey());
         assertEquals("https://upload.test", view.uploadUrl());
         assertEquals(Duration.ofMinutes(15), view.urlLifetime());
+        // The account lock must precede re-resolving caller identity so an
+        // upload queued behind account erasure cannot use a stale JWT check.
+        var authorizationOrder = org.mockito.Mockito.inOrder(reviewMediaRepository, currentUserProvider);
+        authorizationOrder.verify(reviewMediaRepository).lockAccountMediaMutation(authorId.toString());
+        authorizationOrder.verify(currentUserProvider).getCurrentUserId(authentication);
         // the position serializes per review (the #241 advisory-lock shape)
         verify(reviewMediaRepository).lockPositionAllocation(reviewId.toString());
     }
@@ -162,7 +170,7 @@ class ReviewMediaServiceTest {
         UUID uploaderId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
         ReviewMedia asset = asset(reviewId, uploaderId, MediaAssetStatus.PENDING_UPLOAD);
-        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(s3.verifyUploaded(anyString(), eq("image/jpeg"), anyLong())).thenReturn(true);
         when(s3.presignDownload(anyString())).thenReturn("https://download.test");
 
@@ -174,11 +182,61 @@ class ReviewMediaServiceTest {
     }
 
     @Test
+    void confirmUpload_promotesTheStagingKeyAndDeletesTheTemporaryObject() {
+        UUID reviewId = UUID.randomUUID();
+        UUID uploaderId = UUID.randomUUID();
+        String finalKey = "review-media/" + reviewId + "/photo.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
+        ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
+                "image/jpeg", 1024L, 1);
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+        when(s3.verifyUploaded(stagingKey, "image/jpeg", 1024L)).thenReturn(true);
+        when(s3.presignDownload(finalKey)).thenReturn("https://download.test");
+
+        service.confirmUpload(asset.getId(), authentication);
+
+        assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
+        assertEquals(stagingKey, asset.getUploadObjectKey());
+        verify(s3).copyVerifiedObject(stagingKey, finalKey, "image/jpeg", 1024L);
+        verify(s3).deleteObjects(List.of(stagingKey));
+    }
+
+    @Test
+    void confirmUpload_defersReviewStagingDeletionUntilAfterCommit() {
+        UUID reviewId = UUID.randomUUID();
+        UUID uploaderId = UUID.randomUUID();
+        String finalKey = "review-media/" + reviewId + "/commit.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
+        ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
+                "image/jpeg", 2048L, 1);
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
+        when(s3.verifyUploaded(stagingKey, "image/jpeg", 2048L)).thenReturn(true);
+        when(s3.presignDownload(finalKey)).thenReturn("https://download.test/committed");
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.confirmUpload(asset.getId(), authentication);
+
+            verify(s3, never()).deleteObjects(List.of(stagingKey));
+            var synchronizations = org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations();
+            assertEquals(1, synchronizations.size());
+            synchronizations.forEach(
+                    org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+            verify(s3).deleteObjects(List.of(stagingKey));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void confirmUpload_rejectsAnObjectStorageDoesNotHave() {
         UUID uploaderId = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
         ReviewMedia asset = asset(UUID.randomUUID(), uploaderId, MediaAssetStatus.PENDING_UPLOAD);
-        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         when(s3.verifyUploaded(anyString(), anyString(), anyLong())).thenReturn(false);
 
         assertThrows(BadRequestException.class,
@@ -189,7 +247,7 @@ class ReviewMediaServiceTest {
     @Test
     void confirmUpload_rejectsAnUnknownAsset() {
         UUID mediaId = UUID.randomUUID();
-        when(reviewMediaRepository.findById(mediaId)).thenReturn(Optional.empty());
+        when(reviewMediaRepository.findByIdForUpdate(mediaId)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
                 () -> service.confirmUpload(mediaId, authentication));
@@ -198,7 +256,7 @@ class ReviewMediaServiceTest {
     @Test
     void confirmUpload_deniesACallerWhoIsNotTheUploader() {
         ReviewMedia asset = asset(UUID.randomUUID(), UUID.randomUUID(), MediaAssetStatus.PENDING_UPLOAD);
-        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+        when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
 
         assertThrows(AccessDeniedException.class,
                 () -> service.confirmUpload(asset.getId(), authentication));
@@ -269,6 +327,24 @@ class ReviewMediaServiceTest {
 
         verify(reviewMediaRepository).delete(asset);
         verify(s3).deleteObject(asset.getObjectKey());
+    }
+
+    @Test
+    void delete_pendingReviewUploadAlsoRemovesItsStagingObject() {
+        UUID reviewId = UUID.randomUUID();
+        UUID uploaderId = UUID.randomUUID();
+        String finalKey = "review-media/" + reviewId + "/pending.jpg";
+        String stagingKey = "media-upload-staging/" + UUID.randomUUID();
+        when(currentUserProvider.getCurrentUserId(authentication)).thenReturn(uploaderId);
+        ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
+                "image/jpeg", 1024L, 1);
+        when(reviewMediaRepository.findById(asset.getId())).thenReturn(Optional.of(asset));
+
+        service.delete(asset.getId(), authentication);
+
+        verify(reviewMediaRepository).delete(asset);
+        verify(s3).deleteObject(finalKey);
+        verify(s3).deleteObject(stagingKey);
     }
 
     @Test
