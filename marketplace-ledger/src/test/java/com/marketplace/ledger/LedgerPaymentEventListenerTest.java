@@ -23,6 +23,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -673,17 +674,22 @@ class LedgerPaymentEventListenerTest {
                 .thenReturn(new OrderSettlementFacts(sellerId, 0L, false));
         when(paymentIntentLookupPort.findById(paymentIntentId)).thenReturn(Optional.of(intent));
 
-        // the redelivery: the credit row pre-exists — no marker, no legs
+        // the redelivery of a SETTLED intent: the credit row pre-exists AND
+        // its commission row is already posted — no new legs (the round-4
+        // settled-redelivery shape), and no marker (the original run's
+        // decision alone owns it)
+        when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.of(1740L));
         firstDelivery(false);
         listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
         verify(ledgerService, never()).markSettlementZeroCommission(any(), any(), any());
+        verify(ledgerService, never()).debitFromCommission(any(), any(), anyLong(), any());
 
         // a fresh settlement at a NON-zero commission writes legs, not the marker
         when(ledgerService.postedCommissionCents(paymentIntentId)).thenReturn(Optional.empty());
         firstDelivery(true);
         listener.onPaymentCompleted(new PaymentStateChangedEvent(paymentIntentId, "COMPLETED"));
         verify(ledgerService, never()).markSettlementZeroCommission(any(), any(), any());
-        verify(ledgerService).debitFromCommission(sellerId, paymentIntentId, 1740L, "SAR");
+        verify(ledgerService, times(1)).debitFromCommission(sellerId, paymentIntentId, 1740L, "SAR");
     }
 
     // ---- Stage 8 (ADR-0004): the loan-origin branches ----
