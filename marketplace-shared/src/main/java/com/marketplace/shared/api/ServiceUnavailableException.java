@@ -12,4 +12,9 @@ public class ServiceUnavailableException extends ApiProblemDetailException {
     public ServiceUnavailableException(String detail) {
         super(ApiErrorTaxonomy.SERVICE_UNAVAILABLE, detail);
     }
+
+    /** The cause-carrying shape — the wire body stays the domain sentence. */
+    public ServiceUnavailableException(String detail, Throwable cause) {
+        super(ApiErrorTaxonomy.SERVICE_UNAVAILABLE, detail, cause);
+    }
 }

@@ -435,6 +435,44 @@ public class SecurityConfig {
                         // caller's); a click on an unpromoted listing is
                         // the controller's honest 404 no-op.
                         .requestMatchers(HttpMethod.POST, "/api/v1/ads/listings/*/clicks").permitAll()
+                        // A0 (the Saleor 458-root campaign — Agent 1's
+                        // handoff-a0-prelogin-graphql-security.md, landed by
+                        // the integrator's own decision): the GraphQL
+                        // transport's anonymous POST surface — EXACTLY as
+                        // wide as the Saleor authentication contract and not
+                        // one operation wider. POST only: the GET surface
+                        // keeps the standing 401 problem+json contract. The
+                        // gate is the wall, not the matcher:
+                        // PreLoginGraphQlGate (a WebGraphQlInterceptor,
+                        // spring-graphql's officially supported interception
+                        // point — delivered in the app module with the
+                        // agent's packet) parses the ACTUAL GraphQL document
+                        // and denies-by-default: an anonymous caller reaches
+                        // execution ONLY when every top-level selection is a
+                        // plain Field whose name is in the enumerated
+                        // pre-login family (tokenCreate, tokenRefresh,
+                        // tokenVerify, requestPasswordReset, confirmAccount,
+                        // setPassword, accountRegister)
+                        // — every one carries its own proof in the payload
+                        // or CREATES the account. The family's single
+                        // authority is the gate's own
+                        // PreLoginGraphQlGate.PRE_LOGIN_OPERATIONS set —
+                        // this enumeration mirrors it verbatim, and the
+                        // platform governance suite pins the two together
+                        // so they can never drift again (ORD-04, the
+                        // 2026-11-03 adversarial scan: this comment used
+                        // to list accountDelete, which the gate excludes —
+                        // the pinned Saleor contract binds the deletion
+                        // redemption to the authenticated caller).
+                        // Fragment
+                        // shapes and unparsable documents are refused
+                        // outright; the operationName parameter is ignored
+                        // (client-controlled metadata, not the operation).
+                        // The handoff's sequencing constraint is honored:
+                        // the gate reached this branch in the same tree as
+                        // this line — the anonymous surface opens WITH its
+                        // wall, never a line before it.
+                        .requestMatchers(HttpMethod.POST, "/graphql").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
@@ -585,7 +623,14 @@ public class SecurityConfig {
         // X-API-Version must be allowed so versioned clients can send the
         // X-API-Version request header consumed by ApiVersioningConfig
         // (ApiVersionConfigurer#useRequestHeader) across the same origin (A2).
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key", "X-API-Version"));
+        // B17 (TST-05 — the 2026-11-03 adversarial review): Idempotency-Key
+        // is NOT advertised — the header has no consumer on this platform
+        // (the payments owner's replay safety rides its own
+        // payment-intents.idempotency_key store), and advertising an
+        // unhonored header is exactly the config-that-lies shape. The
+        // header returns to this list together with its consumer — the
+        // divergence ledger's Idempotency-Key row records the deferral.
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-ID", "X-API-Version"));
         config.setExposedHeaders(List.of("X-Correlation-ID"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
@@ -840,8 +885,23 @@ public class SecurityConfig {
 
     @Bean
     OAuth2AuthorizationService authorizationService(JdbcTemplate jdbcTemplate,
-                                                    RegisteredClientRepository registeredClientRepository) {
-        return new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository);
+                                                    RegisteredClientRepository registeredClientRepository,
+                                                    JdbcUserDetailsManager userDetailsService) {
+        // The 2026-11-08 #810 round-5 review (Major · Security & Privacy):
+        // the account-state wall at the storage SPI — Spring Authorization
+        // Server's own code-flow surfaces (authorize + the code exchange)
+        // persist through this bean directly, invisible to the password
+        // grant's post-save re-verification and the refresh door's
+        // loginAccountEnabled check. The decorator refuses to persist any
+        // user-principal authorization whose login row is disabled or
+        // absent (client_credentials rows pass through — the principal is
+        // the client, not a subject), reading the SAME manager the
+        // authentication chain reads. See
+        // {@link DisabledAccountRefusingAuthorizationService} for the
+        // two-layer design and the documented residual window.
+        return new DisabledAccountRefusingAuthorizationService(
+                new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository),
+                userDetailsService);
     }
 
     @Bean

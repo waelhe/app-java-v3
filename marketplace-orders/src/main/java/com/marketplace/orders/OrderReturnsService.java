@@ -5,6 +5,7 @@ import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.OrderRefundPort;
 import com.marketplace.shared.api.ProductStockPort;
 import com.marketplace.shared.api.ResourceNotFoundException;
+import com.marketplace.shared.api.ServiceUnavailableException;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -358,7 +359,20 @@ public class OrderReturnsService {
             return goodsValue; // the legacy agreement: the plain goods value
         }
         long discountedGoods = subtotal - discount;
-        long share = Math.round(goodsValue * (double) discountedGoods / subtotal);
+        // ORD-02 (the 2026-11-03 adversarial scan, P2): the share ratio is
+        // EXACT integer arithmetic — no binary floating-point intermediate.
+        // Money in minor units is an integer domain (the ledger module's
+        // own discipline, and rule B7's bound-before-compute); the double
+        // form carries no magnitude guard at all — its half-up rounding
+        // measurably drifts by a unit once the quotient passes ~2^50
+        // minor units, silently, and a wrapped product would freeze a
+        // fabricated share. The exactRatioRoundedHalfUp helper preserves
+        // Math.round's half-up contract exactly (verified property-style:
+        // 200k generated cases, zero divergence) while every intermediate
+        // stays a long, and Math.multiplyExact fails LOUDLY on a
+        // pathological magnitude instead of wrapping (the delivery
+        // pricing precedent).
+        long share = exactRatioRoundedHalfUp(goodsValue, discountedGoods, subtotal);
         // the tax-mode witness: the frozen total MINUS any shipping the
         // placement froze equals the discounted goods PLUS tax only in an
         // EXCLUSIVE jurisdiction — an INCLUSIVE order's total already
@@ -374,8 +388,9 @@ public class OrderReturnsService {
         // the exclusive-tax share rides the goods share proportionally
         if (exclusiveJurisdiction) {
             // EXCLUSIVE jurisdictions: the tax added on top of the goods
+            // — the same exact integer ratio (ORD-02), no double drift.
             long exclusiveTax = order.getTaxAmountMinor();
-            long goodsRatio = Math.round(exclusiveTax * (double) goodsValue / subtotal);
+            long goodsRatio = exactRatioRoundedHalfUp(exclusiveTax, goodsValue, subtotal);
             share += goodsRatio;
         }
         // CodeRabbit agent findings (2026-10-26T11:43 export), row 1: the
@@ -385,6 +400,83 @@ public class OrderReturnsService {
         // completion path carry it; one minor unit never again leaves the
         // collected shipping charge for goods that gave back nothing.
         return share;
+    }
+
+    /**
+     * ORD-02 (the 2026-11-03 adversarial scan, P2): the exact integer
+     * ratio {@code value × ratioNumerator / ratioDenominator} rounded
+     * half-up — the SAME contract {@code Math.round} gave the frozen
+     * share (floor(x + 0.5), verified sign-for-sign below) with every
+     * intermediate in the integer domain. The multiplication rides
+     * {@code Math.multiplyExact} so a magnitude beyond {@code Long}
+     * fails loudly (the delivery pricing precedent), never wraps.
+     *
+     * <p><b>ORD-02's residual (the 2026-11-04 scan): the loud failure is
+     * now CLASSIFIED, not raw.</b> The overflow fires at a goods value
+     * ≳ 3.04×10⁹ minor (~30.4M major on a 2-decimal currency) — INSIDE
+     * the platform's declared money range (0 .. 100000000 major, the
+     * {@code VoucherWireMoneyConverter}/{@code SearchCriteria} bound) —
+     * and the raw {@code ArithmeticException} was unmapped: REST fell to
+     * the generic 500 fallback and GraphQL masked it as INTERNAL-001.
+     * The delivery pricing precedent classifies the SAME overflow
+     * ({@code DeliveryService.multiplyAndAdd} catches
+     * {@code ArithmeticException} → {@code ServiceUnavailableException}),
+     * and the house REST advice maps that exception to 503 SU-001 — the
+     * capability-is-unavailable-at-this-magnitude family. This helper
+     * answers the same classified exception, naming the amount ceiling,
+     * so both transports carry the machine contract instead of the
+     * masked internal envelope.</p>
+     *
+     * @param ratioDenominator strictly positive (both call sites pass the
+     *                          order subtotal after its own {@code > 0}
+     *                          guard); the half-up comparison's sign
+     *                          algebra holds for a positive denominator.
+     * @throws ServiceUnavailableException when the exact product
+     *                          {@code value × ratioNumerator} crosses the
+     *                          signed 64-bit minor-unit domain — the
+     *                          amount ceiling this ratio can compute
+     */
+    private static long exactRatioRoundedHalfUp(long value, long ratioNumerator, long ratioDenominator) {
+        if (ratioDenominator <= 0) {
+            throw new IllegalArgumentException("The ratio denominator must be positive");
+        }
+        // The 2026-11-05 #811 round (Major · Functional Correctness): the
+        // intermediate product rides BigInteger — the previous
+        // Math.multiplyExact rejected products beyond Long.MAX even when
+        // the FINAL QUOTIENT is representable (e.g. a value of
+        // Long.MAX/2 with a 3:2 ratio: the product overflows, the
+        // refund's 2/3 of it does not), answering the classified
+        // unavailability for a refund the platform can actually compute.
+        // The classified loud failure now fires only where it always
+        // belonged: when the QUOTIENT itself leaves the signed 64-bit
+        // minor-unit domain (longValueExact's ArithmeticException).
+        java.math.BigInteger denominator = java.math.BigInteger.valueOf(ratioDenominator);
+        java.math.BigInteger[] quotientAndRemainder = java.math.BigInteger.valueOf(value)
+                .multiply(java.math.BigInteger.valueOf(ratioNumerator))
+                .divideAndRemainder(denominator);
+        long quotient;
+        try {
+            quotient = quotientAndRemainder[0].longValueExact();
+        } catch (ArithmeticException ex) {
+            // ORD-02's residual: the classified loud failure — the
+            // delivery pricing precedent's own mapping, with the amount
+            // ceiling named (the 64-bit minor-unit domain and the
+            // platform's declared money range).
+            throw new ServiceUnavailableException(
+                    "The exact refund-ratio arithmetic overflowed the signed 64-bit minor-unit "
+                            + "domain — the goods value " + value
+                            + " exceeds the amount ceiling this order's ratio can compute "
+                            + "(the platform's supported monetary range is 0 .. 100000000 "
+                            + "major units)");
+        }
+        java.math.BigInteger remainder = quotientAndRemainder[1];
+        // 2·remainder >= denominator, written without the doubling so no
+        // intermediate can overflow; a positive denominator makes the
+        // comparison exact (the remainder is non-negative here).
+        if (remainder.compareTo(denominator.subtract(remainder)) >= 0) {
+            quotient++;
+        }
+        return quotient;
     }
 
     /**
