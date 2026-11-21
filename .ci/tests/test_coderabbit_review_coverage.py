@@ -70,18 +70,20 @@ class ParserTests(unittest.TestCase):
 
     def test_rejects_skipped_file_count_that_does_not_match_the_declared_count(self):
         body = (
-            "<summary>Files selected for processing: 1</summary>\n* " + BT + "file-a.py" + BT + "\n"
-            "<summary>Files skipped from review as they are similar to previous changes: 2</summary>\n"
-            "* file-a.py"
+            "<details><summary>Files selected for processing: 1</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: 2</summary>\n"
+            "<dl><dd>\n* file-a.py\n</dd></dl></details>"
         )
         with self.assertRaisesRegex(gate.GateError, "declared 2 skipped files but listed 1"):
             gate.processed_files(body)
 
     def test_rejects_skipped_paths_not_in_the_selected_file_list(self):
         body = (
-            "<summary>Files selected for processing: 1</summary>\n* " + BT + "file-a.py" + BT + "\n"
-            "<summary>Files skipped from review as they are similar to previous changes: 1</summary>\n"
-            "* file-b.json"
+            "<details><summary>Files selected for processing: 1</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: 1</summary>\n"
+            "<dl><dd>\n* file-b.json\n</dd></dl></details>"
         )
         with self.assertRaisesRegex(gate.GateError, "absent from the selected-file list"):
             gate.processed_files(body)
