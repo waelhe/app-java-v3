@@ -296,7 +296,7 @@ class NotificationPreferencesIntegrationTest {
                         new NotificationTopicPreferenceUpdate(
                                 NotificationTopic.MESSAGING, NotificationChannel.EMAIL, false))));
 
-        notificationService.onMessageReceived(UUID.randomUUID(), recipientId);
+        notificationService.onMessageReceived(UUID.randomUUID(), UUID.randomUUID(), recipientId);
 
         // The always-on in-app row landed.
         assertThat(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(
