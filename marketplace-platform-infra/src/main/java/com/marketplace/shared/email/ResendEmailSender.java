@@ -85,7 +85,7 @@ public class ResendEmailSender implements EmailSender {
             SendEmailRequest request = new SendEmailRequest(from, List.of(to), subject, html);
             String idempotencyKey = deliveryKey != null && !deliveryKey.isBlank()
                     ? deliveryKey
-                    : idempotencyKey(from, to, subject, template, variables);
+                    : idempotencyKey(from, to, subject, template, variables, html);
 
             SendEmailResponse response = restClient.post()
                     .uri("/emails")
@@ -108,17 +108,16 @@ public class ResendEmailSender implements EmailSender {
     }
 
     /**
-     * The fallback fingerprint WITHOUT the rendered HTML: the stable
-     * request shape (from, to, subject, template, the template's OWN
-     * variables map). The rendered HTML is deliberately excluded — it
-     * embeds time-varying fragments (the reset mail's remaining-minutes),
-     * and a registry resubmission of the SAME event must re-derive the
-     * SAME key to replay, not a fresh one to double-send.
+     * The fallback fingerprint covers the complete Resend request body:
+     * sender, recipient, subject, template variables, and rendered HTML.
+     * This guarantees that a changed payload cannot reuse a provider key
+     * (Resend returns 409 for that mismatch). Callers that need retry
+     * deduplication must supply a stable occurrence key AND stable payload.
      */
     private static String idempotencyKey(String from, String to, String subject,
-            String template, Map<String, Object> variables) {
+            String template, Map<String, Object> variables, String html) {
         String fingerprint = String.join("\n", from, to, subject, template,
-                String.valueOf(variables));
+                String.valueOf(variables), html);
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(fingerprint.getBytes(StandardCharsets.UTF_8));
