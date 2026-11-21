@@ -43,10 +43,11 @@ public record MailProviderProperties(String provider) {
      * — the two records answer the same misconfiguration.
      */
     public MailProviderProperties {
-        if (provider == null || provider.isBlank()) {
-            // absent = the SMTP default (matchIfMissing on the SMTP
-            // auto-configuration) — normalized here so the value check
-            // below reads one shape
+        if (provider == null) {
+            // Only an ABSENT property is the SMTP default
+            // (matchIfMissing on the SMTP auto-configuration). A present but
+            // blank value is a configuration error: ConditionalOnProperty
+            // does not treat it as "missing" and would select no channel.
             provider = "smtp";
         }
         if (!"smtp".equals(provider) && !"resend".equals(provider)) {
