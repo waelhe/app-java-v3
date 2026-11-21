@@ -123,7 +123,7 @@
       "classification": "environmental",
       "severity": "high",
       "status": "registered",
-      "note": "Railway's documented SMTP block on the plan tier is the provider-side cause (Railway docs; measured SocketTimeoutException in production logs). Fixed in this PR by the Resend HTTPS transport. Status registered: the merge itself is owner-gated — RESEND_API_KEY must exist in the Railway secret store before merge/deploy (the PR's own merge precondition), so the remaining risk is an owner decision, not repository code.",
+      "note": "Railway's documented SMTP block on the plan tier is the provider-side cause (Railway docs; measured SocketTimeoutException in production logs). Fixed in this PR by the Resend HTTPS transport. Live Railway variable-name read-back on 2026-11-21 confirmed MAIL_FROM exists and RESEND_API_KEY is absent; the MAIL_FROM value and sender-domain verification were not inspected. Merge/deploy remains owner-gated until the owner adds RESEND_API_KEY and verifies the sender identity.",
       "decision": {
         "owner": "waelhe",
         "url": "https://github.com/waelhe/app-java-v3/pull/840"
