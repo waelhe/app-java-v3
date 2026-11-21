@@ -148,6 +148,46 @@ class ResendEmailSenderTest {
         server.verify();
     }
 
+    @Test
+    void sameDeliveryKeyWithDifferentRenderedPayloadIsRejectedByResend() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://api.resend.com")
+                .defaultHeader("Authorization", "Bearer test-resend-key");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        TemplateEngine templateEngine = org.mockito.Mockito.mock(TemplateEngine.class);
+        when(templateEngine.process(org.mockito.ArgumentMatchers.eq("email/password-reset"),
+                org.mockito.ArgumentMatchers.any(Context.class)))
+                .thenReturn("<p>29 minutes</p>", "<p>28 minutes</p>");
+
+        String occurrenceKey = "marketplace-email-PASSWORD_RESET-member-opaque-digest";
+        server.expect(requestTo("https://api.resend.com/emails"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> assertThat(request.getHeaders().getFirst("Idempotency-Key"))
+                        .isEqualTo(occurrenceKey))
+                .andExpect(jsonPath("$.html").value("<p>29 minutes</p>"))
+                .andRespond(withSuccess("{\\"id\\":\\"email_first\\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.resend.com/emails"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> assertThat(request.getHeaders().getFirst("Idempotency-Key"))
+                        .isEqualTo(occurrenceKey))
+                .andExpect(jsonPath("$.html").value("<p>28 minutes</p>"))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withStatus(org.springframework.http.HttpStatus.CONFLICT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\\"name\\":\\"invalid_idempotent_request\\"}"));
+
+        ResendEmailSender sender = new ResendEmailSender(builder.build(), templateEngine,
+                new MailChannelProperties(null, FROM));
+        sender.send("member@example.com", "Reset Your Password", "email/password-reset",
+                Map.of("expiresAtUtc", "2026-11-21T12:30:00Z"), occurrenceKey);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sender.send(
+                "member@example.com", "Reset Your Password", "email/password-reset",
+                Map.of("expiresAtUtc", "2026-11-21T12:31:00Z"), occurrenceKey))
+                .isInstanceOf(EmailSendException.class);
+
+        server.verify();
+    }
+
     /**
      * The fallback fingerprint covers the provider request body. Different
      * rendered HTML must therefore produce a different key, avoiding
