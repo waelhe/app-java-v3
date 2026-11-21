@@ -59,13 +59,10 @@ spring:
       port: ${REDIS_PORT:6379}
 
   mail:
-    # The sandbox mailbox: its own credentials via the same channel shape as
-    # production (auth + TLS) — staging mail is submitted for real into a
-    # dedicated mailbox, never silently dropped, so the mail journey's
-    # production path is what gets measured.
-    # CodeRabbit round 1: this STAGING path is SMTP (the spring.mail block
-    # below) — it does not exercise the Resend HTTPS transport, which only
-    # the production profile (MARKETPLACE_MAIL_PROVIDER=resend) activates.
+    # Staging deliberately uses SMTP with a dedicated sandbox mailbox.
+    # This verifies SMTP delivery and notification processing only; it does
+    # NOT exercise the Resend HTTPS transport selected by the production
+    # profile (MARKETPLACE_MAIL_PROVIDER=resend).
     host: ${MAIL_HOST}
     port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME}
@@ -176,10 +173,9 @@ management:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
-  # Incident #682's root fix, staging parity: the sandbox submits real mail
-  # through the real production path (the staging mail contract documented
-  # above), so its sender identity is exactly as mandatory as production's —
-  # no default, MAIL_FROM unset fails at binding time (INV-2/D6).
+  # Staging has an active SMTP channel, so its sender identity remains
+  # mandatory (MAIL_FROM unset fails at binding time, INV-2/D6). This does
+  # not mean staging exercises the production Resend HTTPS transport.
   mail:
     from: ${MAIL_FROM}
   security:
