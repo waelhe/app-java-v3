@@ -994,8 +994,10 @@ class NotificationServiceTest {
         assertThat(deliveryKeys.getAllValues()).containsExactly(
                 "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + firstMessageId,
                 "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + firstMessageId,
-                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + secondMessageId)
-                .doesNotHaveDuplicates();
+                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + secondMessageId);
+        assertThat(deliveryKeys.getAllValues().get(0))
+                .isEqualTo(deliveryKeys.getAllValues().get(1))
+                .isNotEqualTo(deliveryKeys.getAllValues().get(2));
     }
 
     /**
