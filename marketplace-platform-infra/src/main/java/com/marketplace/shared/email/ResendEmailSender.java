@@ -61,15 +61,13 @@ public class ResendEmailSender implements EmailSender {
      * conversation: same subject, same template, same composed text) kept
      * collapsing into one provider idempotency record — the second email
      * silently never went out while its event completed as delivered. With
-     * no caller key the content fingerprint remains the fallback (the
-     * legacy callers' own contract), EXCLUDING the time-varying payload
-     * fragments so a registry resubmission of the SAME event replays the
-     * same key instead of double-sending a fresh one (the password-reset's
-     * remaining-minutes rendered 29 then 28 across a resubmission — the
-     * round-1 Minor finding). The resilience annotations live HERE (the
-     * once-annotated legacy overload simply delegates into this method, so
-     * the retry/circuit/observation wrap the actual network call exactly
-     * once per send).
+     * no caller key the fallback fingerprints the exact provider body
+     * (sender, recipient, subject, rendered HTML), so a different body never
+     * reuses a key. A retryable event must carry a stable occurrence key and
+     * render a stable body, as the password-reset flow now does. The
+     * resilience annotations live HERE (the once-annotated legacy overload
+     * delegates into this method, so retry/circuit/observation wrap the
+     * actual network call exactly once per send).
      */
     @Override
     @Retry(name = "mailSend")
