@@ -14,6 +14,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
@@ -796,23 +798,17 @@ class MediaServiceTest {
         return asset;
     }
 
-    @Test
-    void processThumbnail_whenAssetIsHiddenDoesNotRequireStorage() {
+    @ParameterizedTest
+    @EnumSource(value = MediaAssetStatus.class, names = {"PENDING_UPLOAD", "PURGE_PENDING", "PURGED"})
+    void processThumbnail_whenAssetIsNotUploadedOrAlreadyPurging_doesNotReadCreateDerivativeOrSave(
+            MediaAssetStatus status) {
         MediaAsset asset = pendingAsset();
+        org.springframework.test.util.ReflectionTestUtils.setField(asset, "status", status);
         when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
 
         service.processThumbnail(asset.getId());
 
         verifyNoInteractions(storageProvider);
-    }
-
-    @Test
-    void processThumbnail_whenAssetIsNotUploaded_doesNotReadOrCreateDerivative() {
-        MediaAsset asset = pendingAsset();
-        when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
-
-        service.processThumbnail(asset.getId());
-
         verify(storage, never()).getObject(anyString());
         verify(storage, never()).putObject(anyString(), anyString(), any(byte[].class));
         verify(repository, never()).save(any(MediaAsset.class));
