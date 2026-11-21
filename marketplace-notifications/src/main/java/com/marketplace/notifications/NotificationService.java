@@ -455,7 +455,7 @@ public class NotificationService {
      * A-04 (official-compliance plan §6 wave A — A.1): the password-reset
      * mail leg — the DORMANT {@code email/password-reset} template's
      * activation, with exactly the model variables it was authored with
-     * ({@code name}, {@code resetLink}, {@code expirationMinutes}).
+     * ({@code name}, {@code resetLink}, {@code expiresAtUtc}).
      *
      * <p><b>Why this leg carries NO in-app row, NO WebSocket push, and NO
      * preference gate — a measured exception to every channel rule above,
