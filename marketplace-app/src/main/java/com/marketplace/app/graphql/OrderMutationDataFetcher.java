@@ -1,0 +1,173 @@
+package com.marketplace.app.graphql;
+
+import com.marketplace.app.graphql.generated.types.Order;
+import com.marketplace.orders.spi.OrderCommandSpi;
+import com.marketplace.orders.spi.OrderView;
+import com.marketplace.shared.api.ConflictException;
+import com.marketplace.shared.api.ResourceNotFoundException;
+import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsMutation;
+import com.netflix.graphql.dgs.InputArgument;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Saleor P4 order management commands backed by the existing orders owner.
+ * This adapter owns wire IDs and mutation payloads only. The domain service
+ * owns ADMIN authorization and the transactional state transition; payment
+ * settlement remains with the existing payments event listener.
+ *
+ * <p>The Saleor orderConfirm mutation is intentionally not exposed until the
+ * payments owner provides a capture-capable, idempotent contract. A state-only
+ * confirmation must not be reported as Saleor-compatible success.</p>
+ */
+@DgsComponent
+public class OrderMutationDataFetcher {
+
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(OrderMutationDataFetcher.class);
+
+    /**
+     * The wire sentences (the wave-7 review, Minor · Security & Privacy):
+     * fixed, operator-authored, keyed to the payload codes — the owner
+     * exceptions'/failures' own texts stay internal (logged), never reach
+     * the client.
+     */
+    private static final String ORDER_NOT_FOUND = "Order not found";
+    private static final String ORDER_CANNOT_CANCEL =
+            "Order cannot be canceled in its current state";
+
+    private final OrderCommandSpi orderCommandSpi;
+    private final OrderGraphQlMapper mapper;
+    private final SaleorGlobalIdCodec globalIdCodec;
+    private final GraphQlProperties properties;
+
+    public OrderMutationDataFetcher(OrderCommandSpi orderCommandSpi,
+                                    OrderGraphQlMapper mapper,
+                                    SaleorGlobalIdCodec globalIdCodec,
+                                    GraphQlProperties properties) {
+        this.orderCommandSpi = orderCommandSpi;
+        this.mapper = mapper;
+        this.globalIdCodec = globalIdCodec;
+        this.properties = properties;
+    }
+
+    /**
+     * Bulk cancellation follows Saleor's count-plus-errors payload. All IDs
+     * are decoded before the owner is called, so malformed input cannot cause
+     * a partial set of money-moving state transitions.
+     */
+    @DgsMutation(field = "orderBulkCancel")
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // order mutations carry the SAME two-layer budget every other
+    // mutation family carries — the per-caller address budget FIRST
+    // (PerCallerBudget precedes the shared aspect, so a rejected caller
+    // never burns the platform budget), then the named per-JVM outer
+    // ceiling. The bulk-list bound caps ONE request's size; these cap
+    // the CALL RATE (the review's finding: neither limiter reached this
+    // family before).
+    @PerCallerBudget(surface = "graphqlOrderMutation")
+    @RateLimiter(name = "graphqlOrderMutation")
+    public Map<String, Object> orderBulkCancel(@InputArgument List<String> ids,
+                                               graphql.schema.DataFetchingEnvironment environment) {
+        // Permission is decided before any caller-supplied ID is decoded, and
+        // before an empty request can return a success-shaped payload.
+        orderCommandSpi.requireAdmin();
+        // The shard review (2026-11-01): the shared bulk-list bound — the
+        // G4 unbounded-list defense every bulk root applies (a rate limiter
+        // counts the request, never the items).
+        properties.requireBoundedList(ids, "orderBulkCancel");
+        List<String> submittedIds = ids == null ? List.of() : ids;
+        final List<UUID> orderIds = new ArrayList<>(submittedIds.size());
+        for (String id : submittedIds) {
+            try {
+                orderIds.add(globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE));
+            } catch (IllegalArgumentException exception) {
+                return bulkPayload(0, List.of(orderError(
+                        "id", "Invalid global ID", "INVALID")));
+            }
+        }
+
+        com.marketplace.orders.spi.OrderBulkCancelResult outcome =
+                orderCommandSpi.bulkCancelAsAdmin(orderIds);
+        List<Map<String, Object>> errors = outcome.failures().stream()
+                .map(failure -> orderError(
+                        "id",
+                        // The wave-7 review (Minor · Security & Privacy): the
+                        // row's message is the owner's own text — the wire
+                        // sentence keys off failure.kind() alone.
+                        switch (failure.kind()) {
+                            case NOT_FOUND -> ORDER_NOT_FOUND;
+                            case CONFLICT -> ORDER_CANNOT_CANCEL;
+                        },
+                        switch (failure.kind()) {
+                            case NOT_FOUND -> "NOT_FOUND";
+                            case CONFLICT -> "CANNOT_CANCEL_ORDER";
+                        }))
+                .toList();
+        return bulkPayload(outcome.count(), errors);
+    }
+
+    /**
+     * Cancel an order by typed global ID. Malformed IDs fail closed. Expected
+     * domain failures are returned as the Saleor orderErrors payload instead
+     * of being reported as successful mutations.
+     */
+    @DgsMutation(field = "orderCancel")
+    // The 2026-11-06 #806 round (Minor · Stability & Availability): the
+    // same two-layer budget orderBulkCancel carries — per-caller address
+    // budget first, then the named outer ceiling (see orderBulkCancel).
+    @PerCallerBudget(surface = "graphqlOrderMutation")
+    @RateLimiter(name = "graphqlOrderMutation")
+    public Map<String, Object> orderCancel(@InputArgument String id,
+                                           graphql.schema.DataFetchingEnvironment environment) {
+        orderCommandSpi.requireAdmin();
+        final UUID orderId;
+        try {
+            orderId = globalIdCodec.decode(id, OrderGraphQlMapper.ORDER_TYPE);
+        } catch (IllegalArgumentException exception) {
+            return payload(null, List.of(orderError("id", "Invalid global ID", "INVALID")));
+        }
+
+        try {
+            OrderView cancelled = orderCommandSpi.cancelAsAdmin(orderId);
+            return payload(mapper.toGraphQlOrder(cancelled), List.of());
+        } catch (ResourceNotFoundException exception) {
+            log.info("orderCancel rejected NOT_FOUND — {}", exception.getMessage(), exception);
+            return payload(null, List.of(orderError("id", ORDER_NOT_FOUND, "NOT_FOUND")));
+        } catch (ConflictException exception) {
+            log.info("orderCancel rejected CANNOT_CANCEL_ORDER — {}", exception.getMessage(), exception);
+            return payload(null, List.of(orderError(
+                    "id", ORDER_CANNOT_CANCEL, "CANNOT_CANCEL_ORDER")));
+        }
+    }
+
+    private static Map<String, Object> orderError(String field, String message, String code) {
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("field", field);
+        error.put("message", message);
+        error.put("code", code);
+        return error;
+    }
+
+    private static Map<String, Object> payload(Order order, List<Map<String, Object>> errors) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("order", order);
+        result.put("orderErrors", new ArrayList<>(errors));
+        result.put("errors", new ArrayList<>(errors));
+        return result;
+    }
+
+    private static Map<String, Object> bulkPayload(int count, List<Map<String, Object>> errors) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("count", count);
+        result.put("orderErrors", new ArrayList<>(errors));
+        result.put("errors", new ArrayList<>(errors));
+        return result;
+    }
+}

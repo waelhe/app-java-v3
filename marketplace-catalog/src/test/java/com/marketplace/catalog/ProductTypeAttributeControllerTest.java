@@ -33,4 +33,21 @@ class ProductTypeAttributeControllerTest {
         assertThat(controller.remove(assignment.getId()).getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         verify(service).remove(assignment.getId());
     }
+
+    @Test void setRequiredRouteMapsThePromotionContract() {
+        // The 2026-11-07 #808 round-10 review: the required-flag promotion
+        // route — the migration path's executable half.
+        UUID productTypeId = UUID.randomUUID();
+        UUID attributeId = UUID.randomUUID();
+        ProductTypeAttributeAssignment promoted = ProductTypeAttributeAssignment.create(productTypeId, attributeId,
+                ProductTypeAttributeScope.PRODUCT, true, 0);
+        when(service.setRequired(promoted.getId(), true)).thenReturn(promoted);
+
+        var response = controller.setRequired(promoted.getId(),
+                new ProductTypeAttributeController.SetRequiredRequest(true));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().required()).isTrue();
+        verify(service).setRequired(promoted.getId(), true);
+    }
 }

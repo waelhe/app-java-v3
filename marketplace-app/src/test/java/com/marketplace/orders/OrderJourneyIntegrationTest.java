@@ -7,9 +7,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.graphql.test.tester.HttpGraphQlTester;
+import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.provisioning.UserDetailsManager;
+import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -717,5 +720,146 @@ class OrderJourneyIntegrationTest {
         // window cut them off in the measured CI failures of 2026-10-09,
         // leaving a "Validation failed" with no subject.
         return response.body() == null ? "" : response.body().substring(0, Math.min(2000, response.body().length()));
+    }
+
+    // ------------------------------------------------------------------
+    // B16 (TST-06) — the orderCancel roots over the real state machine
+    // ------------------------------------------------------------------
+
+    /**
+     * B16 (TST-06 — the 2026-11-03 adversarial review, review-pr-811):
+     * the orderCancel/orderBulkCancel roots' integration proof over the
+     * REAL stack — the typed global-ID decode, the owner's state machine,
+     * the Saleor wire shapes (the CANNOT_CANCEL_ORDER payload error; the
+     * platform's CANCELLED rendering as the wire's CANCELED), the bulk
+     * count-plus-errors law, and the ADMIN gate's denial for a
+     * non-admin caller — the legs the mutation roots never had below the
+     * DGS unit seam.
+     */
+    @Test
+    void theOrderCancelRootsRideTheRealStateMachineThroughGraphQL() throws Exception {
+        // The journey's own stages build the fixtures: seller stock, a
+        // buyer account, and two placed orders — one stays PLACED, the
+        // other is driven to FULFILLED (the machine's un-cancellable
+        // state) for the conflict leg.
+        String sellerName = "it-cancel-seller-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(sellerName, "USER", "PROVIDER");
+        GateResult sellerGate = loginGate(sellerName, PASSWORD);
+        // The seller's commerce provisioning rides the same lazy
+        // /users/me sync every other registerProduct caller performs —
+        // the identity row the strict CurrentUserProvider resolves is
+        // created by syncFromOidc on the first /users/me call; without
+        // it the product registration answers "User not found for
+        // subject" (the file's own documented rule).
+        assertThat(getWithBearer("/api/v1/users/me", sellerGate.accessToken()).statusCode())
+                .as("the seller's /me provisioning sync").isEqualTo(200);
+        UUID product = registerProduct(sellerGate.accessToken(), 1500L);
+        setStock(sellerGate.accessToken(), product, 20);
+
+        String buyerName = "it-cancel-buyer-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(buyerName);
+        GateResult buyerGate = loginGate(buyerName, PASSWORD);
+        assertThat(getWithBearer("/api/v1/users/me", buyerGate.accessToken()).statusCode())
+                .as("the buyer's /me provisioning sync").isEqualTo(200);
+
+        UUID placedOrder = placeOrder(buyerGate, product, 2);
+        UUID fulfilledOrder = placeOrder(buyerGate, product, 3);
+        jdbcTemplate.update("UPDATE orders SET status = 'FULFILLED' WHERE id = ?", fulfilledOrder);
+
+        String adminName = "it-cancel-admin-" + UUID.randomUUID().toString().substring(0, 8);
+        registerUser(adminName, "USER", "ADMIN");
+        GateResult adminGate = loginGate(adminName, PASSWORD);
+
+        // (1) The authorization leg: the root is ADMIN-gated — the buyer's
+        // own cancel answers the AUTHZ classification, never the machine.
+        graphQl(buyerGate.accessToken()).document("""
+                        mutation($id: ID!) { orderCancel(id: $id) {
+                            order { id }
+                            errors { code }
+                        } }
+                        """)
+                .variable("id", orderGlobalId(placedOrder))
+                .execute()
+                .errors().satisfy(errors -> {
+                    assertThat(errors).hasSize(1);
+                    org.junit.jupiter.api.Assertions.assertEquals("AUTHZ-001",
+                            errors.get(0).getExtensions().get("errorCode"));
+                })
+                .path("orderCancel").valueIsNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM orders WHERE id = ?", String.class, placedOrder))
+                .as("the denied cancel never touched the machine").isEqualTo("PLACED");
+
+        // (2) The ADMIN cancels the PLACED order — success, and the wire
+        // renders the platform's CANCELLED as Saleor's CANCELED.
+        graphQl(adminGate.accessToken()).document("""
+                        mutation($id: ID!) { orderCancel(id: $id) {
+                            order { id status }
+                            errors { code }
+                        } }
+                        """)
+                .variable("id", orderGlobalId(placedOrder))
+                .execute()
+                .errors().verify()
+                .path("orderCancel.order.status").entity(String.class).isEqualTo("CANCELED")
+                .path("orderCancel.errors").entityList(Object.class).hasSize(0);
+
+        // (3) The FULFILLED order refuses with the machine's classified
+        // payload error — never a success-shaped mutation.
+        graphQl(adminGate.accessToken()).document("""
+                        mutation($id: ID!) { orderCancel(id: $id) {
+                            order { id }
+                            errors { field code }
+                        } }
+                        """)
+                .variable("id", orderGlobalId(fulfilledOrder))
+                .execute()
+                .errors().verify()
+                .path("orderCancel.order").valueIsNull()
+                .path("orderCancel.errors[0].field").entity(String.class).isEqualTo("id")
+                .path("orderCancel.errors[0].code").entity(String.class).isEqualTo("CANNOT_CANCEL_ORDER");
+
+        // (4) The bulk root's count-plus-errors law: one cancellable row
+        // plus one conflicting row answers count=1 and the CANNOT_CANCEL
+        // error for the failed member — never a partial silence.
+        UUID secondPlaced = placeOrder(buyerGate, product, 1);
+        graphQl(adminGate.accessToken()).document("""
+                        mutation($ids: [ID!]!) { orderBulkCancel(ids: $ids) {
+                            count
+                            errors { code }
+                        } }
+                        """)
+                .variable("ids", java.util.List.of(orderGlobalId(secondPlaced), orderGlobalId(fulfilledOrder)))
+                .execute()
+                .errors().verify()
+                .path("orderBulkCancel.count").entity(Integer.class).isEqualTo(1)
+                .path("orderBulkCancel.errors[0].code").entity(String.class).isEqualTo("CANNOT_CANCEL_ORDER");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM orders WHERE id = ?", String.class, secondPlaced))
+                .as("the bulk's cancellable member landed").isEqualTo("CANCELLED");
+    }
+
+    /** The GraphQL tester over the caller's own real bearer token. */
+    private HttpGraphQlTester graphQl(String accessToken) {
+        return HttpGraphQlTester.builder(WebTestClient.bindToServer()
+                        .baseUrl("http://localhost:" + port + "/graphql")
+                        .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .build();
+    }
+
+    /** A well-formed typed global ID for the Order type over any native UUID. */
+    private static String orderGlobalId(UUID id) {
+        return java.util.Base64.getEncoder()
+                .encodeToString(("Order:" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** One full placement for the caller: the cart add + the checkout call. */
+    private UUID placeOrder(GateResult buyer, UUID product, int quantity) throws Exception {
+        postJson("/api/v1/me/cart/items", buyer.accessToken(), """
+                {"productId":"%s","quantity":%d}
+                """.formatted(product, quantity));
+        HttpResponse<String> placement = postJson("/api/v1/orders", buyer.accessToken(), "");
+        assertThat(placement.statusCode()).as("placement: %s", body(placement)).isEqualTo(201);
+        return UUID.fromString(objectMapper.readTree(placement.body()).path("id").asString());
     }
 }

@@ -1,0 +1,201 @@
+# =====================================================================
+# Saleor Users domain — P1 wave, packet A1: the permission-group read
+# roots (the canonical plan §5-P1: "retained Dashboard user/profile and
+# permission operations using existing identity and console owners").
+# PROPOSAL to A0 (the one SDL steward): the Query fields below append to
+# the shared root type Query; every other declaration in this fragment
+# is a PURE ADDITION — no existing shared type is redeclared (PageInfo,
+# PermissionEnum, OrderDirection, User, UserCountableConnection,
+# UserCountableEdge, UserPermission, StaffUserInput, UserSortingInput,
+# UserSortField and StaffMemberStatus keep their existing declarations).
+# Root names, argument names/types/nullability and the connection
+# envelope are the pinned Saleor 3.23.43 wire contract
+# (saleor/graphql/schema.graphql, blob b8fa0dd8 — the measured roots
+# permissionGroups/permissionGroup, the Group type at schema line
+# 14480, GroupCountableConnection/Edge, Permission,
+# PermissionGroupFilterInput/PermissionGroupSortingInput/
+# PermissionGroupSortField); the platform's identity owner remains the
+# single source of truth behind them. The GLOBAL IDs on this surface are
+# the typed Relay-style codec's (SaleorGlobalIdCodec): opaque
+# base64("Group:<uuid>") values — never raw UUIDs.
+#
+# The bounded Group projection (the honest method the User read slice
+# established): the platform owns no stored group table — its
+# permission-group collection IS the closed UserRole vocabulary
+# (CONSUMER/PROVIDER/ADMIN, the V187 CHECK's own list): each role is a
+# named bundle of granted capabilities (the V188 effective-authorities
+# truth accounts hold). DECLARED fields are owned facts only:
+#   - id: the typed global ID over the owner's deterministic native
+#     handle — a stable name-based UUID (RFC 4122 v3) derived per role;
+#   - name: the role's display name (the humanized closed vocabulary —
+#     no separate group-name store exists);
+#   - permissions: the granted permission codes rendered from the tested
+#     SaleorPermissionCatalog mapping (the existing PermissionEnum — the
+#     single source of the platform-RBAC-to-Saleor-code rendering; the
+#     CONSUMER group's honest empty set renders as []);
+#   - userCanManage: true exactly when the caller holds the platform
+#     ADMIN capability (the same right the identity module's role
+#     grant/revoke commands gate).
+# UNDECLARED fields, each with its reason (a declared-but-fake field
+# would be the violation, not the absence):
+#   - users: no clean role→users query exists over the identity owner's
+#     current repositories (the primary-role ∪ ACTIVE-assignment union)
+#     — requested as a divergence registry row; declared when that owner
+#     capability lands with its tests;
+#   - accessibleChannels / restrictedAccessToChannels: the
+#     commercial-channel owner decision is PENDING-ADR (the divergence
+#     registry's "Channel / commercial context" row) — no channel facts
+#     exist to render, so none are declared.
+# The declared-but-unexecuted root arguments (filter, before, last)
+# answer explicit classified IllegalArgumentExceptions at runtime — the
+# staffUsers precedent — never a silent no-op, never fake success. The
+# sort vocabulary is Saleor's own single-value enum (NAME) and it is
+# owned: NAME executes as the real forward-only keyset sort (name, id);
+# because the enum closure is exactly the owned field, there is no
+# unowned sort-field branch on this surface to answer — documented, not
+# faked. Both roots require MANAGE_STAFF on Saleor — enforced
+# server-side as the platform's ADMIN capability at the identity
+# use-case boundary (the RBAC mapping registry row), never as a UI
+# route guard.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Query additions (append to the shared root type Query)
+# ---------------------------------------------------------------------
+type Query {
+    # "List of permission groups." — the Saleor group list with its
+    # countable-connection envelope (edges/pageInfo/totalCount, byte-shape
+    # from the pinned schema). FORWARD-ONLY keyset paging on this first
+    # slice: first/after ride the platform's ScrollPosition keyset
+    # contract (the staffUsers/storeProducts/services precedent — cursors
+    # identify a row's sort key (name, id), never an absolute offset);
+    # before/last stay declared (the exact Saleor argument shape) but
+    # answer an explicit classified error until a backward scroll exists —
+    # a recorded, tested boundary, not a silent no-op. filter is likewise
+    # the declared wire shape with an explicit not-yet-supported error.
+    # The sort vocabulary is Saleor's single-value PermissionGroupSortField
+    # enum (NAME — owned): it executes as the real keyset sort,
+    # deterministic with the id tiebreaker. MANAGE_STAFF on Saleor →
+    # ADMIN here (the owning use case's gate).
+    permissionGroups(
+    """Filtering options for permission groups."""
+    filter: PermissionGroupFilterInput
+
+    """Sort permission groups."""
+    sortBy: PermissionGroupSortingInput
+
+    """Return the elements in the list that come before the specified cursor."""
+    before: String
+
+    """Return the elements in the list that come after the specified cursor."""
+    after: String
+
+    """Retrieve the first n elements from the list."""
+    first: Int
+
+    """Retrieve the last n elements from the list."""
+    last: Int
+    ): GroupCountableConnection
+
+    # "Look up permission group by ID." — the staff lookup over the typed
+    # global ID (Saleor requires MANAGE_STAFF → ADMIN here, enforced in the
+    # owning identity use case). An unknown but well-formed ID answers
+    # null (the safe absence); a malformed or mistyped global ID answers
+    # the codec's classified validation error — never a raw UUID fallback.
+    permissionGroup(
+    """ID of the group."""
+    id: ID!
+    ): Group
+}
+
+# ---------------------------------------------------------------------
+# The bounded Group projection — see the block comment above for the
+# closure policy. id is the typed global ID over the owner's
+# deterministic per-role native handle; name is the platform role's
+# display name; permissions is the server-enforced capability rendering
+# (SaleorPermissionCatalog — the platform RBAC rendered in Saleor's
+# permission vocabulary, the divergence-registry RBAC row); userCanManage
+# is the honest manage-right fact (true exactly for the ADMIN caller —
+# the only caller the ADMIN-enforced roots admit).
+# ---------------------------------------------------------------------
+type Group {
+    """The ID of the group — typed global ID (opaque, never a raw UUID)."""
+    id: ID!
+
+    """The name of the group (the platform role's display name)."""
+    name: String!
+
+    """List of group permissions (the granted permission codes)."""
+    permissions: [Permission!]
+
+    """
+    True, if the currently authenticated user has rights to manage a group
+    (the platform ADMIN capability — the same right the role grant/revoke
+    commands gate).
+    """
+    userCanManage: Boolean!
+}
+
+# Saleor's Permission object — the friendly form of one granted
+# permission. Freshly declared for the Group surface (the User read
+# surface's UserPermission shape stays its own declaration; the shared
+# PermissionEnum stays the single closed code vocabulary).
+type Permission {
+    """Internal code for permission."""
+    code: PermissionEnum!
+
+    """Describe action(s) allowed to do by permission."""
+    name: String!
+}
+
+# Saleor's connection envelope for countable group lists — declared (not
+# runtime-generated) so the exact Saleor shape stands, including
+# totalCount. Spring's ConnectionTypeDefinitionConfigurer skips
+# already-declared connection types (the measured declared-types-skip
+# behavior the UserCountableConnection declaration recorded), so this
+# declaration wins and the generated connections elsewhere are untouched.
+# pageInfo reuses the EXISTING shared PageInfo type — not redeclared.
+type GroupCountableConnection {
+    """Pagination data for this connection."""
+    pageInfo: PageInfo!
+
+    edges: [GroupCountableEdge!]!
+
+    """A total count of items in the collection."""
+    totalCount: Int
+}
+
+type GroupCountableEdge {
+    """The item at the end of the edge."""
+    node: Group!
+
+    """A cursor for use in pagination (the row's keyset sort key)."""
+    cursor: String!
+}
+
+# Saleor's permission-group filter input — the declared wire shape of the
+# filter argument (see permissionGroups: an explicit classified error
+# until the owning query capability exists).
+input PermissionGroupFilterInput {
+    search: String
+    ids: [ID!]
+}
+
+# Saleor's permission-group sorting input and field vocabulary — the full
+# pinned closure is the single NAME value, and it is owned (the executed
+# keyset sort's own field); there is no unowned sort-field branch on this
+# surface. direction reuses the EXISTING shared OrderDirection enum —
+# not redeclared.
+input PermissionGroupSortingInput {
+    """Specifies the direction in which to sort permission group."""
+    direction: OrderDirection!
+
+    """Sort permission group by the selected field."""
+    field: PermissionGroupSortField!
+}
+
+"""Sorting options for permission groups."""
+enum PermissionGroupSortField {
+    """Sort permission group accounts by name."""
+    NAME
+}

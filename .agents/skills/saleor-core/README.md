@@ -5,7 +5,7 @@ Backend behavior reference for the [Saleor](https://saleor.io) e-commerce platfo
 ## Installation
 
 ```shell
-npx skills add saleor/agent-skills --skill saleor-core
+npx skills add . --skill saleor-core
 ```
 
 ## What's Included

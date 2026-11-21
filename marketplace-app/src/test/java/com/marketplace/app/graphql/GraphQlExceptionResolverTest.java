@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 class GraphQlExceptionResolverTest {
 
     private final GraphQlExceptionResolver resolver = new GraphQlExceptionResolver(
-            new GraphQlProperties(new GraphQlProperties.Errors(false), null, null));
+            new GraphQlProperties(new GraphQlProperties.Errors(false), null, null, null));
     private final DataFetchingEnvironment env = mock(DataFetchingEnvironment.class);
 
     /**
@@ -89,6 +89,29 @@ class GraphQlExceptionResolverTest {
     }
 
     /**
+     * The 2026-11-06 #806 round (Minor · Functional Correctness): the
+     * house's own classified 409 domain exception (ConflictException —
+     * the owning services' friendly-conflict paths, e.g. the variant
+     * register surface's SKU collision) answers the CONFLICT taxonomy
+     * with the DOMAIN MESSAGE PRESERVED (the same designated-safe
+     * passthrough the REST advice applies) — never the masked INTERNAL
+     * envelope it used to fall through to.
+     */
+    @Test
+    void mapsConflictExceptionToConflictTaxonomyWithTheDomainMessagePreserved() {
+        GraphQLError error = first(resolver.resolveException(
+                new com.marketplace.shared.api.ConflictException(
+                        "SKU 'RED-XL' is already used by variant 123 in this seller's namespace"),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.BAD_REQUEST);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.CONFLICT.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.CONFLICT.category());
+        assertThat(error.getMessage())
+                .contains("SKU 'RED-XL' is already used by variant 123");
+    }
+
+    /**
      * Bean Validation failures (surfaced by spring-graphql's ValidationHelper
      * for @Valid @Argument parameters) must carry the canonical VALIDATION
      * pair (VAL-001 / validation) — the same semantics the REST
@@ -128,6 +151,125 @@ class GraphQlExceptionResolverTest {
         assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.RATE_LIMIT.errorCode());
         assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.RATE_LIMIT.category());
         assertThat(error.getMessage()).isEqualTo("Rate limit exceeded. Please try again later.");
+    }
+
+    /**
+     * AUTH-01 (the 2026-11-03 adversarial scan, P1): an {@code
+     * AuthenticationException} reaching the resolver from any non-token
+     * path classifies as UNAUTHORIZED with the canonical AUTHN pair
+     * (AUTHN-001 / authz) and the SAME fixed safe sentence the REST advice
+     * returns — never the masked INTERNAL fallback, and never Spring
+     * Security's own exception message (which can name the account state).
+     */
+    @Test
+    void mapsAuthenticationExceptionToAuthnTaxonomyWithTheFixedSentence() {
+        GraphQLError error = first(resolver.resolveException(
+                new org.springframework.security.authentication
+                        .AuthenticationCredentialsNotFoundException("missing"),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.UNAUTHORIZED);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.AUTHN.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.AUTHN.category());
+        assertThat(error.getMessage()).isEqualTo("Authentication required");
+    }
+
+    /**
+     * The 2026-11-04 adversarial delta review: the INFRA family — an
+     * {@code AuthenticationServiceException} (whose InternalAuthenticationServiceException
+     * subclass is the DB-down shape the review demonstrated) — must NOT
+     * classify as AUTHN ("Authentication required"): a broken server is not
+     * a caller who must authenticate, so it answers the masked INTERNAL
+     * pair (INT-001 / internal) like every unknown failure.
+     */
+    @Test
+    void mapsAuthenticationServiceExceptionToMaskedInternalNotAuthn() {
+        GraphQLError error = first(resolver.resolveException(
+                new org.springframework.security.authentication
+                        .AuthenticationServiceException("data source down"),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.INTERNAL_ERROR);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.INTERNAL.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.INTERNAL.category());
+        assertThat(error.getMessage()).isEqualTo("An unexpected error occurred");
+    }
+
+    /**
+     * CAT-02 (the 2026-11-03 adversarial scan, P2): a lost uniqueness race
+     * — the second INSERT of a concurrent pair hitting the unique backstop
+     * index — classifies as CONFLICT (CONFLICT-001 / conflict) with the
+     * fixed sentence, mirroring the REST advice's 409 for the same
+     * SQLSTATE 23505 chain (the SAME one classifier,
+     * GlobalExceptionHandler.isUniqueViolation); Spring's own message
+     * (constraint/SQL detail) never crosses the wire.
+     */
+    @Test
+    void mapsUniqueViolationRaceToConflictTaxonomyWithTheFixedSentence() {
+        GraphQLError error = first(resolver.resolveException(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement",
+                        new java.sql.SQLException(
+                                "Duplicate key value violates unique constraint \"uk_cart_items\"",
+                                "23505")),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.BAD_REQUEST);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.CONFLICT.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.CONFLICT.category());
+        assertThat(error.getMessage())
+                .isEqualTo("The request conflicts with the current state of the resource");
+    }
+
+    /**
+     * CAT-02's other half — the SAME split the REST advice applies: an
+     * integrity violation that is NOT the 23505 uniqueness race (an FK
+     * break, a check constraint) stays the masked INTERNAL pair — it is
+     * a broken server state, not a client-retryable conflict, and the
+     * driver's detail never leaks.
+     */
+    @Test
+    void mapsNonUniqueIntegrityViolationToMaskedInternal() {
+        GraphQLError error = first(resolver.resolveException(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement",
+                        new java.sql.SQLException(
+                                "insert or update on table \"checkout_lines\" violates foreign key constraint",
+                                "23503")),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.INTERNAL_ERROR);
+        assertThat(error.getExtensions()).containsEntry("errorCode", ApiErrorTaxonomy.INTERNAL.errorCode());
+        assertThat(error.getExtensions()).containsEntry("category", ApiErrorTaxonomy.INTERNAL.category());
+        assertThat(error.getMessage()).isEqualTo("An unexpected error occurred");
+    }
+
+    /**
+     * ORD-02's residual (the 2026-11-04 scan): the house's CLASSIFIED 503
+     * family — {@code ServiceUnavailableException}, which the REST advice
+     * maps to 503 SU-001 through the ApiProblemDetailException branch —
+     * must surface the SAME machine contract here: the SU-001/availability
+     * extensions pair, never the masked INTERNAL envelope it used to fall
+     * through to. The GraphQL-spec ErrorType vocabulary has no 503 value,
+     * so INTERNAL_ERROR is the closest of its fixed five (a server-side
+     * condition); the exception's own house-authored message passes
+     * through like every designated-safe domain exception. This is also
+     * the envelope the pseudonymization-HMAC OFF case
+     * (SubjectPseudonymizer.derive) now answers on GraphQL.
+     */
+    @Test
+    void mapsServiceUnavailableToTheAvailabilityTaxonomy() {
+        GraphQLError error = first(resolver.resolveException(
+                new com.marketplace.shared.api.ServiceUnavailableException(
+                        "The capability is not configured"),
+                env).block());
+
+        assertThat(error.getErrorType()).isEqualTo(org.springframework.graphql.execution.ErrorType.INTERNAL_ERROR);
+        assertThat(error.getExtensions())
+                .containsEntry("errorCode", ApiErrorTaxonomy.SERVICE_UNAVAILABLE.errorCode());
+        assertThat(error.getExtensions())
+                .containsEntry("category", ApiErrorTaxonomy.SERVICE_UNAVAILABLE.category());
+        assertThat(error.getMessage()).isEqualTo("The capability is not configured");
     }
 
     /**
