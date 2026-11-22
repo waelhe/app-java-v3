@@ -97,6 +97,10 @@ class CollectionMembershipPositionRaceIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    /** The holder transaction's manager for the lock-acquisition pin leg. */
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager platformTransactionManager;
+
     /** This test's own rows — FK-safe cleanup after every leg. */
     private final List<UUID> seededCollectionIds = new ArrayList<>();
     private final List<UUID> seededProductIds = new ArrayList<>();
@@ -224,6 +228,96 @@ class CollectionMembershipPositionRaceIntegrationTest {
                         VALUES (?, ?, ?, 1, FALSE, 0, now(), now())
                         """, UUID.randomUUID(), collection.getId(), second.getId()))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    /**
+     * The 2026-11-22 #807 review (Minor · Data Integrity): the older
+     * CyclicBarrier legs start both writers at the CALL boundary — a
+     * writer could run its whole service path before the peer ever
+     * reaches the lock, so a slipped lock would still pass those tests.
+     * This leg pins the race at the SERVICE's own acquisition point:
+     * an open transaction takes the collection's advisory lock directly
+     * (the same {@code hashtextextended} key the service's
+     * {@code lockCollectionPositionAllocation} computes) and HOLDS it;
+     * the service's append is then observed WAITING on the acquisition
+     * (its future stays incomplete inside the hold window — proof it
+     * reached the lock attempt, not just the method entry); the holder's
+     * COMMIT releases it and the append completes with a dense position.
+     */
+    @Test
+    void anAppendBlocksAtTheServicesOwnAdvisoryLockAcquisition() throws Exception {
+        Collection collection = persistCollection();
+        Product first = persistProduct("b6 lock-pin A");
+        Product second = persistProduct("b6 lock-pin B");
+        collectionWriteService.addProducts(collection.getId(), List.of(first.getId()));
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        // The holder transaction: acquire the collection's advisory lock and
+        // hold it across a signal so the observation window is explicit.
+        java.util.concurrent.CountDownLatch lockHeld =
+                new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch releaseHolder =
+                new java.util.concurrent.CountDownLatch(1);
+        org.springframework.transaction.support.TransactionTemplate holderTx =
+                new org.springframework.transaction.support.TransactionTemplate(platformTransactionManager);
+        java.util.concurrent.Future<Void> holder = pool.submit(() -> {
+            holderTx.executeWithoutResult(tx -> {
+                jdbcTemplate.update("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                        collection.getId().toString());
+                lockHeld.countDown();
+                try {
+                    // Bounded hold: the release signal, with a hang budget so
+                    // a lost signal can never park this worker forever.
+                    releaseHolder.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException parked) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            return null;
+        });
+        try {
+            // The acquisition is live before the racing append starts.
+            org.assertj.core.api.Assertions.assertThat(lockHeld.await(30, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("the holder transaction must own the advisory lock first")
+                    .isTrue();
+
+            java.util.concurrent.Future<com.marketplace.catalog.spi.CollectionMutationResult> waiting =
+                    pool.submit(() -> {
+                        asAdmin();
+                        return collectionWriteService.addProducts(collection.getId(), List.of(second.getId()));
+                    });
+
+            // The append reached the acquisition attempt and is WAITING on
+            // it — the service path's own serialization point. A short
+            // window (well under the hold's release) proves the wait is
+            // the lock, not the method's other legs.
+            org.assertj.core.api.Assertions.assertThat(waiting.isDone())
+                    .as("the append must be parked at the advisory-lock acquisition while the holder owns it")
+                    .isFalse();
+            // Re-check after a beat so a fast-slip (lock released early,
+            // append already done) cannot fake the parked state.
+            java.lang.Thread.sleep(300);
+            org.assertj.core.api.Assertions.assertThat(waiting.isDone())
+                    .as("the append is still parked at the acquisition point inside the hold window")
+                    .isFalse();
+
+            // Release: the holder COMMITs, the advisory lock frees, and the
+            // parked append completes with a dense live position.
+            releaseHolder.countDown();
+            com.marketplace.catalog.spi.CollectionMutationResult appended =
+                    waiting.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            org.assertj.core.api.Assertions.assertThat(appended.success()).isTrue();
+
+            List<CollectionProduct> membership = collectionProductRepository
+                    .findByCollectionIdOrderByPositionAscIdAsc(collection.getId());
+            org.assertj.core.api.Assertions.assertThat(membership).hasSize(2);
+            org.assertj.core.api.Assertions.assertThat(membership.stream()
+                            .mapToInt(CollectionProduct::getPosition))
+                    .containsExactlyInAnyOrder(1, 2);
+        } finally {
+            releaseHolder.countDown();
+            pool.shutdownNow();
+        }
     }
 
     /**

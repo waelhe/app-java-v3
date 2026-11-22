@@ -23,6 +23,42 @@ class EmailServiceTest {
     private TemplateEngine templateEngine;
     private EmailService emailService;
 
+    /**
+     * The 2026-11-22 #807 review: assert EVERY leakage channel of
+     * {@code emailService.send} — the SENDER's own logs (the INFO success
+     * line and the ERROR failure line) and the thrown
+     * {@link EmailSendException}'s message AND cause chain — never carry
+     * the raw recipient. A direct ListAppender on the service's own
+     * logger keeps the assertions at the exact rendered text (rendered
+     * message plus any attached throwable header), with no dependency
+     * beyond the logback already on the classpath.
+     */
+    private static final class LogCapture implements AutoCloseable {
+        private final ch.qos.logback.classic.Logger captured =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(EmailService.class);
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        LogCapture() {
+            appender.setIncludeLocation(false);
+            captured.addAppender(appender);
+        }
+
+        java.util.List<String> rendered() {
+            return appender.list.stream()
+                    .map(e -> e.getFormattedMessage()
+                            + (e.getThrowableProxy() == null ? ""
+                                    : " | throwable=" + e.getThrowableProxy().getClassName()
+                                    + ": " + e.getThrowableProxy().getMessage()))
+                    .toList();
+        }
+
+        @Override
+        public void close() {
+            captured.detachAppender(appender);
+        }
+    }
+
     @BeforeEach
     void setUp() {
         mailSender = mock();
@@ -40,9 +76,17 @@ class EmailServiceTest {
         when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
         when(templateEngine.process(eq("email/welcome"), any(Context.class))).thenReturn("<html></html>");
 
-        emailService.send("test@example.com", "Welcome", "email/welcome", Map.of("name", "Test"));
+        // The 2026-11-22 #807 review: the SUCCESS leg's own leakage channel
+        // is asserted too — the INFO line never carries the raw recipient.
+        try (LogCapture capture = new LogCapture()) {
+            emailService.send("victim@example.com", "Welcome", "email/welcome", Map.of("name", "Test"));
 
-        verify(mailSender).send(mimeMessage);
+            verify(mailSender).send(mimeMessage);
+            assertThat(capture.rendered())
+                    .isNotEmpty()
+                    .noneMatch(line -> line.contains("victim@example.com"))
+                    .anyMatch(line -> line.contains("v***@example.com"));
+        }
     }
 
     @Test
@@ -52,6 +96,42 @@ class EmailServiceTest {
         assertThatThrownBy(() -> emailService.send("test@example.com", "Welcome", "email/welcome", Map.of()))
                 .isInstanceOf(EmailSendException.class)
                 .hasMessageContaining("Failed to send email");
+    }
+
+    /**
+     * The 2026-11-22 #807 review's closure leg: EVERY failure-path
+     * leakage channel asserted in one place — the sender's ERROR log
+     * (rendered message AND any throwable attached to the logging
+     * event), the thrown {@link EmailSendException}'s own message, and
+     * its cause chain (the exception is built cause-free: no raw SMTP
+     * throwable rides the chain into a caller's log store).
+     */
+    @Test
+    void send_theFailurePathLeaksTheRawRecipientNowhere() {
+        when(mailSender.createMimeMessage())
+                .thenThrow(new RuntimeException("550 <victim@example.com>... user unknown"));
+
+        try (LogCapture capture = new LogCapture()) {
+            EmailSendException thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
+                    () -> emailService.send("victim@example.com", "Welcome", "email/welcome", Map.of()),
+                    EmailSendException.class);
+
+            // The exception's message: masked recipient, and the raw
+            // address token scrubbed from the diagnostic (the scrub's own
+            // target is address-shaped tokens — the finding's channel).
+            assertThat(thrown.getMessage())
+                    .contains("v***@example.com")
+                    .doesNotContain("victim@example.com");
+
+            // The cause chain: no raw SMTP throwable rides it at all.
+            assertThat(thrown.getCause()).isNull();
+
+            // The sender's own ERROR line: rendered text and any attached
+            // throwable header both stay free of the raw address.
+            assertThat(capture.rendered())
+                    .anyMatch(line -> line.contains("Failed to send email"))
+                    .noneMatch(line -> line.contains("victim@example.com"));
+        }
     }
 
     /**

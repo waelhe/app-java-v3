@@ -1264,8 +1264,13 @@ class PlatformGovernanceFilesTest {
         int setStart = gate.indexOf("PRE_LOGIN_OPERATIONS = Set.of(");
         assertThat(setStart).as("PreLoginGraphQlGate must declare PRE_LOGIN_OPERATIONS").isGreaterThan(-1);
         String setBody = gate.substring(setStart, gate.indexOf(");", setStart));
+        // The 2026-11-22 #807 review: the member pattern must accept the full
+        // Java identifier alphabet ([_A-Za-z][_0-9A-Za-z]*) — a "tokenCreate2"
+        // style member would silently vanish from gateFamily here and the
+        // comparison below would pass while the comment and the declaration
+        // had actually diverged.
         java.util.regex.Matcher member = java.util.regex.Pattern
-                .compile("\"([a-zA-Z]+)\"").matcher(setBody);
+                .compile("\"([_A-Za-z][_0-9A-Za-z]*)\"").matcher(setBody);
         Set<String> gateFamily = new HashSet<>();
         while (member.find()) {
             gateFamily.add(member.group(1));
@@ -1280,7 +1285,10 @@ class PlatformGovernanceFilesTest {
                 config.indexOf(")", familyNote));
         Set<String> commentFamily = new HashSet<>();
         for (String token : commentList.split("[\\s,]+")) {
-            if (token.matches("[a-zA-Z]+")) {
+            // Same full-identifier alphabet on the comment side (the same
+            // 2026-11-22 #807 finding): digits/underscores in a member name
+            // must be captured, not dropped.
+            if (token.matches("[_A-Za-z][_0-9A-Za-z]*")) {
                 commentFamily.add(token);
             }
         }

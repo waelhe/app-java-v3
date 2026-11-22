@@ -388,10 +388,14 @@ class PlatformTokenGrantServiceTest {
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CyclicBarrier startTogether = new CyclicBarrier(2);
+        // The 2026-11-22 #807 review: every wait is BOUNDED — a hung refresh
+        // leg must surface as a deterministic Timeout failure (reaching the
+        // finally's shutdownNow()), never an indefinitely parked test worker.
+        java.time.Duration hangBudget = java.time.Duration.ofSeconds(30);
         Callable<PlatformTokenGrantService.IssuedTokens> rotation = () -> {
             // Both threads race the SAME token from the SAME store —
             // only one may ever observe the live row.
-            startTogether.await();
+            startTogether.await(hangBudget.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
             return service.refresh(presented);
         };
         try {
@@ -402,14 +406,16 @@ class PlatformTokenGrantServiceTest {
             int successes = 0;
             String survivor = null;
             try {
-                PlatformTokenGrantService.IssuedTokens won = first.get();
+                PlatformTokenGrantService.IssuedTokens won =
+                        first.get(hangBudget.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
                 successes++;
                 survivor = won.refreshToken();
             } catch (java.util.concurrent.ExecutionException expected) {
                 assertThat(expected.getCause()).isInstanceOf(BadCredentialsException.class);
             }
             try {
-                PlatformTokenGrantService.IssuedTokens won = second.get();
+                PlatformTokenGrantService.IssuedTokens won =
+                        second.get(hangBudget.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
                 successes++;
                 survivor = won.refreshToken();
             } catch (java.util.concurrent.ExecutionException expected) {
@@ -687,6 +693,18 @@ class PlatformTokenGrantServiceTest {
 
         private final Map<String, OAuth2Authorization> rows = new ConcurrentHashMap<>();
 
+        /**
+         * The single row-lock stand-in the rotation store's {@code rotate}
+         * also takes (see {@link InMemoryRotationStore}): the 2026-11-22
+         * #807 review measured that {@code removeByPrincipal} mutating the
+         * map without this lock could interleave between the rotation's
+         * read and save legs, resurrecting a row the deletion had already
+         * removed — the one shape the "synchronized stands in for the
+         * database's row lock" contract never actually guaranteed. Both
+         * deletion paths and the rotation's read-to-save span share it.
+         */
+        final Object rowLock = new Object();
+
         @Override
         public void save(OAuth2Authorization authorization) {
             rows.put(authorization.getId(), authorization);
@@ -728,7 +746,13 @@ class PlatformTokenGrantServiceTest {
         }
 
         void removeByPrincipal(String principal) {
-            rows.values().removeIf(row -> row.getPrincipalName().equals(principal));
+            // The 2026-11-22 #807 review: deletions must arbitrate under the
+            // SAME row-lock stand-in the rotation's read-to-save span holds,
+            // or a concurrent rotate() can resurrect this very deletion's
+            // rows between its read and save legs.
+            synchronized (rowLock) {
+                rows.values().removeIf(row -> row.getPrincipalName().equals(principal));
+            }
         }
 
         boolean removeById(String id) {
@@ -765,6 +789,15 @@ class PlatformTokenGrantServiceTest {
 
         private final InMemoryRowStore store;
 
+        /**
+         * The simulated clock's FIXED base (the 2026-11-22 #807 review):
+         * time inside the simulator starts here and moves ONLY through
+         * {@link #advanceClockBeyondGraceWindow()} — never with the JVM
+         * wall clock — so grace-window state is deterministic under any
+         * CI pace.
+         */
+        private final java.time.Instant clockBase = java.time.Instant.parse("2026-01-01T00:00:00Z");
+
         /** The family ledger, in memory: consumed value hash → family + consumption time. */
         private final java.util.Map<String, Consumed> consumedByHash =
                 new java.util.concurrent.ConcurrentHashMap<>();
@@ -778,20 +811,26 @@ class PlatformTokenGrantServiceTest {
         }
 
         @Override
-        public synchronized boolean rotate(OAuth2Authorization rotated, String presentedRefreshToken) {
-            OAuth2Authorization row = store.findById(rotated.getId());
-            if (row == null || row.getRefreshToken() == null
-                    || !row.getRefreshToken().getToken().getTokenValue().equals(presentedRefreshToken)) {
-                // The loser leg of a concurrent double-spend — the same
-                // rejection-site the production store consults the ledger
-                // from (in-window: revokes nothing, by the grace window).
-                revokeFamilyIfConsumed(presentedRefreshToken);
-                return false;
+        public boolean rotate(OAuth2Authorization rotated, String presentedRefreshToken) {
+            // The 2026-11-22 #807 review: the read-to-save span must hold the
+            // row store's OWN row-lock stand-in (not this store's monitor alone),
+            // so a concurrent removeByPrincipal() cannot slip between the two
+            // legs and have the save here resurrect the deleted row.
+            synchronized (store.rowLock) {
+                OAuth2Authorization row = store.findById(rotated.getId());
+                if (row == null || row.getRefreshToken() == null
+                        || !row.getRefreshToken().getToken().getTokenValue().equals(presentedRefreshToken)) {
+                    // The loser leg of a concurrent double-spend — the same
+                    // rejection-site the production store consults the ledger
+                    // from (in-window: revokes nothing, by the grace window).
+                    revokeFamilyIfConsumed(presentedRefreshToken);
+                    return false;
+                }
+                store.save(rotated);
+                consumedByHash.put(sha256(presentedRefreshToken),
+                        new Consumed(rotated.getId(), now()));
+                return true;
             }
-            store.save(rotated);
-            consumedByHash.put(sha256(presentedRefreshToken),
-                    new Consumed(rotated.getId(), now()));
-            return true;
         }
 
         /**
@@ -806,7 +845,11 @@ class PlatformTokenGrantServiceTest {
         public int purgeConsumedOlderThan(java.time.Duration retention) {
             // The in-memory ledger mirrors the production TTL bound; the
             // unit suite never exercises the purge job itself.
-            java.time.Instant cutoff = java.time.Instant.now().minus(retention);
+            // The 2026-11-22 #807 review: the cutoff rides the SIMULATED
+            // clock (the same now() the ledger writes with), not the JVM
+            // wall clock, so a GC/CI pause never reclassifies an
+            // in-window replay as beyond-retention.
+            java.time.Instant cutoff = now().minus(retention);
             consumedByHash.values().removeIf(consumed -> consumed.consumedAt().isBefore(cutoff));
             return 0;
         }
@@ -822,13 +865,21 @@ class PlatformTokenGrantServiceTest {
             return store.removeById(consumed.familyId());
         }
 
-        /** The test seam for the theft shape: move the clock PAST the grace window. */
+        /**
+         * The test seam for the theft shape: move the clock PAST the grace
+         * window. The 2026-11-22 #807 review also pinned the clock's BASE:
+         * the simulation starts at a fixed instant and moves ONLY through
+         * this seam — the grace-window state is deterministic regardless of
+         * CI pace, and a JVM stall can never make an immediate retry look
+         * like a late replay (the failure mode the review measured: >30s
+         * between the rotation and the retry wrongly purging the family).
+         */
         void advanceClockBeyondGraceWindow() {
             clockAdvance.updateAndGet(skew -> skew.plus(REUSE_DETECTION_GRACE).plusSeconds(1));
         }
 
         private java.time.Instant now() {
-            return java.time.Instant.now().plus(clockAdvance.get());
+            return clockBase.plus(clockAdvance.get());
         }
 
         private record Consumed(String familyId, java.time.Instant consumedAt) {
