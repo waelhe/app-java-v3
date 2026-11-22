@@ -38,13 +38,26 @@ concurrency:
 
 env:
   RAILWAY_API: https://backboard.railway.com/graphql/v2
-  RAILWAY_PROJECT_ID: a218e156-0aa1-487a-855d-3f798856d5ef
-  RAILWAY_ENVIRONMENT_ID: 60fb0197-fc76-4e72-b18d-dca7532e343d
-  RAILWAY_SERVICE_APP: 3efcf70c-56d5-4d87-ada5-6bba32022229
+  # Live production target verified in Railway on 2026-11-15.
+  RAILWAY_PROJECT_ID: c8985750-82a2-42eb-8431-ee0f49352818
+  RAILWAY_ENVIRONMENT_ID: c324c1a0-e4db-4a9a-8dc0-30ca1f3935d0
+  RAILWAY_SERVICE_APP: 43b1b64b-9087-45d4-88ca-358a40c5a583
 
 jobs:
   deploy:
     name: Deploy the dispatched commit to Railway (all suites green)
+    # CodeRabbit full review rounds (2026-11-22T00:01Z + 02:10Z, Major —
+    # secret availability): RAILWAY_TOKEN's exposure is restricted at the
+    # GitHub SETTINGS level, not by the in-workflow GITHUB_REF guard alone.
+    # This job is bound to the `railway-production` environment whose
+    # deployment branch policy allows ONLY main — GitHub blocks the job
+    # outright for any other ref before a single step runs. The
+    # refs/heads/main guard below stays as defense in depth. The lockdown
+    # is COMPLETE (2026-11-22): RAILWAY_TOKEN lives ONLY as an environment
+    # secret of `railway-production` (the live workspace token provided by
+    # the owner); the repo-level copy is DELETED — a writable branch that
+    # strips this binding finds no token to read.
+    environment: railway-production
     # Manual lever only. The automatic channel that used to fire on every
     # main merge was disabled by the owner's measured decision
     # (2026-10-10): a trial account with bursty merges (13 in one day, mostly
@@ -57,6 +70,16 @@ jobs:
       github.repository == 'waelhe/app-java-v3'
     runs-on: ubuntu-latest
     steps:
+      - name: Guard — production deployment must be dispatched from main
+        uses: actions/github-script@v9
+        with:
+          script: |
+            if (context.ref !== 'refs/heads/main') {
+              core.setFailed(`Production Railway deployments are restricted to refs/heads/main; received ${context.ref}.`);
+              return;
+            }
+            core.info(`Approved production ref: ${context.ref}; target commit: ${context.sha}`);
+
       - name: Gate — every GitHub Actions suite on the commit must be green
         uses: actions/github-script@v9
         id: gate
@@ -106,13 +129,89 @@ jobs:
               return;
             }
 
-            // Wait-for-CI: skipped/neutral never block; cancelled blocks only
-            // when no other workflow on the same commit succeeded.
-            const succeeded = gate.filter(r => r.conclusion === 'success');
-            const cancelled = gate.filter(r => r.conclusion === 'cancelled');
-            if (cancelled.length > 0 && succeeded.length === 0) {
-              core.setFailed(`All suites cancelled and none succeeded — deployment skipped: ${cancelled.map(r => r.name).join(', ')}`);
+            // Wait-for-CI: skipped/neutral never block (a path-filtered
+            // workflow's own configuration says it does not apply to this
+            // commit; a neutral verdict is an explicit non-failure). A
+            // CANCELLED run blocks unless a NEWER run of the SAME workflow
+            // on this commit succeeded — the concurrency supersession: the
+            // latest run is the verdict of record, so a cancelled run with
+            // a succeeding newer sibling is retired history, while a
+            // cancelled run that is its workflow's latest (a manually
+            // aborted or timed-out suite with no re-run) leaves the commit
+            // UNVERIFIED. The pre-fix condition waved any cancelled suite
+            // through whenever any OTHER workflow on the commit succeeded
+            // (the 2026-11-21 full review's Major: this step's own name
+            // promises every suite green).
+            //
+            // CodeRabbit round on 9df92c5d (2026-11-21T21:50Z, Major —
+            // Functional Correctness): GitHub returns `timed_out` as its own
+            // conclusion, independent of `cancelled` and `failure`
+            // (docs.github.com — List workflow runs). A timed-out push run
+            // passed the completion check, the failure check, and the
+            // cancelled-only unverified filter — deploy=true on a commit
+            // whose gate suite died at the timeout. The verdict model is
+            // now an ALLOWLIST: a workflow's latest run must be success,
+            // skipped, or neutral; every other conclusion — cancelled,
+            // timed_out, action_required, stale, startup_failure, anything
+            // GitHub adds — leaves the commit UNVERIFIED and blocks the
+            // deploy. Fail closed on the unknown.
+            const VERIFIED_CONCLUSIONS = new Set(['success', 'skipped', 'neutral']);
+            // CodeRabbit assertive round (2026-11-22T03:23Z, Major —
+            // Functional Correctness): order runs by run_started_at, not
+            // created_at. GitHub documents that run_started_at RESETS on a
+            // re-run while created_at keeps the original creation time — a
+            // cancelled re-run attempt (created_at 10:00, re-run 12:00,
+            // still cancelled) would order as OLDER than a 10:30 success
+            // under created_at, letting the gate treat the operator's
+            // latest aborted attempt as superseded history. run_started_at
+            // is the attempt's own clock. Defensive fallback to created_at
+            // only if the field is ever absent from the API payload.
+            const attemptTime = r => String(r.run_started_at || r.created_at);
+            // CodeRabbit review (2026-11-22T05:34Z, Minor): run_started_at
+            // carries second precision — two attempts of one workflow on
+            // one commit can share a timestamp, and a strict `>` then keeps
+            // whichever the API listed first (order-dependent verdict:
+            // success-vs-timed_out at the same second could flip by
+            // response order). GitHub assigns run ids sequentially, so the
+            // higher id is the later attempt — a deterministic same-second
+            // tiebreaker. The gate's verdict never depends on API listing
+            // order.
+            const newer = (a, b) => {
+              const ta = attemptTime(a), tb = attemptTime(b);
+              if (ta !== tb) return ta > tb;
+              return Number(a.id) > Number(b.id);
+            };
+            const latestPerWorkflow = new Map();
+            for (const run of gate) {
+              const prev = latestPerWorkflow.get(run.name);
+              if (!prev || newer(run, prev)) {
+                latestPerWorkflow.set(run.name, run);
+              }
+            }
+            const unverified = [...latestPerWorkflow.values()]
+              .filter(r => !VERIFIED_CONCLUSIONS.has(r.conclusion));
+            if (unverified.length > 0) {
+              core.setFailed(`Latest suite run is not a verified verdict — the commit stays unverified, deployment skipped: ${unverified.map(r => `${r.name}=${r.conclusion}`).join(', ')}`);
               return;
+            }
+
+            // CodeRabbit assertive full review round (2026-11-22T02:10Z,
+            // Major — Functional Correctness): a cancelled run is retired
+            // ONLY by a NEWER SUCCESS run of the SAME workflow on this
+            // commit (the SYSTEM.md policy verbatim). The latest-run
+            // allowlist alone let a newer `skipped`/`neutral` run shadow an
+            // older cancelled one — the abort was never verified away, yet
+            // deploy flipped to true. Supersession is a SUCCESS-or-nothing
+            // relation: anything else leaves the commit UNVERIFIED.
+            for (const run of gate) {
+              if (run.conclusion !== 'cancelled') continue;
+              const supersededBySuccess = gate.some(r => r.name === run.name
+                  && r.conclusion === 'success'
+                  && newer(r, run));
+              if (!supersededBySuccess) {
+                core.setFailed(`Cancelled suite run without a newer succeeding run of the same suite — the commit stays unverified, deployment skipped: ${run.name}`);
+                return;
+              }
             }
 
             core.setOutput('deploy', 'true');

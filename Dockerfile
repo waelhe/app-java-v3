@@ -1,29 +1,13 @@
 # ── Build stage ──────────────────────────────────────
-# Cache mount: Railway's officially supported Dockerfile cache-mount format
-# (docs.railway.com/guides/dockerfiles — "Cache mounts":
-#   --mount=type=cache,id=s/<service id>-<target path>,target=<target path>
-# copy saved at scripts/prod-design-docs/railway-dockerfiles.txt). The id embeds
-# this service's Railway id (3efcf70c-…, the migration account wael.he /
-# project reasonable-presence — corrected 2026-10-15: the deployment reality
-# is the NEW account, whose genuine GitHub binding auto-deploys every main
-# merge — the measured proof is f9f3b9b6, which built #573's merge
-# (acc96ec70) SUCCESSFULLY with this exact id; 9a899faa (477011a) failed
-# BUILD_IMAGE validation on the stale f97e6783 for the same reason. The
-# previous restoration to 221b33de measured the OLD trial account
-# (successful-simplicity) — the sunset path with no GitHub binding, whose
-# last deploy (0e82181d on af1a916) rode a variable-change redeploy, not a
-# merge. Any future rebind must first measure the account that ACTUALLY
-# builds from main — the one whose GitHub connection fires on merges.
-# so Maven's local repository
-# (~/.m2 of the build-stage root user, including the Maven 3.10.0 distribution
-# the wrapper tool 3.3.4 downloads) survives across builds — the "exploit the cache" guidance of the
-# Dockerfile best practices (docs.docker.com — saved copy:
-# dockerfile-best-practices.txt). Local Docker/BuildKit treats the id as an
-# ordinary cache key, so the same Dockerfile stays portable.
+# Railway cache mounts are scoped to the publishing service. Keep this
+# hard-coded ID synchronized with the live production service:
+# app-java-v3 / production (Railway service 43b1b64b-9087-45d4-88ca-358a40c5a583).
+# Official format: --mount=type=cache,id=s/<service id>-<target path>,target=<target path>
+# https://docs.railway.com/builds/dockerfiles#cache-mounts
 FROM eclipse-temurin:25-jdk-alpine AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=s/3efcf70c-56d5-4d87-ada5-6bba32022229-/root/.m2,target=/root/.m2 \
+RUN --mount=type=cache,id=s/43b1b64b-9087-45d4-88ca-358a40c5a583-/root/.m2,target=/root/.m2 \
     chmod +x mvnw && ./mvnw clean package -DskipTests -B -pl marketplace-app -am
 
 # ── Extract layers stage ─────────────────────────────

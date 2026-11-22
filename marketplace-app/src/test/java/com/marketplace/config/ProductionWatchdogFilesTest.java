@@ -123,21 +123,21 @@ class ProductionWatchdogFilesTest {
         // The retired fork channel (fork-sync.yml, disabled with the old
         // account 2026-09-19) is gone: production now deploys directly from
         // main via Railway's GitHub App, which reports each deployment as a
-        // commit status on the built commit. Measured on this account:
-        // success on bb6da39 ("Success - app-java-v3-production...") and
-        // failure on 7371afbb/16117d8 ("Deployment failed" - the BUILD_IMAGE
-        // cache-id validation PR #347 closes). Only a pinned context keeps
+        // commit status on the built commit. Only a pinned context keeps
         // the probe measuring the REAL channel - a reverted pin would
         // silently monitor a context nobody posts to, and every run would
         // take the age-bounded path until the 240m limit trips.
         assertThat(yml).as("the freshness probe reads Railway's own commit "
                         + "status on main HEAD - the live deployment "
-                        + "channel's telemetry (rebound to the v5 migration "
-                        + "account's measured context 2026-10-15: "
-                        + "reasonable-presence - app-java-v3, success on "
-                        + "main HEAD e8e272d - the v4-era context belongs "
-                        + "to the old account and nobody posts to it)")
-                .contains("RAILWAY_STATUS_CONTEXT: \"reasonable-presence - app-java-v3\"");
+                        + "channel's telemetry (rebound to the current "
+                        + "migration account's measured context 2026-11-22 "
+                        + "(#839's assertive review round): "
+                        + "meticulous-consideration - app-java-v3, measured "
+                        + "on main HEAD 8ab2c667 targeting "
+                        + "railway.com/project/c8985750… - the v5-era "
+                        + "reasonable-presence context belongs to the old "
+                        + "account and nobody posts to it)")
+                .contains("RAILWAY_STATUS_CONTEXT: \"meticulous-consideration - app-java-v3\"");
         assertThat(yml).as("the retired fork compare must be gone - the "
                         + "fork channel was decommissioned with the old "
                         + "account and its compare would fail forever")
