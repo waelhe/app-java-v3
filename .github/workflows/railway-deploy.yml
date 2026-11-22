@@ -156,10 +156,21 @@ jobs:
             // GitHub adds — leaves the commit UNVERIFIED and blocks the
             // deploy. Fail closed on the unknown.
             const VERIFIED_CONCLUSIONS = new Set(['success', 'skipped', 'neutral']);
+            // CodeRabbit assertive round (2026-11-22T03:23Z, Major —
+            // Functional Correctness): order runs by run_started_at, not
+            // created_at. GitHub documents that run_started_at RESETS on a
+            // re-run while created_at keeps the original creation time — a
+            // cancelled re-run attempt (created_at 10:00, re-run 12:00,
+            // still cancelled) would order as OLDER than a 10:30 success
+            // under created_at, letting the gate treat the operator's
+            // latest aborted attempt as superseded history. run_started_at
+            // is the attempt's own clock. Defensive fallback to created_at
+            // only if the field is ever absent from the API payload.
+            const attemptTime = r => String(r.run_started_at || r.created_at);
             const latestPerWorkflow = new Map();
             for (const run of gate) {
               const prev = latestPerWorkflow.get(run.name);
-              if (!prev || String(run.created_at) > String(prev.created_at)) {
+              if (!prev || attemptTime(run) > attemptTime(prev)) {
                 latestPerWorkflow.set(run.name, run);
               }
             }
@@ -182,7 +193,7 @@ jobs:
               if (run.conclusion !== 'cancelled') continue;
               const supersededBySuccess = gate.some(r => r.name === run.name
                   && r.conclusion === 'success'
-                  && String(r.created_at) > String(run.created_at));
+                  && attemptTime(r) > attemptTime(run));
               if (!supersededBySuccess) {
                 core.setFailed(`Cancelled suite run without a newer succeeding run of the same suite — the commit stays unverified, deployment skipped: ${run.name}`);
                 return;
