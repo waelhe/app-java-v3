@@ -167,10 +167,24 @@ jobs:
             // is the attempt's own clock. Defensive fallback to created_at
             // only if the field is ever absent from the API payload.
             const attemptTime = r => String(r.run_started_at || r.created_at);
+            // CodeRabbit review (2026-11-22T05:34Z, Minor): run_started_at
+            // carries second precision — two attempts of one workflow on
+            // one commit can share a timestamp, and a strict `>` then keeps
+            // whichever the API listed first (order-dependent verdict:
+            // success-vs-timed_out at the same second could flip by
+            // response order). GitHub assigns run ids sequentially, so the
+            // higher id is the later attempt — a deterministic same-second
+            // tiebreaker. The gate's verdict never depends on API listing
+            // order.
+            const newer = (a, b) => {
+              const ta = attemptTime(a), tb = attemptTime(b);
+              if (ta !== tb) return ta > tb;
+              return Number(a.id) > Number(b.id);
+            };
             const latestPerWorkflow = new Map();
             for (const run of gate) {
               const prev = latestPerWorkflow.get(run.name);
-              if (!prev || attemptTime(run) > attemptTime(prev)) {
+              if (!prev || newer(run, prev)) {
                 latestPerWorkflow.set(run.name, run);
               }
             }
@@ -193,7 +207,7 @@ jobs:
               if (run.conclusion !== 'cancelled') continue;
               const supersededBySuccess = gate.some(r => r.name === run.name
                   && r.conclusion === 'success'
-                  && attemptTime(r) > attemptTime(run));
+                  && newer(r, run));
               if (!supersededBySuccess) {
                 core.setFailed(`Cancelled suite run without a newer succeeding run of the same suite — the commit stays unverified, deployment skipped: ${run.name}`);
                 return;
