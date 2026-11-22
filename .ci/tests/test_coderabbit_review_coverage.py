@@ -58,6 +58,75 @@ class ParserTests(unittest.TestCase):
         with self.assertRaisesRegex(gate.GateError, "duplicate paths"):
             gate.processed_files(body)
 
+    def test_excludes_file_explicitly_skipped_as_similar_from_review_coverage(self):
+        body = (
+            "<details><summary>Files selected for processing: 2</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n"
+            "* " + BT + "file-b.json" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: 1</summary>\n"
+            "<dl><dd>\n* file-b.json\n</dd></dl></details>"
+        )
+        self.assertEqual(gate.processed_files(body), ["file-a.py"])
+
+    def test_rejects_skipped_file_count_that_does_not_match_the_declared_count(self):
+        body = (
+            "<details><summary>Files selected for processing: 1</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: 2</summary>\n"
+            "<dl><dd>\n* file-a.py\n</dd></dl></details>"
+        )
+        with self.assertRaisesRegex(gate.GateError, "declared 2 skipped files but listed 1"):
+            gate.processed_files(body)
+
+    def test_rejects_skipped_paths_not_in_the_selected_file_list(self):
+        body = (
+            "<details><summary>Files selected for processing: 1</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: 1</summary>\n"
+            "<dl><dd>\n* file-b.json\n</dd></dl></details>"
+        )
+        with self.assertRaisesRegex(gate.GateError, "absent from the selected-file list"):
+            gate.processed_files(body)
+
+    def test_rejects_a_present_skipped_section_whose_declared_count_is_not_a_number(self):
+        # Round 1 (CodeRabbit on this PR): the header's PRESENCE with an
+        # unparseable count must fail closed — the pre-fix path treated the
+        # malformed declaration as "section absent" and returned the plain
+        # selected list (coverage the review never granted).
+        body = (
+            "<details><summary>Files selected for processing: 2</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n"
+            "* " + BT + "file-b.json" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: several</summary>\n"
+            "<dl><dd>\n* file-b.json\n</dd></dl></details>"
+        )
+        with self.assertRaisesRegex(gate.GateError, "skipped-file section is present but malformed"):
+            gate.processed_files(body)
+
+    def test_rejects_a_present_skipped_section_whose_count_is_digits_then_garbage(self):
+        # Round 2 (CodeRabbit on this PR): `(\d+)` alone accepts `0unknown`
+        # as count 0 — a malformed declaration that then silently passes as
+        # "zero skipped files". The count token must be digits only.
+        body = (
+            "<details><summary>Files selected for processing: 2</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n"
+            "* " + BT + "file-b.json" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: 0unknown</summary>\n"
+            "<dl><dd>\n</dd></dl></details>"
+        )
+        with self.assertRaisesRegex(gate.GateError, "skipped-file section is present but malformed"):
+            gate.processed_files(body)
+
+    def test_keeps_the_plain_selected_list_when_no_skipped_section_exists(self):
+        # The other half of the presence/absence split: a body with no
+        # skipped-section header at all keeps the selected list unchanged.
+        body = (
+            "<details><summary>Files selected for processing: 2</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n"
+            "* " + BT + "file-b.json" + BT + "\n</dd></dl></details>"
+        )
+        self.assertEqual(gate.processed_files(body), ["file-a.py", "file-b.json"])
+
 
 class ReviewTests(unittest.TestCase):
     def setUp(self):

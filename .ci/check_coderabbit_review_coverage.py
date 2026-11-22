@@ -189,15 +189,52 @@ def processed_files(body):
     need(match is not None, "CodeRabbit omitted its explicit processed-file list")
     expected = int(match.group(1))
     marker = chr(96)
-    result = []
+    selected = []
     for line in match.group(2).splitlines():
         found = re.match(r"^\s*[*-]\s+" + re.escape(marker) + r"([^" + re.escape(marker) + r"]+)" +
                          re.escape(marker) + r"\s*$", line)
         if found:
-            result.append(found.group(1).strip())
-    need(len(result) == expected, f"CodeRabbit declared {expected} files but listed {len(result)}")
-    need(len(result) == len(set(result)), "CodeRabbit processed-file list contains duplicate paths")
-    return result
+            selected.append(found.group(1).strip())
+    need(len(selected) == expected, f"CodeRabbit declared {expected} files but listed {len(selected)}")
+    need(len(selected) == len(set(selected)), "CodeRabbit processed-file list contains duplicate paths")
+
+    # A selected path that CodeRabbit explicitly skips as similar to a prior
+    # change is not evidence that the current review inspected that path.
+    # Subtract skipped paths before exact-coverage checks and fail closed on
+    # malformed or contradictory skip declarations.
+    #
+    # Presence vs absence (CodeRabbit round 1 on this PR): a body that
+    # carries the skipped-section HEADER with an unparseable count must
+    # fail closed — treating a malformed declaration as "no skipped files"
+    # would pass coverage the review never granted. Only a body with no
+    # skipped-section header at all keeps the plain selected list.
+    if not re.search(r"Files\s+skipped\s+from\s+review", body or "", re.I):
+        return selected
+    # The count token must be digits only (CodeRabbit round 2 on this PR):
+    # `(\d+)` alone also accepts `0unknown` as `0` — a malformed declaration
+    # that then silently passes as "zero skipped files". Anchoring the count
+    # against the summary close (`:\s*(\d+)</summary>`) accepts only a bare
+    # integer; anything else is a malformed declaration and fails closed.
+    skipped_match = re.search(
+        r"Files skipped from review[^:]*:\s*(\d+)\s*</summary>(.*?)(?:</details>|$)",
+        body or "", re.I | re.S,
+    )
+    need(skipped_match is not None,
+         "CodeRabbit skipped-file section is present but malformed (unparseable count or structure)")
+
+    skipped_expected = int(skipped_match.group(1))
+    skipped = []
+    for line in skipped_match.group(2).splitlines():
+        found = re.match(r"^\s*[*-]\s+(.+?)\s*$", line)
+        if found:
+            skipped.append(found.group(1).strip().strip(chr(96)))
+    need(len(skipped) == skipped_expected,
+         f"CodeRabbit declared {skipped_expected} skipped files but listed {len(skipped)}")
+    need(len(skipped) == len(set(skipped)), "CodeRabbit skipped-file list contains duplicate paths")
+    need(set(skipped).issubset(set(selected)),
+         "CodeRabbit skipped-file list contains paths absent from the selected-file list")
+    skipped_set = set(skipped)
+    return [path for path in selected if path not in skipped_set]
 
 
 def latest_review(reviews, sha, login):
