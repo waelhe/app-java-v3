@@ -31,6 +31,15 @@ The verifier requires every shard PR's recorded `base.sha` to equal the candidat
 
 The earlier 2026-11-01 alignment to `1fcb6b87` (the then-current main tip after #785) is historical. Before final manifest verification, the candidate and all listed shards must share the same frozen base SHA. If `main` advances before verification, repeat the alignment and re-cut only affected shards under the v2 rules.
 
+**Gap-closure + gitleaks-closure re-alignment — 2026-11-22:**
+
+- `main` advanced to `9b5e29af` (owner merged #839); the candidate merged it (head `5da24546`), and all six shards were re-cut on that base with per-path blobs at candidate head.
+- The union of the six partitions had covered only **541/568** paths — a measured 27-path partition gap (pre-existing design gap, list preserved in the campaign evidence). The gap was closed by affinity redistribution within the 100-file cap: the six shards now carry **100 / 100 / 98 / 89 / 91 / 100** paths; the union is again **568/568** with zero missing, zero extra, zero overlap, and per-path blobs identical to the candidate head.
+- The 2026-11-01 shard-05 re-cut of the previous wave was pushed to a wrong branch name (missing the `-w4` suffix): PR #810 kept a stale head on the old base until the 2026-11-22 correction (push to the correct `-w4` ref; the no-suffix ref restored to its own PR #798 recorded head).
+- The re-cut commits put first-parent diff hunks under the Build job's gitleaks step that the candidate's own merge-tested scan ranges had never walked: the `#807` re-cut fired the pseudonymization fixture (already exempted in the candidate's `.gitleaks.toml`, main's copy on the shard lacked the exemption) and exposed the one remaining unexempted fixture of the same family — the mail-journey IT house password (entropy 4.21 above the 4.0 high-fail threshold). Root fix per the round-9 closed-family precedent: commit `181ddc32` on the integration branch adds the exact-declaration allow entry (adversarially probed: appended-key, different-value and second-literal lines stay detected). Candidate head is now `181ddc32`; the ONE shard whose partition intersects the fix (`.gitleaks.toml` rides shard 01) was re-cut at `c8b33abb`; the other five keep heads and blobs. Full verification after the re-cut: all six shards' per-path blobs equal `181ddc32`, union 568/568.
+- Fresh CodeRabbit reviews remain required on the current shard heads: #806@c8b33abb and #807–#811@their 2026-11-22 heads. The provider was rate-limited across both the 09:50–10:20Z and 15:18–15:53Z request cycles (measured: every request answered "Review rate limited"); the next trigger windows follow the ≥75-minute rule after the latest rejection.
+
+
  
 **Post-repair measurement — 2026-11-13T16:52:20Z (GitHub live):**
 
