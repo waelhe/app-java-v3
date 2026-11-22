@@ -210,8 +210,13 @@ def processed_files(body):
     # skipped-section header at all keeps the plain selected list.
     if not re.search(r"Files\s+skipped\s+from\s+review", body or "", re.I):
         return selected
+    # The count token must be digits only (CodeRabbit round 2 on this PR):
+    # `(\d+)` alone also accepts `0unknown` as `0` — a malformed declaration
+    # that then silently passes as "zero skipped files". Anchoring the count
+    # against the summary close (`:\s*(\d+)</summary>`) accepts only a bare
+    # integer; anything else is a malformed declaration and fails closed.
     skipped_match = re.search(
-        r"Files skipped from review[^:]*:\s*(\d+).*?</summary>(.*?)(?:</details>|$)",
+        r"Files skipped from review[^:]*:\s*(\d+)\s*</summary>(.*?)(?:</details>|$)",
         body or "", re.I | re.S,
     )
     need(skipped_match is not None,

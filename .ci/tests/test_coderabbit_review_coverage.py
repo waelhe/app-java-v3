@@ -103,6 +103,20 @@ class ParserTests(unittest.TestCase):
         with self.assertRaisesRegex(gate.GateError, "skipped-file section is present but malformed"):
             gate.processed_files(body)
 
+    def test_rejects_a_present_skipped_section_whose_count_is_digits_then_garbage(self):
+        # Round 2 (CodeRabbit on this PR): `(\d+)` alone accepts `0unknown`
+        # as count 0 — a malformed declaration that then silently passes as
+        # "zero skipped files". The count token must be digits only.
+        body = (
+            "<details><summary>Files selected for processing: 2</summary>\n"
+            "<dl><dd>\n* " + BT + "file-a.py" + BT + "\n"
+            "* " + BT + "file-b.json" + BT + "\n</dd></dl></details>\n"
+            "<details><summary>Files skipped from review as they are similar to previous changes: 0unknown</summary>\n"
+            "<dl><dd>\n</dd></dl></details>"
+        )
+        with self.assertRaisesRegex(gate.GateError, "skipped-file section is present but malformed"):
+            gate.processed_files(body)
+
     def test_keeps_the_plain_selected_list_when_no_skipped_section_exists(self):
         # The other half of the presence/absence split: a body with no
         # skipped-section header at all keeps the selected list unchanged.
