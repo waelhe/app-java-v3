@@ -20,6 +20,7 @@ import test.config.IntegrationContainers;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -251,7 +252,10 @@ class CollectionMembershipPositionRaceIntegrationTest {
         Product second = persistProduct("b6 lock-pin B");
         collectionWriteService.addProducts(collection.getId(), List.of(first.getId()));
 
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.ExecutorService holderPool =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        java.util.concurrent.ExecutorService appendPool =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
         java.util.concurrent.CountDownLatch lockHeld =
                 new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.CountDownLatch releaseHolder =
@@ -263,8 +267,13 @@ class CollectionMembershipPositionRaceIntegrationTest {
         // its un-checked Future. A raw connection with an explicit commit
         // owns the transaction-scoped advisory lock with no Spring tx
         // machinery in the loop, and the holder's failure surface is
-        // asserted, never swallowed.
-        java.util.concurrent.Future<Void> holder = pool.submit(() -> {
+        // asserted, never swallowed. The 2026-11-22 round-2 review
+        // additionally pinned the proof-of-wait: the append runs on its OWN
+        // executor (a busy holder thread can no longer explain an
+        // incomplete future), and the wait itself is attested by the
+        // database — the append's session shows wait_event_type='Lock',
+        // wait_event='advisory' in pg_stat_activity.
+        java.util.concurrent.Future<Void> holder = holderPool.submit(() -> {
             try (java.sql.Connection conn = dataSource.getConnection()) {
                 conn.setAutoCommit(false);
                 try (java.sql.PreparedStatement ps = conn.prepareStatement(
@@ -292,24 +301,36 @@ class CollectionMembershipPositionRaceIntegrationTest {
                     .isTrue();
 
             java.util.concurrent.Future<com.marketplace.catalog.spi.CollectionMutationResult> waiting =
-                    pool.submit(() -> {
+                    appendPool.submit(() -> {
                         asAdmin();
                         return collectionWriteService.addProducts(collection.getId(), List.of(second.getId()));
                     });
 
             // The append reached the acquisition attempt and is WAITING on
-            // it — the service path's own serialization point. A short
-            // window (well under the hold's release) proves the wait is
-            // the lock, not the method's other legs.
-            org.assertj.core.api.Assertions.assertThat(waiting.isDone())
-                    .as("the append must be parked at the advisory-lock acquisition while the holder owns it")
-                    .isFalse();
-            // Re-check after a beat so a fast-slip (lock released early,
-            // append already done) cannot fake the parked state.
-            java.lang.Thread.sleep(300);
-            org.assertj.core.api.Assertions.assertThat(waiting.isDone())
-                    .as("the append is still parked at the acquisition point inside the hold window")
-                    .isFalse();
+            // it — proven by the DATABASE's own wait attribution, not by the
+            // future's incompleteness alone (the round-2 review's law: a
+            // busy executor can fake incompleteness; pg_stat_activity
+            // cannot). The probe carries its own bounded wait so a slow
+            // pool start never flakes the test.
+            boolean lockWaitAttested = false;
+            for (int probe = 0; probe < 100 && !lockWaitAttested; probe++) {
+                java.util.List<Map<String, Object>> waits = jdbcTemplate.queryForList("""
+                        SELECT wait_event_type, wait_event
+                        FROM pg_stat_activity
+                        WHERE datname = current_database()
+                          AND wait_event_type = 'Lock'
+                          AND wait_event = 'advisory'
+                          AND backend_type = 'client backend'
+                        """);
+                lockWaitAttested = !waits.isEmpty();
+                if (!lockWaitAttested) {
+                    java.lang.Thread.sleep(100);
+                }
+            }
+            org.assertj.core.api.Assertions.assertThat(lockWaitAttested)
+                    .as("the append session must be observed waiting on the advisory lock "
+                            + "(pg_stat_activity: wait_event_type='Lock', wait_event='advisory')")
+                    .isTrue();
 
             // Release: the holder COMMITs, the advisory lock frees, and the
             // parked append completes with a dense live position.
@@ -324,11 +345,12 @@ class CollectionMembershipPositionRaceIntegrationTest {
                     .findByCollectionIdOrderByPositionAscIdAsc(collection.getId());
             org.assertj.core.api.Assertions.assertThat(membership).hasSize(2);
             org.assertj.core.api.Assertions.assertThat(membership.stream()
-                            .mapToInt(CollectionProduct::getPosition))
+                            .mapToInt(CollectionProduct::getPosition()))
                     .containsExactlyInAnyOrder(1, 2);
         } finally {
             releaseHolder.countDown();
-            pool.shutdownNow();
+            holderPool.shutdownNow();
+            appendPool.shutdownNow();
         }
     }
 
