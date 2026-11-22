@@ -46,6 +46,18 @@ env:
 jobs:
   deploy:
     name: Deploy the dispatched commit to Railway (all suites green)
+    # CodeRabbit full review round (2026-11-22T00:01Z, Major — secret
+    # availability): RAILWAY_TOKEN's exposure is restricted at the GitHub
+    # SETTINGS level, not by the in-workflow GITHUB_REF guard alone. This
+    # job is bound to the `railway-production` environment whose
+    # deployment branch policy allows ONLY main — GitHub blocks the job
+    # outright for any other ref before a single step runs. The
+    # refs/heads/main guard below stays as defense in depth. The owner
+    # completes the lockdown by moving RAILWAY_TOKEN into the environment
+    # (repo-level secrets remain visible to the job until then; the value
+    # is unreadable through the API, so the move is an owner action —
+    # docs/railway-deployment-reference.md §Secrets).
+    environment: railway-production
     # Manual lever only. The automatic channel that used to fire on every
     # main merge was disabled by the owner's measured decision
     # (2026-10-10): a trial account with bursty merges (13 in one day, mostly
