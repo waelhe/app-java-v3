@@ -97,9 +97,9 @@ class CollectionMembershipPositionRaceIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    /** The holder transaction's manager for the lock-acquisition pin leg. */
+    /** The holder leg's raw JDBC source for the lock-acquisition pin. */
     @Autowired
-    private org.springframework.transaction.PlatformTransactionManager platformTransactionManager;
+    private javax.sql.DataSource dataSource;
 
     /** This test's own rows — FK-safe cleanup after every leg. */
     private final List<UUID> seededCollectionIds = new ArrayList<>();
@@ -252,33 +252,43 @@ class CollectionMembershipPositionRaceIntegrationTest {
         collectionWriteService.addProducts(collection.getId(), List.of(first.getId()));
 
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
-        // The holder transaction: acquire the collection's advisory lock and
-        // hold it across a signal so the observation window is explicit.
         java.util.concurrent.CountDownLatch lockHeld =
                 new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.CountDownLatch releaseHolder =
                 new java.util.concurrent.CountDownLatch(1);
-        org.springframework.transaction.support.TransactionTemplate holderTx =
-                new org.springframework.transaction.support.TransactionTemplate(platformTransactionManager);
+        // The holder rides a PLAIN JDBC connection (autocommit off) — the
+        // CI-measured failure mode of the first cut was the JPA
+        // TransactionTemplate path on a pool thread: the latch never fired
+        // inside 30s and the holder's exception (if any) sat invisible in
+        // its un-checked Future. A raw connection with an explicit commit
+        // owns the transaction-scoped advisory lock with no Spring tx
+        // machinery in the loop, and the holder's failure surface is
+        // asserted, never swallowed.
         java.util.concurrent.Future<Void> holder = pool.submit(() -> {
-            holderTx.executeWithoutResult(tx -> {
-                jdbcTemplate.update("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
-                        collection.getId().toString());
-                lockHeld.countDown();
-                try {
-                    // Bounded hold: the release signal, with a hang budget so
-                    // a lost signal can never park this worker forever.
-                    releaseHolder.await(30, java.util.concurrent.TimeUnit.SECONDS);
-                } catch (InterruptedException parked) {
-                    Thread.currentThread().interrupt();
+            try (java.sql.Connection conn = dataSource.getConnection()) {
+                conn.setAutoCommit(false);
+                try (java.sql.PreparedStatement ps = conn.prepareStatement(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))")) {
+                    ps.setString(1, collection.getId().toString());
+                    try (java.sql.ResultSet rs = ps.executeQuery()) {
+                        assertThat(rs.next()).isTrue();
+                    }
                 }
-            });
+                lockHeld.countDown();
+                releaseHolder.await(60, java.util.concurrent.TimeUnit.SECONDS);
+                conn.commit(); // releases the transaction-scoped advisory lock
+            } catch (InterruptedException parked) {
+                Thread.currentThread().interrupt();
+            }
             return null;
         });
         try {
-            // The acquisition is live before the racing append starts.
-            org.assertj.core.api.Assertions.assertThat(lockHeld.await(30, java.util.concurrent.TimeUnit.SECONDS))
-                    .as("the holder transaction must own the advisory lock first")
+            // The acquisition is live before the racing append starts — and
+            // a holder-side failure must fail THIS test, not vanish.
+            org.assertj.core.api.Assertions.assertThat(
+                            lockHeld.await(60, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("the holder transaction must own the advisory lock first (holder failure: "
+                            + "%s)", holder.isDone() ? holder.toString() : "still running")
                     .isTrue();
 
             java.util.concurrent.Future<com.marketplace.catalog.spi.CollectionMutationResult> waiting =
@@ -305,8 +315,10 @@ class CollectionMembershipPositionRaceIntegrationTest {
             // parked append completes with a dense live position.
             releaseHolder.countDown();
             com.marketplace.catalog.spi.CollectionMutationResult appended =
-                    waiting.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                    waiting.get(60, java.util.concurrent.TimeUnit.SECONDS);
             org.assertj.core.api.Assertions.assertThat(appended.success()).isTrue();
+            // The holder leg itself must have completed cleanly.
+            holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
 
             List<CollectionProduct> membership = collectionProductRepository
                     .findByCollectionIdOrderByPositionAscIdAsc(collection.getId());
