@@ -169,7 +169,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM: waelhe/app-java-v3
-          RAILWAY_STATUS_CONTEXT: "reasonable-presence - app-java-v3"
+          # CodeRabbit assertive full review on #839 (2026-11-22T02:10Z,
+          # Minor): the live project's Railway GitHub App posts its commit
+          # statuses under the CURRENT project name — measured on main HEAD
+          # 8ab2c667: context "meticulous-consideration - app-java-v3"
+          # (state failure, targeting railway.com/project/c8985750…). The
+          # retired "reasonable-presence - app-java-v3" belongs to the
+          # v5-era account; nobody posts to it, and a stale pin silently
+          # degrades the probe to the age-only path until the 240m limit
+          # trips a false stale incident.
+          RAILWAY_STATUS_CONTEXT: "meticulous-consideration - app-java-v3"
           MAX_LAG_MINUTES: 240
         run: |
           set -u
