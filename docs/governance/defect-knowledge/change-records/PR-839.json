@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "pullRequest": 839,
+  "governingFiles": [
+    "Dockerfile",
+    ".github/workflows/railway-deploy.yml",
+    "docs/railway-deployment-reference.md",
+    "AGENTS.md",
+    "docs/governance/defect-knowledge/change-protocol.md",
+    "docs/governance/defect-knowledge/rulebook.md",
+    "docs/governance/defect-knowledge/pattern-catalog.md",
+    "docs/railway-deployment-reference.md",
+    "SYSTEM.md",
+    "PROJECT_MAP.md",
+    "docs/operating/trial-renewal-and-provider-migration-runbook.md"
+  ],
+  "rulesTriggered": [
+    "A1",
+    "A3",
+    "A5",
+    "A6",
+    "B6"
+  ],
+  "patternsReviewed": [
+    "P1",
+    "P6",
+    "P9"
+  ],
+  "historicalCasesReviewed": [
+    "E-02",
+    "E-13",
+    "E-16"
+  ],
+  "invariants": [
+    "The Dockerfile cache mount id s/<live production service id>-<target> matches Railway's documented service-scoped cache-mount form.",
+    "The manual Railway deployment workflow targets the measured live production project, environment, and service identifiers rather than the retired resources.",
+    "The workflow is workflow_dispatch-only: merging a pull request does not trigger a Railway production deployment.",
+    "Historical recovery commands in SYSTEM.md, PROJECT_MAP.md, and the 2026-10-17 provider runbook are explicitly retired; current Railway identity is read back and published in docs/railway-deployment-reference.md.",
+    "No application code, API contract, database schema, runtime variables, secrets, or data resources are changed by this pull request.",
+    "Production deployment workflow rejects workflow_dispatch refs other than refs/heads/main; feature branches and tags cannot deploy to the production service."
+  ],
+  "doors": [
+    "GitHub Actions .github/workflows/railway-deploy.yml workflow_dispatch — the only repository-managed Railway deployment entry point",
+    "Railway BUILD_IMAGE Dockerfile validation — the service-scoped Maven cache-mount identifier",
+    "Railway native GitHub autodeploy is not enabled in the current project configuration; merge-to-main is not a deployment trigger"
+  ],
+  "siblingSearch": [
+    {
+      "family": "Hard-coded deployment resource identifiers",
+      "pathsSearched": [
+        "Dockerfile",
+        "Dockerfile.staging",
+        ".github/workflows/railway-deploy.yml",
+        ".railway/railway.ts",
+        "docs/railway-deployment-reference.md",
+        "SYSTEM.md",
+        "PROJECT_MAP.md",
+        "docs/operating/trial-renewal-and-provider-migration-runbook.md"
+      ],
+      "result": "The retired service id 3efcf70c-56d5-4d87-ada5-6bba32022229 remained in four historical operational references across three files: SYSTEM.md:401, PROJECT_MAP.md:127, and docs/operating/trial-renewal-and-provider-migration-runbook.md:350 and :360. These were not live deployment configuration, but the runbook recovery command was unsafe to replay. The occurrences are now explicitly marked historical/retired and point to docs/railway-deployment-reference.md, whose current project/environment/service ids were read back directly from Railway on 2026-11-20. The current production workflow uses the live ids; Dockerfile.staging carries its OWN service-scoped cache mount (s/ca6659b8-8319-4e7f-bd10-c14b4c155f33-/root/.m2 — the staging service's id, distinct from the production id 43b1b64b-9087-45d4-88ca-358a40c5a583; both follow Railway's documented service-scoped form, and neither presence implies invalidity); .railway/railway.ts declares variables, not service ids."
+    }
+  ],
+  "tests": [
+    {
+      "name": "Railway read-back of live production resources",
+      "command": "Read-only Railway GraphQL/API read-back",
+      "verification": "Read-only Railway describe-service/list-deployments read-back on 2026-11-20 confirmed project c8985750-82a2-42eb-8431-ee0f49352818 (meticulous-consideration), environment c324c1a0-e4db-4a9a-8dc0-30ca1f3935d0 (production), service 43b1b64b-9087-45d4-88ca-358a40c5a583 (app-java-v3), domain app-java-v3-production.up.railway.app:8080, latest deployment FAILED at BUILD_IMAGE, and previous latest SUCCESS on 2026-11-15."
+    },
+    {
+      "name": "Railway build-failure evidence",
+      "command": "Inspect the failed production BUILD_IMAGE deployment log",
+      "verification": "The original Dockerfile validation error identified the retired cache-mount id at Dockerfile line 26; this change replaces it with the measured live service id."
+    },
+    {
+      "name": "GitHub CI on the refreshed PR head",
+      "command": "GitHub Actions checks for PR #839 after syncing its branch to the current main tip",
+      "verification": "Must complete successfully on the exact current PR head before merge; the earlier 4b1cbed run is historical evidence only."
+    },
+    {
+      "name": "Post-merge production deployment and smoke verification",
+      "command": "Manually dispatch Actions → Railway Deploy from main, then read back Railway deployment state and run the agreed service smoke check",
+      "verification": "Pending owner-gated execution tracked in https://github.com/waelhe/app-java-v3/issues/845; merging this PR alone does not deploy."
+    },
+    {
+      "name": "Production dispatch ref guard",
+      "command": "GitHub Actions workflow guard checks context.ref equals refs/heads/main before running the all-suites-green gate or calling Railway",
+      "verification": "Static workflow-order review confirms this guard executes before the all-suites-green gate and before the Railway API mutation. The non-main failure path has not been dispatched in this change; no production deployment was run."
+    }
+  ],
+  "findings": [
+    {
+      "key": "W-839-1",
+      "domain": "ci.railway-deploy",
+      "scenario": "A production deployment runs after the Railway service migration while the Dockerfile cache mount and railway-deploy.yml still carry retired project/service identifiers, so Railway rejects the Dockerfile at BUILD_IMAGE validation",
+      "invariant": "The Dockerfile cache mount uses the live production service id in Railway's documented service-scoped form, and the manual Railway workflow targets the live production project, environment, and service",
+      "fingerprint": "sha256:b867c0a1a13e8c705a09a209092cd90b165875c09abfe741bc64f54a69fbbf2b",
+      "sourceUrls": [
+        "https://github.com/waelhe/app-java-v3/pull/839",
+        "https://github.com/waelhe/app-java-v3/issues/845",
+        "https://docs.railway.com/guides/dockerfiles",
+        "https://docs.railway.com/deployments/deployment-actions",
+        "https://docs.railway.com/deployments/github-autodeploys",
+        "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows"
+      ],
+      "classification": "environmental",
+      "severity": "high",
+      "status": "registered",
+      "note": "The configuration correction is implemented in this PR, but production verification remains pending. The repository workflow is intentionally workflow_dispatch-only: merging to main does not deploy. After merge, issue #845 requires the owner to dispatch Railway Deploy from main, verify that the correct production service reaches terminal SUCCESS, and complete the agreed smoke check. Native Railway autodeploy is not assumed or claimed; Railway documents that it requires a project member with a connected GitHub account and contributor access. Rollback, if required, is through the Railway Deployments menu to the previous successful deployment, subject to image-retention limits.",
+      "decision": {
+        "owner": "waelhe",
+        "url": "https://github.com/waelhe/app-java-v3/pull/839"
+      }
+    }
+  ]
+}

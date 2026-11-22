@@ -88,5 +88,27 @@ regexes = [
 # lines: all exempted; an appended AWS key on the same line, a sk_live
 # value, a ghp_ token, or any other -key value all stay DETECTED (the $
 # anchor and the exact alternation carry the whole burden).
-  '''^\s*"(?:--)?marketplace\.security\.pseudonymization\.subject-hmac-key=(?:it-pseudonymization-key|it-self-deletion-key|it-mail-leg-journey-key|b4-supply-pseudonymization-key)"\)?[,;]?\s*$'''
+  '''^\s*"(?:--)?marketplace\.security\.pseudonymization\.subject-hmac-key=(?:it-pseudonymization-key|it-self-deletion-key|it-mail-leg-journey-key|b4-supply-pseudonymization-key)"\)?[,;]?\s*$''',
+#
+# Adversarial-measured closure (2026-11-22, the shard re-cut at candidate
+# 5da24546): the same first-parent diff-hunk surface that fired the
+# pseudonymization fixture above will, on any scan that walks
+# AccountLifecycleMailLegIntegrationTest's carrier line, also fire the
+# house-password test fixture
+# private static final String HOUSE_PASSWORD = "b11-Mail-Journey-Passw0rd!";
+# — the default generic-api-key rule matches the PASSWORD keyword
+# adjacency at entropy 4.21 (above the 4.0 high-fail threshold measured for
+# the sibling family above). The value is a TEST house password shared by
+# every leg of one IT (the file's own javadoc says so), never a credential
+# — registration accepts it only inside the Testcontainers backend the
+# suite owns. The allow below is the COMPLETE Java field declaration,
+# anchored from line start to the statement-terminating semicolon: the
+# typed private-static-final HOUSE_PASSWORD declaration whose sole string
+# literal is the exact fixture value. The exact-value anchor carries the
+# whole security burden (the round-9 #806 precedent: a generic
+# house-password shape would exempt a hypothetical real password line;
+# this exact one does not) — a different value, a second literal, or an
+# appended real secret on the same line all stay DETECTED. The family is
+# closed at one carrier: only this exact declaration, in any file.
+  '''^\s*private static final String HOUSE_PASSWORD = "b11-Mail-Journey-Passw0rd!";\s*$'''
 ]
