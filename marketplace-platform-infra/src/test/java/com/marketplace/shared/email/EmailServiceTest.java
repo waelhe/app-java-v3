@@ -40,6 +40,12 @@ class EmailServiceTest {
                 new ch.qos.logback.core.read.ListAppender<>();
 
         LogCapture() {
+            // Programmatically added appenders are NOT auto-started by a
+            // running context — AppenderBase.doAppend drops events until
+            // start() flips the started flag (the measured CI failure:
+            // zero events captured). Started explicitly, stopped on
+            // detach in close().
+            appender.start();
             captured.addAppender(appender);
         }
 
@@ -55,6 +61,7 @@ class EmailServiceTest {
         @Override
         public void close() {
             captured.detachAppender(appender);
+            appender.stop();
         }
     }
 
