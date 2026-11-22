@@ -40,7 +40,6 @@ class EmailServiceTest {
                 new ch.qos.logback.core.read.ListAppender<>();
 
         LogCapture() {
-            appender.setIncludeLocation(false);
             captured.addAppender(appender);
         }
 
