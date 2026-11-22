@@ -345,7 +345,7 @@ class CollectionMembershipPositionRaceIntegrationTest {
                     .findByCollectionIdOrderByPositionAscIdAsc(collection.getId());
             org.assertj.core.api.Assertions.assertThat(membership).hasSize(2);
             org.assertj.core.api.Assertions.assertThat(membership.stream()
-                            .mapToInt(CollectionProduct::getPosition()))
+                            .mapToInt(CollectionProduct::getPosition))
                     .containsExactlyInAnyOrder(1, 2);
         } finally {
             releaseHolder.countDown();
