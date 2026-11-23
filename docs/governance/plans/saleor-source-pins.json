@@ -3,19 +3,28 @@
   "status": "canonical",
   "referenceSchema": {
     "repository": "saleor/saleor",
-    "ref": "3.23.43",
+    "ref": "3.23.45",
     "path": "saleor/graphql/schema.graphql",
     "gitBlobSha1": "b8fa0dd809081f76dc2834bb5c286561e5783276",
     "queryRoots": 90,
     "mutationRoots": 342,
     "subscriptionRoots": 26,
-    "totalRoots": 458
+    "totalRoots": 458,
+    "releaseCommit": "e5b7e5f80f8b579aa27b18a271da78d8fd835947",
+    "releasePublishedAt": "2026-10-28T13:47:33Z",
+    "releaseSchemaAssetSha256": "bf37d116a6e04354cbb9c35a4ee1343ab0602269b2b4ee0f8872adaa03abec6d"
   },
   "dashboard": {
     "repository": "saleor/saleor-dashboard",
-    "tag": "3.23.39",
-    "commit": "bc75e988da0fa4fbc3d47378a888d859d070746f",
-    "license": "BSD-3-Clause"
+    "tag": "3.23.41",
+    "commit": "ae7697bc635c46392d2fca5f88a34970097679f7",
+    "license": "BSD-3-Clause",
+    "releasePublishedAt": "2026-10-19T15:14:22Z",
+    "releaseCompatibilityEvidence": {
+      "documentedFeatureMinimumCoreVersion": "3.23.42",
+      "selectedCoreVersion": "3.23.45",
+      "assessment": "The Dashboard 3.23.41 release notes identify a feature requiring Saleor Core 3.23.42 or later; the selected Core release satisfies that stated minimum."
+    }
   },
   "platform": {
     "backendRepository": "waelhe/app-java-v3",
@@ -31,5 +40,28 @@
     "saleorBackendIsDeployed": false,
     "legacyPlatformRootsAreCountedAsSaleorMatches": false,
     "productionPinsMoveOnlyByReviewedChange": true
+  },
+  "upstreamDevelopmentHeads": {
+    "role": "Drift observation only; these untagged main commits are not contract or deployment pins.",
+    "observedAt": "2026-10-31",
+    "core": {
+      "repository": "saleor/saleor",
+      "branch": "main",
+      "commit": "cc4aea76e397b1dead74363c266c579ae808770f",
+      "committedAt": "2026-10-29T09:49:55Z"
+    },
+    "dashboard": {
+      "repository": "saleor/saleor-dashboard",
+      "branch": "main",
+      "commit": "453a8fae0ae25a2660ab8ca38e2a288a78a65613",
+      "committedAt": "2026-10-30T10:04:16Z"
+    }
+  },
+  "officialAiDocumentation": {
+    "guide": "https://docs.saleor.io/developer/ai",
+    "documentationRepository": "saleor/saleor-docs",
+    "verifiedSnapshotCommit": "2cdf6590e838929c3f74c16e982cfdc11073c2d8",
+    "verifiedAt": "2026-10-31",
+    "role": "Discovery, agent skills and documentation retrieval; not the GraphQL wire-contract authority."
   }
 }

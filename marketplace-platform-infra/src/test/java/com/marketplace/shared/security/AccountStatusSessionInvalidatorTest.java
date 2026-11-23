@@ -235,6 +235,53 @@ class AccountStatusSessionInvalidatorTest {
                 .extracting(info -> info.isExpired()).isEqualTo(false);
     }
 
+    /**
+     * Row 7 (agent findings 2026-10-26 14:33 export, CWE-613): the
+     * login-identity move's own AFTER_COMMIT edge — the RETIRED subject's
+     * sessions die with the move; the replacement subject (and every
+     * bystander) is untouched, because the session index is built on the
+     * retired name.
+     */
+    @Test
+    void loginIdentityMoveExpiresTheRetiredSubjectSessionsOnly() {
+        MapSession retired = sessionFor(PRINCIPAL);
+        MapSession successor = sessionFor("replacement-subject@example.com");
+
+        invalidator.onAccountLoginIdentityMoved(
+                new com.marketplace.shared.api.AccountLoginIdentityMoved(PRINCIPAL));
+
+        assertThat(registry.getSessionInformation(retired.getId())).isNotNull()
+                .as("the retired subject's session expires with the move")
+                .extracting(info -> info.isExpired()).isEqualTo(true);
+        assertThat(registry.getAllSessions(PRINCIPAL, false)).isEmpty();
+        assertThat(registry.getSessionInformation(successor.getId())).isNotNull()
+                .as("the replacement subject's session is untouched")
+                .extracting(info -> info.isExpired()).isEqualTo(false);
+    }
+
+    /**
+     * Row 13 (agent findings 2026-10-26 14:33 export, CWE-613): the owner's
+     * "sign out everywhere" — the session half completes the revocation
+     * intent; every session of the principal carries the expiry marker,
+     * bystanders untouched.
+     */
+    @Test
+    void sessionsRevokedByTheOwnerExpiresAllSessionsOfThePrincipal() {
+        MapSession session = sessionFor(PRINCIPAL);
+        MapSession bystander = sessionFor(OTHER_PRINCIPAL);
+
+        invalidator.onAccountSessionsRevoked(
+                new com.marketplace.shared.api.AccountSessionsRevoked(PRINCIPAL));
+
+        assertThat(registry.getSessionInformation(session.getId())).isNotNull()
+                .as("the owner's session expires with the revocation")
+                .extracting(info -> info.isExpired()).isEqualTo(true);
+        assertThat(registry.getAllSessions(PRINCIPAL, false)).isEmpty();
+        assertThat(registry.getSessionInformation(bystander.getId())).isNotNull()
+                .as("the bystander's session is untouched")
+                .extracting(info -> info.isExpired()).isEqualTo(false);
+    }
+
     private MapSession sessionFor(String principal) {
         MapSession session = new MapSession();
         session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, principal);
