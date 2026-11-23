@@ -45,6 +45,35 @@ import org.springframework.transaction.annotation.Transactional;
  * fulfillment method and the shipping amount stay untouched: they are the
  * frozen commercial agreement, never the subject's authored text.</p>
  *
+ * <p><b>The seller's own cancel reasons (the 2026-11-23 #808 review's
+ * fourth finding, closed at the root):</b> the port's contract binds this
+ * module to purge EVERY free text the subject authored — and
+ * {@code cancelForSeller} records {@code cancel_author = 'SELLER'}
+ * (V303's closed vocabulary) precisely so this purge can tell. A seller's
+ * reasons on OTHER consumers' orders are the SELLER's own authored words
+ * on the shared commercial record: the seller's erasure owns them, exactly
+ * as the buyer's own reasons answer the buyer's purge. Matched by the
+ * order's {@code seller_id} linkage (V184 — the A1 users.id space) AND the
+ * author, never by {@code consumer_id}; the live row advances
+ * {@code version} (the adapter's standing optimistic-lock law); the
+ * CONSUMER-authored and legacy-NULL reasons of the SAME rows stay, and
+ * ADMIN-authored reasons stay everywhere (an administrative account is an
+ * operational actor, not an order party — the (2-b) authorship wall's
+ * symmetric completion).</p>
+ *
+ * <p><b>The terminal-completion leg (the 2026-11-23 #808 review's third
+ * finding, closed at the root):</b> the address purge EXCLUDES in-flight
+ * deliveries ({@code PLACED}/{@code CONFIRMED}) because erasing the frozen
+ * destination mid-flight breaks the fulfillment — the adapter's own comment
+ * promised "a later purge run after the order reaches FULFILLED or
+ * CANCELLED", but no mechanism ever fired that later run (the port only ran
+ * through the admin's UserService path). {@code OrdersTerminalPurgeListener}
+ * IS that mechanism: the module's own terminal events drive
+ * {@link #purgeTerminalOrderAddress(UUID)} for THAT order once the
+ * transition commits — the admin-path statements below and the
+ * event-driven leg are idempotent together (the marker filter makes every
+ * overlap a zero-row no-op).</p>
+ *
  * <p><b>Statement shape (the port's contract):</b> native JDBC UPDATE,
  * idempotent by the {@code IS NOT NULL AND <> marker} filter — exact
  * counts, zero matches on re-run; no Envers revision for the purge itself
@@ -81,8 +110,10 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
         // record: a PLACED/CONFIRMED platform-delivery order's frozen
         // address is the delivery's own destination, and erasing it
         // mid-flight breaks the fulfillment. Those rows (and their audit
-        // history) keep the address until a later purge run — after the
-        // order reaches FULFILLED or CANCELLED — finds them erasable.
+        // history) keep the address until the order reaches FULFILLED or
+        // CANCELLED — where the module's own terminal events now fire
+        // OrdersTerminalPurgeListener.purgeTerminalOrderAddress (the
+        // 2026-11-23 #808 third finding's completion leg).
         //
         // (2) The subject's authored texts now include the buyer's own
         // cancel reason (orders.cancel_reason, always pure authored text
@@ -102,12 +133,21 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
         // on a row whose consumer_id is the BUYER is a third party's
         // authored text on the shared commercial record — the buyer's
         // erasure right never owned it (the same retention decision the
-        // returns' resolution_note already carries). The purge keeps
-        // SELLER/ADMIN reasons — live rows AND audit mirrors alike — and
-        // erases only the CONSUMER-authored reasons plus the legacy NULL
-        // population (V303's own comment: the pre-attribution rows keep
-        // the standing purge behavior — the buyer-facing self-cancel was
-        // the platform's dominant path).
+        // returns' resolution_note already carries). The buyer's purge
+        // keeps SELLER/ADMIN reasons — live rows AND audit mirrors alike
+        // — and erases only the CONSUMER-authored reasons plus the legacy
+        // NULL population (V303's own comment: the pre-attribution rows
+        // keep the standing purge behavior — the buyer-facing self-cancel
+        // was the platform's dominant path).
+        //
+        // (3) The SELLER's own reasons (the 2026-11-23 #808 review's
+        // fourth finding): the port's contract covers every free text the
+        // subject authored in THIS module — the seller's cancel reasons
+        // on their OWN sales (seller_id = the subject, cancel_author =
+        // 'SELLER') are exactly that. The statements below match the
+        // seller linkage AND the author, never consumer_id; the buyer's
+        // reasons on the same rows and every ADMIN-authored reason stay
+        // (each subject's erasure owns only their own words).
         int ordersAddress = jdbcTemplate.update(
                 "UPDATE orders SET ship_to_address = ?, version = version + 1 "
                         + "WHERE consumer_id = ? AND ship_to_address IS NOT NULL "
@@ -131,6 +171,20 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
                         + "AND cancel_reason IS NOT NULL AND cancel_reason <> ? "
                         + "AND (cancel_author IS NULL OR cancel_author = 'CONSUMER')",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        // (3) the seller's own words on their own sales — seller_id (V184,
+        // mirrored to orders_aud in the same migration block) AND the
+        // author (V303/V304); the live row advances version like every
+        // other statement of this adapter.
+        int sellerCancelReason = jdbcTemplate.update(
+                "UPDATE orders SET cancel_reason = ?, version = version + 1 "
+                        + "WHERE seller_id = ? AND cancel_reason IS NOT NULL "
+                        + "AND cancel_reason <> ? AND cancel_author = 'SELLER'",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
+        int sellerCancelReasonAudit = jdbcTemplate.update(
+                "UPDATE orders_aud SET cancel_reason = ? WHERE seller_id = ? "
+                        + "AND cancel_reason IS NOT NULL AND cancel_reason <> ? "
+                        + "AND cancel_author = 'SELLER'",
+                AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         int returnsReason = jdbcTemplate.update(
                 "UPDATE order_returns SET reason = ?, version = version + 1 "
                         + "WHERE consumer_id = ? AND reason IS NOT NULL AND reason <> ?",
@@ -140,11 +194,47 @@ public class OrdersContentPurgeAdapter implements AuthoredContentPurgePort {
                         + "AND reason IS NOT NULL AND reason <> ?",
                 AuthoredContentPurgePort.PURGED_MARKER, userId, AuthoredContentPurgePort.PURGED_MARKER);
         log.info("Orders content purge: userId={}, ordersAddress={}, ordersAddressAudit={}, "
-                        + "ordersCancelReason={}, ordersCancelReasonAudit={}, returnsReason={}, "
-                        + "returnsReasonAudit={}",
+                        + "ordersCancelReason={}, ordersCancelReasonAudit={}, sellerCancelReason={}, "
+                        + "sellerCancelReasonAudit={}, returnsReason={}, returnsReasonAudit={}",
                 userId, ordersAddress, ordersAddressAudit, ordersCancelReason,
-                ordersCancelReasonAudit, returnsReason, returnsReasonAudit);
+                ordersCancelReasonAudit, sellerCancelReason, sellerCancelReasonAudit,
+                returnsReason, returnsReasonAudit);
         return ordersAddress + ordersAddressAudit + ordersCancelReason + ordersCancelReasonAudit
+                + sellerCancelReason + sellerCancelReasonAudit
                 + returnsReason + returnsReasonAudit;
+    }
+
+    /**
+     * The terminal-completion leg (the 2026-11-23 #808 review's third
+     * finding): the ONE-order targeted purge the module's own terminal
+     * events drive — {@code OrdersTerminalPurgeListener} calls this the
+     * moment an order's transition to FULFILLED or CANCELLED commits, so
+     * an address the admin-path purge held back (the in-flight delivery
+     * exclusion) is erased as soon as the retention ground lapses, with
+     * no operator re-run. Idempotent by the marker filter; the live row
+     * advances {@code version} (the standing optimistic-lock law); the
+     * audit mirror follows the adapter's NOT EXISTS in-flight guard so a
+     * redelivered event on a re-placed row (an impossibility under the
+     * terminal-state machine, held defensively) is a zero-row no-op.
+     */
+    @Transactional
+    public int purgeTerminalOrderAddress(UUID orderId) {
+        int live = jdbcTemplate.update(
+                "UPDATE orders SET ship_to_address = ?, version = version + 1 "
+                        + "WHERE id = ? AND status IN ('FULFILLED', 'CANCELLED') "
+                        + "AND ship_to_address IS NOT NULL AND ship_to_address <> ?",
+                AuthoredContentPurgePort.PURGED_MARKER, orderId, AuthoredContentPurgePort.PURGED_MARKER);
+        int audit = jdbcTemplate.update(
+                "UPDATE orders_aud SET ship_to_address = ? WHERE id = ? "
+                        + "AND ship_to_address IS NOT NULL AND ship_to_address <> ? "
+                        + "AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.id = ? "
+                        + "AND o.status IN ('PLACED', 'CONFIRMED'))",
+                AuthoredContentPurgePort.PURGED_MARKER, orderId, AuthoredContentPurgePort.PURGED_MARKER,
+                orderId);
+        if (live + audit > 0) {
+            log.info("Terminal-order address purge: orderId={}, liveRows={}, auditRows={}",
+                    orderId, live, audit);
+        }
+        return live + audit;
     }
 }
