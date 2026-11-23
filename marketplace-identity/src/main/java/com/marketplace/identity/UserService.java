@@ -980,14 +980,10 @@ public class UserService implements IdentitySpi {
         // families in ONE consistent order (AUTH-lock → user-row): an
         // email confirmation racing an erasure of the same account can
         // no longer interleave the families in opposite orders. The
-        // user-existence check rides the locked AUTH read itself: a
-        // missing account has no AUTH row to lock, so the lock's
-        // parameter resolves through a plain existence read first.
-        User existing = userRepository.findById(userId).orElse(null);
-        if (existing == null) {
-            throw new ResourceNotFoundException("User not found: " + userId);
-        }
-        userRepository.lockUserAuth(existing.getId().toString());
+        // lock's key is the caller's OWN userId parameter — no extra
+        // existence read (the locked load below answers the
+        // not-found refusal on its own, as it always did).
+        userRepository.lockUserAuth(userId.toString());
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
