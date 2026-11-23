@@ -1,0 +1,436 @@
+package com.marketplace.catalog;
+
+import com.marketplace.catalog.spi.CategoryCreateCommand;
+import com.marketplace.catalog.spi.CategoryMutationError;
+import com.marketplace.catalog.spi.CategoryMutationErrorCode;
+import com.marketplace.catalog.spi.CategoryMutationResult;
+import com.marketplace.catalog.spi.CategoryUpdateCommand;
+import com.marketplace.catalog.spi.CategoryView;
+import com.marketplace.catalog.spi.CategoryWriteSpi;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * P2 (the canonical Saleor plan §5-P2 — the Saleor {@code categoryCreate},
+ * {@code categoryUpdate}, {@code categoryDelete} and
+ * {@code categoryBulkDelete} mutation roots): the owning write use
+ * case's unit proof — the JUnit 5 + Mockito style the module's own
+ * {@code CategoryReadServiceTest} established (no Spring context: the
+ * {@code @PreAuthorize} proxy is an integration concern proven by the
+ * app module's real-stack tests; the business decisions the boundary
+ * owns are proven HERE).
+ *
+ * <p>Coverage target: every method branch of
+ * {@link CategoryWriteService} reachable through its typed seam — the
+ * create's full validation ladder (blank/oversized name, missing/invalid/
+ * duplicate slug, the happy path's row factory and position assignment),
+ * the update's partial-preserve semantics (null fields preserve, the
+ * blank-name INVALID, the duplicate-code negative EXCLUDING the row's
+ * own id, the NOT_FOUND absence), the single delete's NOT_FOUND and
+ * soft-delete happy path, and the bulk delete's honest count (unknown
+ * ids skipped, never fabricated).</p>
+ */
+class CategoryWriteServiceTest {
+
+    private CategoryRepository repository;
+    private CategoryWriteSpi service;
+
+    @BeforeEach
+    void setUp() {
+        repository = mock(CategoryRepository.class);
+        // The 2026-11-06 #808 round: the INSERT rides the executor's own
+        // transaction door (the AdBillingBatchExecutor precedent) — a REAL
+        // executor over the mocked repository carries the saveAndFlush
+        // stubs and throws exactly as the service's in-tx version did.
+        service = new CategoryWriteService(repository, new CategoryCreationExecutor(repository));
+    }
+
+    private static Category row(String code, String nameEn, int position) {
+        return Category.create(code, nameEn, null, position);
+    }
+
+    // ------------------------------------------------------------------
+    // createCategory — the validation ladder and the happy path
+    // ------------------------------------------------------------------
+
+    @Test
+    void blankNameAnswersTheRequiredDomainError() {
+        CategoryMutationResult result = service.createCategory(new CategoryCreateCommand("  ", "fresh-code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).containsExactly(new CategoryMutationError(
+                "name", CategoryMutationErrorCode.REQUIRED, "A category name is required"));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void oversizedNameAnswersTheInvalidDomainError() {
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("x".repeat(101), "fresh-code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "name");
+    }
+
+    @Test
+    void missingSlugAnswersTheRequiredDomainError() {
+        CategoryMutationResult result = service.createCategory(new CategoryCreateCommand("Fresh", null));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.REQUIRED, "slug");
+    }
+
+    @Test
+    void invalidSlugShapeAnswersTheInvalidDomainError() {
+        CategoryMutationResult result = service.createCategory(new CategoryCreateCommand("Fresh", "Not_A-Code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "slug");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void duplicateActiveSlugAnswersTheAlreadyExistsDomainError() {
+        when(repository.countByCodeIncludingDeleted("taken")).thenReturn(1L);
+
+        CategoryMutationResult result = service.createCategory(new CategoryCreateCommand("Fresh", "taken"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.ALREADY_EXISTS, "slug");
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void aConcurrentCodeConflictAnswersTheSameClassifiedAlreadyExists() {
+        // The 2026-11-06 #808 round (Minor · Stability & Availability):
+        // two concurrent creates of the same code both pass the honest
+        // precheck; V70's global unique index is the backstop, and the
+        // loser's raw violation answers the SAME classified
+        // ALREADY_EXISTS — bound to uq_categories_code ONLY.
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of());
+        when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "could not execute statement; SQL [n/a]; constraint [uq_categories_code "
+                        + "ON categories (code)]"));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh Code", "fresh-code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.ALREADY_EXISTS, "slug");
+    }
+
+    @Test
+    void aForeignConstraintViolationStillPropagatesUntouched() {
+        // The discrimination's negative leg: a DIVE naming a DIFFERENT
+        // constraint is a real registry bug — it keeps its own
+        // propagation (never a blanket catch that would hide it).
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of());
+        when(repository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                "could not execute statement; constraint [chk_categories_code_shape "
+                        + "ON categories]"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.createCategory(
+                        new CategoryCreateCommand("Fresh Code", "fresh-code")))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void happyCreateSavesTheRowWithTheNextPositionAndAnswersTheProjection() {
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of(row("a", "A", 1), row("b", "B", 2)));
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh Code", "fresh-code"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category()).isNotNull();
+        assertThat(result.category().slug()).isEqualTo("fresh-code");
+        assertThat(result.category().name()).isEqualTo("Fresh Code");
+        assertThat(result.category().position()).isEqualTo(3);
+        verify(repository).saveAndFlush(any());
+    }
+
+    @Test
+    void theNextPositionRidesTheHighestLivePositionAfterAMidRegistryDelete() {
+        // The wave-19 #808 review (Minor): after a mid-registry delete
+        // the live positions carry a GAP — the tail is the HIGHEST
+        // position plus one, never size+1 (which would collide with the
+        // last row's own position and make the position order non-
+        // deterministic between them).
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAscIdAsc())
+                .thenReturn(List.of(row("a", "A", 1), row("b", "B", 5)));
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh Code", "fresh-code"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().position()).isEqualTo(6);
+    }
+
+    @Test
+    void createNormalizesTheSlugToTheRegistrysOwnLowercaseContract() {
+        when(repository.countByCodeIncludingDeleted("mixed-case")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAscIdAsc()).thenReturn(List.of());
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh", "Mixed-Case"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().slug()).isEqualTo("mixed-case");
+    }
+
+    // ------------------------------------------------------------------
+    // updateCategory — the partial-preserve semantics
+    // ------------------------------------------------------------------
+
+    @Test
+    void unknownIdAnswersTheNotFoundDomainError() {
+        UUID unknown = UUID.randomUUID();
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+
+        CategoryMutationResult result = service.updateCategory(unknown,
+                new CategoryUpdateCommand("Fresh", "fresh"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.NOT_FOUND, "id");
+    }
+
+    @Test
+    void nullFieldsPreserveEveryColumn() {
+        Category existing = row("keep-code", "Keep", 4);
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.updateCategory(existing.getId(),
+                new CategoryUpdateCommand(null, null));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().slug()).isEqualTo("keep-code");
+        assertThat(result.category().name()).isEqualTo("Keep");
+        verify(repository).save(existing);
+    }
+
+    @Test
+    void providedFieldsReplaceTheColumns() {
+        Category existing = row("old-code", "Old", 4);
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.updateCategory(existing.getId(),
+                new CategoryUpdateCommand("New", null));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().slug()).isEqualTo("old-code");
+        assertThat(result.category().name()).isEqualTo("New");
+    }
+
+    @Test
+    void aDifferentSlugAnswersTheImmutableDomainError() {
+        // The wave-19 #808 review (Major · Functional Correctness): the
+        // code is the category's stable reference identity — a different
+        // slug command answers the classified INVALID domain error, never
+        // a silent code move that strands the standing references.
+        Category existing = row("old-code", "Old", 4);
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+
+        CategoryMutationResult result = service.updateCategory(existing.getId(),
+                new CategoryUpdateCommand("New", "NEW-CODE"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "slug");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void blankNameOnUpdateAnswersTheInvalidDomainError() {
+        Category existing = row("code", "Old", 4);
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+
+        CategoryMutationResult result = service.updateCategory(existing.getId(),
+                new CategoryUpdateCommand(" ", null));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "name");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aDifferentSlugNeverAnswersTheAlreadyExistsVocabulary() {
+        // The wave-19 #808 review: the immutable-code law answers BEFORE
+        // any duplicate consideration — a slug different from the row's
+        // own code is the classified INVALID refusal.
+        Category existing = row("own-code", "Old", 4);
+        Category other = row("other-code", "Other", 5);
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByCode("other-code")).thenReturn(Optional.of(other));
+
+        CategoryMutationResult result = service.updateCategory(existing.getId(),
+                new CategoryUpdateCommand(null, "other-code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "slug");
+    }
+
+    @Test
+    void keepingTheRowsOwnSlugIsNotADuplicate() {
+        Category existing = row("own-code", "Old", 4);
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+        when(repository.findByCode("own-code")).thenReturn(Optional.of(existing));
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.updateCategory(existing.getId(),
+                new CategoryUpdateCommand("Refreshed", "own-code"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().name()).isEqualTo("Refreshed");
+    }
+
+    // ------------------------------------------------------------------
+    // deleteCategory / deleteCategories — the soft-delete discipline
+    // ------------------------------------------------------------------
+
+    @Test
+    void deleteAnswersTheLastKnownProjectionAndSoftDeletesTheRow() {
+        Category existing = row("gone", "Gone", 7);
+        when(repository.findByIdForUpdate(existing.getId())).thenReturn(Optional.of(existing));
+
+        CategoryMutationResult result = service.deleteCategory(existing.getId());
+
+        assertThat(result.success()).isTrue();
+        CategoryView lastKnown = result.category();
+        assertThat(lastKnown.slug()).isEqualTo("gone");
+        assertThat(lastKnown.name()).isEqualTo("Gone");
+        verify(repository).delete(existing);
+    }
+
+    @Test
+    void deleteOfAnUnknownIdAnswersTheNotFoundDomainError() {
+        UUID unknown = UUID.randomUUID();
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+
+        CategoryMutationResult result = service.deleteCategory(unknown);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code)
+                .isEqualTo(CategoryMutationErrorCode.NOT_FOUND);
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void bulkDeleteCountsOnlyTheRowsTheRegistryItselfDeleted() {
+        Category first = row("one", "One", 1);
+        Category second = row("two", "Two", 2);
+        UUID unknown = UUID.randomUUID();
+        when(repository.findByIdForUpdate(first.getId())).thenReturn(Optional.of(first));
+        when(repository.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
+        when(repository.findByIdForUpdate(unknown)).thenReturn(Optional.empty());
+
+        int count = service.deleteCategories(List.of(first.getId(), unknown, second.getId()));
+
+        assertThat(count).isEqualTo(2);
+        verify(repository).delete(first);
+        verify(repository).delete(second);
+    }
+
+    @Test
+    void bulkDeleteOfAnEmptyListAnswersZeroWithoutTouchingTheRegistry() {
+        assertThat(service.deleteCategories(List.of())).isZero();
+        assertThat(service.deleteCategories(null)).isZero();
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void updateAcceptsTheIdempotentReSendOfALegacyStoredCode() {
+        // The 2026-11-07 #808 round-19 review (Minor · Functional
+        // Correctness): a slug EQUAL to the stored code is the
+        // idempotent re-send even when the stored code predates the
+        // shape rule — the shape law applies to NEW or CHANGED codes
+        // only (a legacy row's re-send never re-validates its own
+        // stored identity).
+        Category legacy = row("legacy.code", "Legacy", 0);
+        when(repository.findByIdForUpdate(legacy.getId())).thenReturn(Optional.of(legacy));
+        when(repository.save(any(Category.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CategoryMutationResult result = service.updateCategory(legacy.getId(),
+                new CategoryUpdateCommand("Renamed", "legacy.code"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.category().name()).isEqualTo("Renamed");
+        assertThat(result.category().slug()).isEqualTo("legacy.code");
+    }
+
+    @Test
+    void updateAnswersBothVerdictsForADifferentBadlyShapedCode() {
+        // A DIFFERENT code answers the shape INVALID and the immutable
+        // INVALID together — the shape law rides the same branch, and
+        // the stored code never moves.
+        Category legacy = row("legacy.code", "Legacy", 0);
+        when(repository.findByIdForUpdate(legacy.getId())).thenReturn(Optional.of(legacy));
+
+        CategoryMutationResult result = service.updateCategory(legacy.getId(),
+                new CategoryUpdateCommand(null, "other.code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).hasSize(2);
+        assertThat(result.errors()).allSatisfy(error ->
+                assertThat(error.code()).isEqualTo(CategoryMutationErrorCode.INVALID));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createAnswersTheClassifiedExhaustionWhenThePositionsAreSpent() {
+        // The 2026-11-07 #808 round-19 review (the overflow family): the
+        // category positions are always the derivation's own output, so
+        // the ceiling is a structural safeguard — the classified INVALID
+        // result (never the negative wrap the DB CHECK would answer).
+        when(repository.countByCodeIncludingDeleted("fresh-code")).thenReturn(0L);
+        when(repository.findAllByOrderByPositionAscIdAsc())
+                .thenReturn(List.of(row("ceiling", "Ceiling", Integer.MAX_VALUE)));
+
+        CategoryMutationResult result = service.createCategory(
+                new CategoryCreateCommand("Fresh", "fresh-code"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errors()).singleElement()
+                .extracting(CategoryMutationError::code, CategoryMutationError::field)
+                .containsExactly(CategoryMutationErrorCode.INVALID, "position");
+        verify(repository, never()).save(any());
+    }
+
+}
