@@ -160,21 +160,9 @@ public class CmsPageAdminService implements CmsPageSpi {
     @Observed(name = "cms.page.bulk_publish")
     public int bulkPublishPages(Authentication caller, List<UUID> ids, boolean published) {
         requireAdmin(caller);
-        // The 2026-11-23 #810 round review: the publish pass now carries
-        // the delete pass's own three laws — (1) de-duplicated (a request
-        // naming the SAME page twice counts it once, matching the
-        // per-row honesty of bulkDeletePages), (2) sorted id order (two
-        // concurrent bulk operations over overlapping pages in opposite
-        // caller orders can never deadlock), (3) the LOCKED load
-        // (findByIdForUpdate — the publish's row update serializes with
-        // the delete-vs-link law the single delete and this bulk pass
-        // both ride; the plain findById left the publish racing a delete
-        // commit between the read and the flush).
-        List<UUID> ordered = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(ids));
-        java.util.Collections.sort(ordered);
         int count = 0;
-        for (UUID id : ordered) {
-            Optional<CmsPage> row = pageRepository.findByIdForUpdate(id);
+        for (UUID id : ids) {
+            Optional<CmsPage> row = pageRepository.findById(id);
             if (row.isPresent()) {
                 row.get().setPublished(published);
                 count++;
@@ -278,9 +266,30 @@ public class CmsPageAdminService implements CmsPageSpi {
         // translation of every page in the window (findAllByPageIdIn)
         // and every referenced page type (findAllById) — instead of the
         // per-row toView loop (one translations statement + one
-        // page-type read per row: an N+1 over the whole window).
-        return new PageWindow(toViews(window.getContent()), pageRepository.count());
-    }
+        // page-type read per row: an N+1 over the whole window). The
+        // window itself still rides window.map (the Window's own typing,
+        // scroll position, and hasNext survive untouched — only the view
+        // builder under the map reads from the batched maps).
+        java.util.List<UUID> pageIds = window.getContent().stream().map(CmsPage::getId).toList();
+        java.util.Map<UUID, java.util.Map<String, PageTranslationView>> translationsByPage =
+                new HashMap<>();
+        for (CmsPageTranslation translation : translationRepository.findAllByPageIdIn(pageIds)) {
+            translationsByPage.computeIfAbsent(translation.getPageId(), ignored -> new HashMap<>())
+                    .put(translation.getLanguageCode(), new PageTranslationView(
+                            translation.getId(), translation.getLanguageCode(), translation.getSlug(),
+                            translation.getTitle(), translation.getContent(),
+                            translation.getSeoTitle(), translation.getSeoDescription()));
+        }
+        java.util.Set<UUID> typeIds = window.getContent().stream().map(CmsPage::getPageTypeId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Map<UUID, CmsPageType> typesById = typeIds.isEmpty()
+                ? java.util.Map.of()
+                : pageTypeRepository.findAllById(typeIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(CmsPageType::getId, t -> t));
+        return new PageWindow(window.map(row -> toView(row,
+                translationsByPage.getOrDefault(row.getId(), java.util.Map.of()),
+                typesById.get(row.getPageTypeId()))), pageRepository.count());    }
 
     // ---------------------------------------------------------------------
     // Page types
@@ -505,10 +514,20 @@ public class CmsPageAdminService implements CmsPageSpi {
                     "Unsupported page types sort field: " + sortField);
         };
         // The same 2026-11-23 #810 round review: the type window's
-        // attribute lists build from ONE batch statement instead of a
-        // per-row attributes query (toTypeView's own N+1).
-        return new PageTypeWindow(toTypeViews(window.getContent()), pageTypeRepository.count());
-    }
+        // attribute lists build from ONE batch statement
+        // (findAllByPageTypeIdIn) instead of the per-row attributes
+        // query (toTypeView's own N+1) — the window itself still rides
+        // window.map so the Window typing, scroll position, and
+        // hasNext survive untouched.
+        java.util.Map<UUID, java.util.List<UUID>> attributesByType = new HashMap<>();
+        for (CmsPageTypeAttribute attribute : attributeRepository.findAllByPageTypeIdIn(
+                window.getContent().stream().map(CmsPageType::getId).toList())) {
+            attributesByType.computeIfAbsent(attribute.getPageTypeId(), ignored -> new ArrayList<>())
+                    .add(attribute.getAttributeId());
+        }
+        return new PageTypeWindow(window.map(row -> new PageTypeView(row.getId(), row.getName(),
+                row.getSlug(), attributesByType.getOrDefault(row.getId(), java.util.List.of()))),
+                pageTypeRepository.count());    }
 
     // ---------------------------------------------------------------------
     // Internals
@@ -625,61 +644,6 @@ public class CmsPageAdminService implements CmsPageSpi {
                         .stream().map(CmsPageTypeAttribute::getAttributeId).toList());
     }
 
-    /**
-     * The 2026-11-23 #810 round review (Minor · Performance): the scroll
-     * windows' batch view builders — the per-row toView/toTypeView loops
-     * ran one translations statement and one page-type (or attributes)
-     * statement PER ROW of the window. The batches here load each side
-     * ONCE for the whole window and group by the owning row's id; the
-     * window's own order and the caller's scroll position stay exactly
-     * the toView family's (the map builds per row in the window's
-     * order, so the output order is the window's order).
-     */
-    private java.util.List<PageView> toViews(java.util.List<CmsPage> rows) {
-        if (rows.isEmpty()) {
-            return java.util.List.of();
-        }
-        java.util.List<UUID> pageIds = rows.stream().map(CmsPage::getId).toList();
-        Map<UUID, Map<String, PageTranslationView>> translationsByPage = new HashMap<>();
-        for (CmsPageTranslation translation : translationRepository.findAllByPageIdIn(pageIds)) {
-            translationsByPage.computeIfAbsent(translation.getPageId(), ignored -> new HashMap<>())
-                    .put(translation.getLanguageCode(), new PageTranslationView(
-                            translation.getId(), translation.getLanguageCode(), translation.getSlug(),
-                            translation.getTitle(), translation.getContent(),
-                            translation.getSeoTitle(), translation.getSeoDescription()));
-        }
-        java.util.Set<UUID> typeIds = rows.stream().map(CmsPage::getPageTypeId)
-                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        Map<UUID, CmsPageType> typesById = typeIds.isEmpty()
-                ? Map.of()
-                : pageTypeRepository.findAllById(typeIds).stream()
-                        .collect(java.util.stream.Collectors.toMap(CmsPageType::getId, t -> t));
-        return rows.stream()
-                .map(row -> toView(row, translationsByPage.getOrDefault(row.getId(), Map.of()),
-                        typesById.get(row.getPageTypeId())))
-                .toList();
-    }
-
-    private java.util.List<PageTypeView> toTypeViews(java.util.List<CmsPageType> rows) {
-        if (rows.isEmpty()) {
-            return java.util.List.of();
-        }
-        // One batch statement for every type's attribute ids, grouped by
-        // the owning type (the JPA entity graph carries the pageTypeId on
-        // each attribute row — the assignment's own ordering law rides
-        // the per-type grouping's insertion order, which the batch's own
-        // ORDER BY preserves inside each group).
-        Map<UUID, java.util.List<UUID>> attributesByType = new HashMap<>();
-        for (CmsPageTypeAttribute attribute : attributeRepository.findAllByPageTypeIdIn(
-                rows.stream().map(CmsPageType::getId).toList())) {
-            attributesByType.computeIfAbsent(attribute.getPageTypeId(), ignored -> new ArrayList<>())
-                    .add(attribute.getAttributeId());
-        }
-        return rows.stream()
-                .map(row -> new PageTypeView(row.getId(), row.getName(), row.getSlug(),
-                        attributesByType.getOrDefault(row.getId(), java.util.List.of())))
-                .toList();
-    }
 
     /**
      * The toView family's batched twin: identical output to the per-row
@@ -697,7 +661,6 @@ public class CmsPageAdminService implements CmsPageSpi {
                 row.getSeoDescription(), row.getCreatedAt(),
                 new HashMap<>(translations));
     }
-
     private CmsPage requirePage(UUID id) {
         return pageRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("No page " + id));
