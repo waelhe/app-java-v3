@@ -136,16 +136,18 @@ Marketplace intentionally uses **two different error envelopes** depending on pr
 
 For domain/runtime failures resolved by the central GraphQL exception resolver, each error carries the **canonical taxonomy pair** — the same `errorCode` + `category` values the REST ProblemDetail contract emits from `ApiErrorTaxonomy` (the GraphQL target design §7 alignment; the demo-era ad-hoc literals were its recorded drift, replaced while the surface still had zero contracted consumers):
 
-| Failure | `errorCode` | `category` | GraphQL `errorType` |
+| Failure | `errorCode` | `category` | `extensions.classification` (the GraphQL errorType's wire location) |
 |---|---|---|---|
 | Not found (`ResourceNotFoundException`) | `NF-001` | `not-found` | `NOT_FOUND` |
 | Validation (`IllegalArgumentException`, `ConstraintViolationException`) | `VAL-001` | `validation` | `BAD_REQUEST` |
-| Domain conflict (`IllegalStateException`) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
+| Domain conflict (`IllegalStateException`, the services' classified `ConflictException`, and the uniqueness races of `DataIntegrityViolationException` — SQLSTATE 23505 — the shared backstop indexes raise) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
+| Authentication (`AuthenticationException`, minus `AuthenticationServiceException` — the infra family stays the masked internal row below) | `AUTHN-001` | `authz` | `UNAUTHORIZED` |
 | Authorization (`AccessDeniedException`) | `AUTHZ-001` | `authz` | `FORBIDDEN` |
 | Rate limit (`RequestNotPermitted`, resilience4j instances) | `RL-001` | `rate-limit` | `BAD_REQUEST` |
-| Unknown/internal (masked) | `INT-001` | `internal` | `INTERNAL_ERROR` |
+| Service unavailable (`ServiceUnavailableException` — the classified 503 family: unbound optional channels, the RMA exact-ratio magnitude ceiling) | `SU-001` | `availability` | `INTERNAL_ERROR` |
+| Unknown/internal (masked; includes non-uniqueness `DataIntegrityViolationException` and `AuthenticationServiceException`) | `INT-001` | `internal` | `INTERNAL_ERROR` |
 
-- The GraphQL-spec `errorType` is derived from spring-graphql's fixed five-value vocabulary (it has no rate-limit or conflict value); the authoritative machine contract is the extensions pair.
+- The GraphQL-spec `errorType` is derived from spring-graphql's fixed five-value vocabulary (it has no rate-limit, conflict or availability/503 value); the authoritative machine contract is the extensions pair. On the wire the errorType value rides `extensions.classification` (graphql-java's own serialization of `GraphQLError.getErrorType()`) — it is NOT a top-level response field, so clients must read it from the error entry's `extensions` object, next to `errorCode` and `category`.
 - `traceId`: propagated correlation identifier, included only when `marketplace.graphql.errors.include-trace-id=true`.
 - Rate-limit rejections carry the same fixed sentence REST returns (`Rate limit exceeded. Please try again later.`) — never the limiter's internal instance state.
 

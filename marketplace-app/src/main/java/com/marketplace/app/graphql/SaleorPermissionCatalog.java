@@ -37,23 +37,38 @@ public final class SaleorPermissionCatalog {
             PermissionEnum.MANAGE_STAFF, "Manage staff.",
             PermissionEnum.MANAGE_USERS, "Manage users.",
             PermissionEnum.MANAGE_ORDERS, "Manage orders.",
-            PermissionEnum.MANAGE_PRODUCTS, "Manage products."
+            PermissionEnum.MANAGE_PRODUCTS, "Manage products.",
+            // The 2026-11-05 #811 round-3 review (Major · Data Integrity):
+            // the catalog stays in sync with the interfaces the platform
+            // actually implements — the promotions/vouchers/discounts
+            // family is ADMIN-enforced at its owning use cases
+            // (DiscountReadService/VoucherWriteService @PreAuthorize), so
+            // the ADMIN's granted set carries Saleor's own discount
+            // management code.
+            PermissionEnum.MANAGE_DISCOUNTS, "Manage discounts."
     );
 
     /**
      * The platform role each granted permission is mapped to. ADMIN holds
-     * the staff/user/order management set — the operations the P1 slice
-     * itself enforces; PROVIDER holds product administration over its OWN
-     * listings (the ownership-scoped storeProducts journey — Saleor's
-     * global MANAGE_PRODUCTS scope difference is the recorded RBAC
-     * divergence, not a silent equality); CONSUMER holds no administrative
+     * the staff/user/order/discount management set — the operations the
+     * owning use cases enforce for the ADMIN role (the discount family's
+     * gate is the 2026-11-05 #811 round's sync); PROVIDER holds product
+     * administration over its OWN listings (the ownership-scoped
+     * storeProducts journey — Saleor's global MANAGE_PRODUCTS scope
+     * difference is the recorded RBAC divergence, not a silent equality —
+     * an account holding BOTH roles answers the union, the honest
+     * effective-authorities truth); CONSUMER holds no administrative
      * capability.
      */
     private static final Map<String, Set<PermissionEnum>> ROLE_PERMISSIONS = Map.of(
             "ADMIN", Set.of(
                     PermissionEnum.MANAGE_STAFF,
                     PermissionEnum.MANAGE_USERS,
-                    PermissionEnum.MANAGE_ORDERS),
+                    PermissionEnum.MANAGE_ORDERS,
+                    // The 2026-11-05 #811 round-3 review: the discounts
+                    // family's own code joins the ADMIN set (the owning
+                    // use cases' ADMIN gate is the measured truth).
+                    PermissionEnum.MANAGE_DISCOUNTS),
             "PROVIDER", Set.of(
                     PermissionEnum.MANAGE_PRODUCTS),
             "CONSUMER", Set.of()
