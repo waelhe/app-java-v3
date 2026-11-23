@@ -97,14 +97,49 @@ class CmsPageAdminServiceTest {
         UUID b = UUID.randomUUID();
         CmsPage pageA = CmsPage.create(typeId, "a", "A");
         CmsPage pageB = CmsPage.create(typeId, "b", "B");
-        when(pageRepository.findById(a)).thenReturn(Optional.of(pageA));
-        when(pageRepository.findById(b)).thenReturn(Optional.of(pageB));
+        // The 2026-11-23 #810 round review: the publish pass rides the
+        // LOCKED load (the delete-vs-link law's own family) — the plain
+        // findById stub the old shape used no longer runs this path.
+        when(pageRepository.findByIdForUpdate(a)).thenReturn(Optional.of(pageA));
+        when(pageRepository.findByIdForUpdate(b)).thenReturn(Optional.of(pageB));
 
         int count = service.bulkPublishPages(admin, List.of(a, b, UUID.randomUUID()), true);
 
         assertThat(count).isEqualTo(2);
         assertThat(pageA.isPublished()).isTrue();
         assertThat(pageB.isPublished()).isTrue();
+    }
+
+    /**
+     * The same review's duplicate law: a request naming the SAME page
+     * twice counts it ONCE (the per-row honesty the delete pass owns),
+     * and the publish's lock order is the sorted id order (two
+     * concurrent bulk operations over overlapping pages in opposite
+     * caller orders can never deadlock).
+     */
+    @Test
+    void bulkPublishCountsADuplicateOnceAndLocksInSortedOrder() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        CmsPage pageA = CmsPage.create(typeId, "a", "A");
+        CmsPage pageB = CmsPage.create(typeId, "b", "B");
+        when(pageRepository.findByIdForUpdate(any(UUID.class)))
+                .thenReturn(Optional.empty());
+        when(pageRepository.findByIdForUpdate(a)).thenReturn(Optional.of(pageA));
+        when(pageRepository.findByIdForUpdate(b)).thenReturn(Optional.of(pageB));
+
+        // The caller names the duplicate pair first and the higher-id
+        // page first — the count and the lock order stay honest anyway.
+        UUID higher = a.compareTo(b) > 0 ? a : b;
+        UUID lower = a.compareTo(b) > 0 ? b : a;
+        int count = service.bulkPublishPages(admin,
+                List.of(higher, higher, lower, lower, UUID.randomUUID()), true);
+
+        assertThat(count).isEqualTo(2);
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(a, b).sorted().toList();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(pageRepository);
+        order.verify(pageRepository).findByIdForUpdate(sorted.get(0));
+        order.verify(pageRepository).findByIdForUpdate(sorted.get(1));
     }
 
     @Test

@@ -100,7 +100,14 @@ public class VoucherWriteService implements VoucherWriteSpi {
 
     @Override
     @PreAuthorize("hasRole('ADMIN')")
-    @Transactional
+    // The 2026-11-23 #810 round review: the outer @Transactional is
+    // dropped — the method's ONLY write is the insert, and the insert
+    // already rides the REQUIRES_NEW insertTransaction (the 2026-11-06
+    // round's own fix), so a surrounding transaction did nothing except
+    // hold a connection open across the validation reads and the
+    // findByCode probe (a probe-then-act window with the transaction's
+    // snapshot pinned the whole while). Validation performs no writes;
+    // the insert's atomicity is the template's own contract.
     public VoucherMutationResult createVoucher(VoucherCreateCommand command) {
         List<VoucherMutationError> errors = new ArrayList<>();
         String code = normalizeCode(command.code(), errors);

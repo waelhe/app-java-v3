@@ -973,6 +973,21 @@ public class UserService implements IdentitySpi {
         // serialize: the create either lands before this transaction (its
         // row dies with the purge below) or waits and answers the
         // pseudonymized guard. A plain read left that window open.
+        // The 2026-11-23 #810 round review: the AUTH-side advisory lock
+        // comes FIRST — before the user row's FOR-UPDATE load — so this
+        // erasure path and the email-change confirmation (which takes the
+        // same lock before its redemption writes) acquire the two lock
+        // families in ONE consistent order (AUTH-lock → user-row): an
+        // email confirmation racing an erasure of the same account can
+        // no longer interleave the families in opposite orders. The
+        // user-existence check rides the locked AUTH read itself: a
+        // missing account has no AUTH row to lock, so the lock's
+        // parameter resolves through a plain existence read first.
+        User existing = userRepository.findById(userId).orElse(null);
+        if (existing == null) {
+            throw new ResourceNotFoundException("User not found: " + userId);
+        }
+        userRepository.lockUserAuth(existing.getId().toString());
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 

@@ -200,9 +200,21 @@ public class AccountEmailChangeService {
         AuthActionToken redeemed = authActionTokenService
                 .consume(token, AuthActionTokenPurpose.EMAIL_CHANGE);
         String oldSubject = redeemed.getUsername();
+        // The 2026-11-23 #810 round review: the confirmation takes the
+        // user-auth advisory lock BEFORE the redemption's writes, and the
+        // account erasure (UserService.pseudonymizeAccount) takes the SAME
+        // lock FIRST too — both paths then acquire the user row through
+        // findBySubject / findByIdForUpdate, so the pair runs AUTH-lock →
+        // user-row in ONE consistent order: an email confirmation racing
+        // an erasure of the same account can no longer interleave the two
+        // lock families in opposite orders (the deadlocking shape the
+        // review measured: the confirmation's createUser/flush touching
+        // the AUTH and user rows while the erasure holds the user row's
+        // FOR-UPDATE lock and reaches for the AUTH side's deletion).
         User user = userRepository.findBySubject(oldSubject)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No account for the redeemed change right: " + oldSubject));
+        userRepository.lockUserAuth(user.getId().toString());
         String newEmail = user.consumePendingEmailChange();
         if (newEmail == null) {
             throw new ConflictException("No pending email change for the redeemed right");
