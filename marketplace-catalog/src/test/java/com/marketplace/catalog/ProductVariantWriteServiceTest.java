@@ -975,17 +975,33 @@ class ProductVariantWriteServiceTest {
                     caller, "IGNORE_FAILED");
         }
 
-        // The mid-batch collision rewrites EVERY outcome honestly: the
-        // first item's earlier success becomes the collision answer too
-        // (the whole batch rolls back), the third never processed but
-        // still answered — the round-22 rewrite's own contract.
+        // The mid-batch collision rewrites EVERY outcome honestly — and
+        // the APPEND law the round-22 rewrite owns: the first item's
+        // earlier success becomes the plain collision answer (the whole
+        // batch rolls back); the SECOND item (the one whose flush threw)
+        // carries its OWN classified refusal PLUS the appended
+        // whole-batch collision; the third (never processed) answers the
+        // plain collision. The CI-measured failure: asserting
+        // singleElement on ALL items was wrong for the failing item —
+        // appendError is the rewrite's own contract for already-failed
+        // items.
         assertThat(outcomes).hasSize(3);
-        assertThat(outcomes).allSatisfy(outcome -> {
-            assertThat(outcome.success()).isFalse();
-            assertThat(outcome.errors()).singleElement()
-                    .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
-                    .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
-        });
+        assertThat(outcomes).allSatisfy(outcome ->
+                assertThat(outcome.success()).isFalse());
+        // Item 1: the rewritten success — exactly the collision.
+        assertThat(outcomes.get(0).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+        // Item 2: its OWN refusal plus the appended batch collision.
+        assertThat(outcomes.get(1).errors()).hasSize(2);
+        assertThat(outcomes.get(1).errors())
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku",
+                        ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+        // Item 3: never processed — the plain collision.
+        assertThat(outcomes.get(2).errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
         // The handler DID request the rollback (the stateful flag flipped),
         // and the statement stopped after the colliding flush — exactly
         // two flushes, never a third statement on the aborted transaction.
