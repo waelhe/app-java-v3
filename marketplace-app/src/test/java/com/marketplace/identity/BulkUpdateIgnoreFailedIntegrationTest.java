@@ -33,16 +33,16 @@ import static org.mockito.Mockito.doThrow;
  * row's PARTIAL writes never ran against a real database.
  *
  * <p>Both journeys ride the REAL Spring services (the real
- * {@code UserAccountAdminService}, the real
- * {@code JdbcUserDetailsManager} login store, the real
- * {@code TransactionTemplate} on the real {@code PlatformTransactionManager})
- * against the production schema ({@code spring.flyway.enabled=true} +
- * {@code ddl-auto=none} — the AccountSelfDeletionIntegrationTest
- * precedent's own wiring). The ONLY mocked collaborator is the failure
- * INJECTION point: the {@code AuthActionTokenService} bean whose
- * {@code purgeHistory} leg fails mid-row — AFTER the move's login-side
- * insert (the alt login) and BEFORE the old login row dies — exactly
- * the review's specified seam.</p>
+ * {@code UserAccountAdminService}, the real {@code JdbcUserDetailsManager}
+ * login store, the real {@code TransactionTemplate} on the real
+ * {@code PlatformTransactionManager}) against the production schema
+ * ({@code spring.flyway.enabled=true} + {@code ddl-auto=none} — the
+ * AccountSelfDeletionIntegrationTest precedent's own wiring). The ONLY
+ * mocked collaborator is the failure INJECTION point: the
+ * {@code AuthActionTokenService} bean whose {@code purgeHistory} leg
+ * fails mid-row — AFTER the move's login-side insert (the alt login)
+ * and BEFORE the old login row dies — exactly the review's specified
+ * seam.</p>
  *
  * <p><b>The failure journey proves the three claims the review asked
  * for:</b> the alt login (the partial write the failing row already
@@ -89,6 +89,17 @@ class BulkUpdateIgnoreFailedIntegrationTest {
 
     private static final String PASSWORD = "it-bulk-ignore-password";
 
+    /**
+     * Every address rides this short unique tag — the registerable-email
+     * bound the REAL UserService enforces is at most 50 characters
+     * ({@code requireRegisterableEmail}'s own law, the
+     * {@code auth_users.username} column's bound): the first CI cut's
+     * full-UUID form measured 64-68 characters and died at the register
+     * gate. The AccountSelfDeletionLockOrderIntegrationTest precedent's
+     * own shape — 8 hex chars of uniqueness, PER_METHOD re-randomized.
+     */
+    private final String tag = "itbulk" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+
     private final UsernamePasswordAuthenticationToken admin =
             new UsernamePasswordAuthenticationToken("it-bulk-admin@example.com", null,
                     List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
@@ -104,12 +115,12 @@ class BulkUpdateIgnoreFailedIntegrationTest {
     @Test
     void ignoreFailedRollsBackTheFailingRowsPartialWritesAndTheNextRowStillSucceeds() {
         // Row 1 — the account whose move fails mid-way.
-        String failingOld = "it-bulk-failing@" + UUID.randomUUID() + ".example.com";
-        String failingNew = "it-bulk-failing-new@" + UUID.randomUUID() + ".example.com";
+        String failingOld = tag + "-f@it.com";
+        String failingNew = tag + "-fn@it.com";
         User failingUser = userService.register(failingOld, PASSWORD, "Failing Row");
         // Row 2 — the healthy sibling the same batch still processes.
-        String healthyOld = "it-bulk-healthy@" + UUID.randomUUID() + ".example.com";
-        String healthyNew = "it-bulk-healthy-new@" + UUID.randomUUID() + ".example.com";
+        String healthyOld = tag + "-h@it.com";
+        String healthyNew = tag + "-hn@it.com";
         User healthyUser = userService.register(healthyOld, PASSWORD, "Healthy Row");
 
         // The injection: purgeHistory throws AFTER the alt login insert —
@@ -164,8 +175,8 @@ class BulkUpdateIgnoreFailedIntegrationTest {
      */
     @Test
     void ignoreFailedSavesTheAltLoginWhenTheMoveSucceeds() {
-        String oldEmail = "it-bulk-success@" + UUID.randomUUID() + ".example.com";
-        String newEmail = "it-bulk-success-new@" + UUID.randomUUID() + ".example.com";
+        String oldEmail = tag + "-s@it.com";
+        String newEmail = tag + "-sn@it.com";
         User user = userService.register(oldEmail, PASSWORD, "Success Row");
 
         List<BulkRowResult> results = service.bulkUpdateCustomers(admin,
