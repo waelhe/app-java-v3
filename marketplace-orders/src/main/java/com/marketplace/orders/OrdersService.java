@@ -1,5 +1,9 @@
 package com.marketplace.orders;
 
+import com.marketplace.orders.spi.CheckoutSpi;
+import com.marketplace.orders.spi.CheckoutView;
+import com.marketplace.orders.spi.OrderCommandSpi;
+import com.marketplace.orders.spi.OrderView;
 import com.marketplace.shared.api.BadRequestException;
 import com.marketplace.shared.api.CommercialPricingPort;
 import com.marketplace.shared.api.ConflictException;
@@ -18,11 +22,13 @@ import io.micrometer.observation.annotation.Observed;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -73,10 +79,33 @@ import java.util.UUID;
  * the cart tombstones once, and PLACED still publishes nothing.
  */
 @Service
-public class OrdersService implements OrderDeliveryPort {
+public class OrdersService implements OrderDeliveryPort, OrderCommandSpi, CheckoutSpi {
 
     private static final org.slf4j.Logger log =
             org.slf4j.LoggerFactory.getLogger(OrdersService.class);
+
+    private static final int MAX_LINE_QUANTITY = 1000;
+
+    /**
+     * The cart's distinct-line bound (the 2026-11-09 candidate F3 finding,
+     * P3 — Resource amplification): the per-line quantity cap alone left
+     * the NUMBER of distinct lines unbounded, while every checkout-surface
+     * read (findCheckout/addLines/updateLines/deleteLines) re-prices every
+     * representable line through the pricing port — an authenticated
+     * caller could accumulate an arbitrarily wide cart and amplify every
+     * request into a per-line cross-module pricing fan-out. The bound rides
+     * the same measured calibration family the GraphQL bulk list bound
+     * already carries (marketplace.graphql.bulk.max-list-items, default
+     * 200 — "conservative until measured traffic", G-R6): 200 distinct
+     * lines bound the worst-case pricing fan-out to the same per-request
+     * SPI-work budget the platform already deems acceptable, and a single
+     * bounded addLines call (≤200 items) still fits an empty cart. The
+     * merge path (an existing line's quantity bump) adds NO line and is
+     * never rejected by this bound — only the new-distinct-line branch
+     * checks it, at the single funnel both the REST cart surface and the
+     * GraphQL checkout surface flow through (addCartItem).
+     */
+    private static final int MAX_CART_LINES = 200;
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
@@ -90,6 +119,11 @@ public class OrdersService implements OrderDeliveryPort {
     private final CommercialPricingPort commercialPricingPort;
     private final OrderPriceComponentRepository orderPriceComponentRepository;
     private final com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort;
+    // The 2026-11-05 #811 round (Minor · Data Integrity): constructor
+    // injection (not @PersistenceContext) so the unit tests can mock the
+    // refresh contract — Spring injects the shared transactional
+    // EntityManager either way (the SavedSearchService precedent).
+    private final jakarta.persistence.EntityManager entityManager;
 
     public OrdersService(CartRepository cartRepository,
                          CartItemRepository cartItemRepository,
@@ -102,7 +136,8 @@ public class OrdersService implements OrderDeliveryPort {
                          OrderPaymentPort orderPaymentPort,
                          CommercialPricingPort commercialPricingPort,
                          OrderPriceComponentRepository orderPriceComponentRepository,
-                         com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort) {
+                         com.marketplace.shared.api.CheckoutDeliveryPort checkoutDeliveryPort,
+                         jakarta.persistence.EntityManager entityManager) {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.orderRepository = orderRepository;
@@ -115,6 +150,7 @@ public class OrdersService implements OrderDeliveryPort {
         this.commercialPricingPort = commercialPricingPort;
         this.orderPriceComponentRepository = orderPriceComponentRepository;
         this.checkoutDeliveryPort = checkoutDeliveryPort;
+        this.entityManager = entityManager;
     }
 
     // ------------------------------------------------------------------
@@ -192,12 +228,64 @@ public class OrdersService implements OrderDeliveryPort {
                 : cartItemRepository.findByCartIdAndProductIdAndVariantIdIsNull(cart.getId(), productId);
         return existing
                 .map(line -> {
+                    // The adversarial scan (2026-11-03, Major · Correctness): the
+                    // merge shape must carry the SAME cap every other shape does —
+                    // the summed quantity is re-checked, never trusted.
+                    requireQuantity(line.getQuantity() + quantity);
                     line.updateQuantity(line.getQuantity() + quantity);
                     return line;
                 })
-                .orElseGet(() -> cartItemRepository.save(
-                        CartItem.of(cart.getId(), productId, variantId, quantity,
-                                unitAmountMinor, currency)));
+                .orElseGet(() -> {
+                    // The F3 bound (2026-11-09, P3 — Resource amplification):
+                    // a NEW distinct line is the only shape that widens the
+                    // cart, so it is the only shape the distinct-line bound
+                    // gates — the merge branch above never adds a line and
+                    // must stay admissible at any cart width (raising an
+                    // existing line's quantity is the buyer's right). The
+                    // count rides the derived count query (Spring Data JPA's
+                    // documented query-method keyword) — no entity loading,
+                    // and the cart_id index (V113's idx_cart_items_cart)
+                    // answers it without a scan.
+                    //
+                    // The R3-01 serialization (the 2026-11-10 round-3
+                    // adversarial review, P3 — Data Integrity/Concurrency):
+                    // the bound above was check-then-act with NOTHING
+                    // serializing it — the module's only pessimistic lock
+                    // sits on ORDER rows (findByIdForUpdate), the cart lookup
+                    // reads unlocked, and no DB constraint can bound a COUNT
+                    // (uq_cart_items_cart_product dedupes the SAME product
+                    // only, V113). N concurrent distinct-product adds on a
+                    // 199-line cart each read 199 and all pass — the cart
+                    // lands at 199+N and the documented bound is violated for
+                    // exactly one burst. The fix is the row lock the bound
+                    // always implied: jakarta.persistence.EntityManager#lock
+                    // (the official API for locking an already-managed
+                    // entity) takes the cart row FOR UPDATE, so a concurrent
+                    // add-line transaction queues behind it and its count
+                    // reads the committed truth — under the connection's
+                    // READ_COMMITTED default (no isolation override anywhere
+                    // in the project) the statement-after-lock-wait sees the
+                    // just-committed inserts and the 201st line is rejected.
+                    // The in-file precedent is confirmFromPayment's own
+                    // refresh(order, PESSIMISTIC_WRITE) — the same
+                    // JPA-documented lock family. Deadlock posture: a single
+                    // lock (the cart row), taken by the one widening shape
+                    // only; place() takes no cart lock, so no lock-order
+                    // cycle exists. The cart-creation race itself stays
+                    // guarded where it always was — the partial-unique
+                    // ix_carts_consumer_active (V113) — so the lock arms
+                    // only after the row exists.
+                    entityManager.lock(cart,
+                            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+                    if (cartItemRepository.countByCartId(cart.getId()) >= MAX_CART_LINES) {
+                        throw new BadRequestException("The cart already carries "
+                                + MAX_CART_LINES + " distinct lines — remove a line before "
+                                + "adding another product");
+                    }
+                    return cartItemRepository.save(
+                            CartItem.of(cart.getId(), productId, variantId, quantity,
+                                    unitAmountMinor, currency));
+                });
     }
 
     @Transactional
@@ -215,6 +303,173 @@ public class OrdersService implements OrderDeliveryPort {
         return cartRepository.findByConsumerIdAndStatus(consumerId, CartStatus.ACTIVE)
                 .map(cart -> cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()))
                 .orElse(List.of());
+    }
+
+    // ------------------------------------------------------------------
+    // The checkout slice (the active cart is the checkout aggregate)
+    // ------------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public CheckoutView findCheckout(UUID cartId, Authentication authentication) {
+        return checkoutView(requireOwnedActiveCart(cartId, authentication));
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView addLines(UUID cartId, List<LineAdd> lines, Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<LineAdd> requested = lines == null ? List.of() : lines;
+        for (LineAdd line : requested) {
+            requireLine(line);
+            ProductPricingPort.VariantPrice price =
+                    productPricingPort.priceOfVariant(line.variantId());
+            addCartItem(cart.getConsumerId(), price.productId(), line.variantId(), line.quantity());
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView updateLines(UUID cartId, List<LineUpdate> lines,
+                                    Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<LineUpdate> requested = lines == null ? List.of() : lines;
+        for (LineUpdate update : requested) {
+            requireLine(update);
+            CartItem item = requireCheckoutLine(cart, update);
+            if (update.variantId() != null && !update.variantId().equals(item.getVariantId())) {
+                throw new BadRequestException("Line " + item.getId()
+                        + " does not reference variant " + update.variantId());
+            }
+            item.updateQuantity(update.quantity());
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @Transactional
+    public CheckoutView deleteLines(UUID cartId, List<UUID> lineIds,
+                                    Authentication authentication) {
+        Cart cart = requireOwnedActiveCart(cartId, authentication);
+        List<UUID> requested = lineIds == null ? List.of() : lineIds;
+        for (UUID lineId : requested) {
+            if (lineId == null) {
+                throw new BadRequestException("A checkout line ID is required");
+            }
+            CartItem item = cartItemRepository.findById(lineId)
+                    .filter(candidate -> candidate.getCartId().equals(cart.getId()))
+                    .orElseThrow(() -> new ResourceNotFoundException("CheckoutLine", lineId));
+            cartItemRepository.delete(item);
+        }
+        return checkoutView(cart);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public void deleteAsAdmin(UUID cartId) {
+        Cart cart = cartRepository.findById(cartId)
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout", cartId));
+        cartItemRepository.deleteAll(
+                cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId()));
+        cartRepository.delete(cart);
+    }
+
+    private Cart requireOwnedActiveCart(UUID cartId, Authentication authentication) {
+        if (cartId == null) {
+            throw new BadRequestException("A checkout ID is required");
+        }
+        Cart cart = cartRepository.findById(cartId)
+                .filter(candidate -> candidate.getStatus() == CartStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Checkout", cartId));
+        UUID caller = currentUserProvider.getCurrentUserId(authentication);
+        if (!cart.getConsumerId().equals(caller)
+                && !currentUserProvider.isAdmin(authentication)) {
+            throw new ResourceNotFoundException("Checkout", cartId);
+        }
+        return cart;
+    }
+
+    private CheckoutView checkoutView(Cart cart) {
+        List<CartItem> items =
+                cartItemRepository.findByCartIdOrderByCreatedAtAscIdAsc(cart.getId());
+        // The shard review (Major · Functional Correctness, 2026-11-01): the
+        // Saleor checkout projection must carry only REPRESENTABLE lines.
+        // One stale line used to fail the WHOLE checkout read/mutation —
+        // after the owning use case had already committed its own work.
+        // Two legitimate unrepresentable shapes are EXCLUDED from this
+        // projection (never deleted from the legacy cart, never fabricated
+        // as variants):
+        //  - a product-level line (variantId == null — the legacy cart
+        //    model's deliberate product-level state, still served by the
+        //    legacy REST surface, not representable on the Saleor checkout
+        //    wire where every line carries a variant);
+        //  - a stale variant line (the variant or its parent product row no
+        //    longer resolves — the SAME representability predicate the
+        //    composition mapper's findVariantsForCheckoutLines applies,
+        //    verified here through the pricing port's authoritative
+        //    resolution, so the mapper's fail-loud guards stay
+        //    defense-in-depth and never fire for live data).
+        List<CheckoutView.Line> lines = new ArrayList<>(items.size());
+        int quantity = 0;
+        for (CartItem item : items) {
+            if (item.getVariantId() == null) {
+                continue;
+            }
+            try {
+                productPricingPort.priceOfVariant(item.getVariantId());
+            } catch (ResourceNotFoundException staleLine) {
+                continue;
+            }
+            lines.add(new CheckoutView.Line(item.getId(), item.getVariantId(),
+                    item.getQuantity()));
+            quantity += item.getQuantity();
+        }
+        return new CheckoutView(cart.getId(), lines, quantity);
+    }
+
+    private void requireLine(LineAdd line) {
+        if (line == null || line.variantId() == null) {
+            throw new BadRequestException("A product variant is required for every checkout line");
+        }
+        requireQuantity(line.quantity());
+    }
+
+    private void requireLine(LineUpdate line) {
+        if (line == null) {
+            throw new BadRequestException("A checkout line update is required");
+        }
+        if (line.lineId() == null && line.variantId() == null) {
+            throw new BadRequestException("A checkout line ID or variant ID is required");
+        }
+        if (line.quantity() == null) {
+            throw new BadRequestException("A checkout line quantity is required");
+        }
+        requireQuantity(line.quantity());
+    }
+
+    private void requireQuantity(int quantity) {
+        if (quantity < 1 || quantity > MAX_LINE_QUANTITY) {
+            throw new BadRequestException("A checkout line quantity must be between 1 and "
+                    + MAX_LINE_QUANTITY);
+        }
+    }
+
+    private CartItem requireCheckoutLine(Cart cart, LineUpdate update) {
+        CartItem item = update.lineId() != null
+                ? cartItemRepository.findById(update.lineId())
+                        .filter(candidate -> candidate.getCartId().equals(cart.getId()))
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CheckoutLine", update.lineId()))
+                : cartItemRepository.findByCartIdAndVariantId(cart.getId(), update.variantId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "CheckoutLine for variant", update.variantId()));
+        if (item.getVariantId() == null) {
+            throw new ConflictException("Checkout " + cart.getId()
+                    + " contains a product-level line; a checkout line must reference a variant");
+        }
+        return item;
     }
 
     // ------------------------------------------------------------------
@@ -396,6 +651,7 @@ public class OrdersService implements OrderDeliveryPort {
             // (no order row in ANY group survives an over-limit voucher).
             if (groupVoucher != null && !groupVoucher.isBlank()) {
                 commercialPricingPort.settleVoucher(order.getId(), consumerId, groupVoucher,
+                        breakdown.subtotalMinor() - breakdown.promotionDiscountMinor(),
                         breakdown.voucherDiscountMinor(), groupCurrency);
             }
             List<OrderItem> frozen = new java.util.ArrayList<>(groupLines.size());
@@ -451,7 +707,8 @@ public class OrdersService implements OrderDeliveryPort {
     @Transactional
     @Observed(name = "order.confirm")
     public Order confirm(UUID orderId) {
-        Order order = requireOrder(orderId);
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         requireStatus(order, OrderStatus.PLACED, "confirm");
         order.confirm(Instant.now());
         Order saved = orderRepository.save(order);
@@ -750,39 +1007,18 @@ public class OrdersService implements OrderDeliveryPort {
     @Transactional
     @Observed(name = "order.cancel")
     public Order cancel(UUID orderId, String reason) {
+        // The buyer-facing default: the platform's standing cancel surface
+        // (V303's attribution) — the seller and administrative legs name
+        // their own authorship through the three-argument core.
+        return cancel(orderId, reason, "CONSUMER");
+    }
+
+    @Transactional
+    public Order cancel(UUID orderId, String reason, String cancelAuthor) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
-        if (order.getDeliveryRequestId() != null) {
-            throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
-        }
-        // The V224 multi-leg guard: a checkout-selected platform delivery
-        // blocks the order's cancellation while ANY leg is in flight — the
-        // primary link alone is not the whole truth when the order split
-        // into several packages (a cancelled primary with live siblings
-        // must not let the order — and its money — slip away).
-        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
-                && checkoutDeliveryPort.remainingActiveLegs(orderId) > 0) {
-            throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
-        }
-        // CodeRabbit agent findings, row 13 (main export) — the delivered-goods
-        // guard: a full cancellation releases ALL reserved inventory and
-        // requests a FULL refund, so it must refuse whenever any package was
-        // already physically delivered (the multi-leg opening: cancel the
-        // uncollected primary AFTER a secondary package arrived, obtain the
-        // full refund, keep the delivered goods). Only a partial-cancellation
-        // operation — a separate future surface — may refund and release the
-        // undelivered rest.
-        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
-                && checkoutDeliveryPort.deliveredLegs(order.getId()) > 0) {
-            throw new ConflictException("An order with a delivered package cannot be fully cancelled"
-                    + " — the delivered goods are already in the buyer's hands; a partial"
-                    + " cancellation of the undelivered rest is required");
-        }
-        if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
-            throw new ConflictException("Order " + orderId + " is " + order.getStatus()
-                    + " — cancel is legal from PLACED or CONFIRMED only");
-        }
-        order.cancel(reason, Instant.now());
+        requireCancellableOrder(order);
+        order.cancel(reason, Instant.now(), cancelAuthor);
         if (order.isStockReserved()) {
             productStockPort.release(productStockMapOf(order.getId()));
             productStockPort.releaseVariants(variantStockMapOf(order.getId()));
@@ -840,6 +1076,138 @@ public class OrdersService implements OrderDeliveryPort {
         }
     }
 
+    /** The shared lifecycle and delivery constraints for cancellation. */
+    private void requireCancellableOrder(Order order) {
+        if (order.getDeliveryRequestId() != null) {
+            throw new ConflictException("An order linked to an active delivery must be cancelled through its delivery lifecycle");
+        }
+        // A checkout-selected platform delivery cannot be cancelled while
+        // any leg is in flight; the primary request link is not sufficient.
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.remainingActiveLegs(order.getId()) > 0) {
+            throw new ConflictException("An order with an in-flight platform delivery cannot be cancelled — cancel its delivery legs first");
+        }
+        // CodeRabbit agent findings, row 16 — the delivered-goods guard: a
+        // full cancellation releases ALL reserved inventory and requests a
+        // FULL refund, so it must refuse whenever any package was already
+        // physically delivered (the multi-leg opening: cancel the
+        // uncollected primary AFTER a secondary package arrived, obtain the
+        // full refund, keep the delivered goods). Only a partial-
+        // cancellation operation — a separate future surface — may refund
+        // and release the undelivered rest.
+        if (order.getFulfillmentMethod() == FulfillmentMethod.PLATFORM_DELIVERY
+                && checkoutDeliveryPort.deliveredLegs(order.getId()) > 0) {
+            throw new ConflictException("An order with a delivered package cannot be fully cancelled"
+                    + " — the delivered goods are already in the buyer's hands; a partial"
+                    + " cancellation of the undelivered rest is required");
+        }
+        if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new ConflictException("Order " + order.getId() + " is " + order.getStatus()
+                    + " — cancel is legal from PLACED or CONFIRMED only");
+        }
+    }
+
+    /**
+     * Enforce the management boundary before a transport adapter decodes
+     * caller-supplied IDs. The method has no domain side effect.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    public void requireAdmin() {
+    }
+
+    /**
+     * Saleor P4 order-confirm management command. Confirmation remains the
+     * orders owner's existing state transition and event publication; this
+     * adapter does not add a second payment-capture path.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.confirm")
+    public OrderView confirmAsAdmin(UUID orderId) {
+        Order confirmed = confirm(orderId);
+        return new OrderView(confirmed.getId(), confirmed.getPlacedAt(), confirmed.getStatus().name());
+    }
+
+    /**
+     * Saleor's bulk-cancel semantics: inspect every unique order under a
+     * row lock before performing transitions. State refusals are item errors;
+     * unexpected execution failures escape the enclosing transaction.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.bulk-cancel")
+    public com.marketplace.orders.spi.OrderBulkCancelResult bulkCancelAsAdmin(List<UUID> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return new com.marketplace.orders.spi.OrderBulkCancelResult(0, List.of());
+        }
+
+        java.util.Set<UUID> uniqueIds = new java.util.LinkedHashSet<>(orderIds);
+        java.util.List<com.marketplace.orders.spi.OrderBulkCancelResult.Failure> failures =
+                new java.util.ArrayList<>();
+
+        // Stable ordering prevents overlapping bulk requests from acquiring
+        // row locks in opposite order and unnecessarily deadlocking.
+        List<UUID> orderedIds = uniqueIds.stream().sorted().toList();
+
+        // Match Saleor's clean-input-before-bulk-action behavior: no order is
+        // transitioned until all unique IDs have had their locked state and
+        // delivery constraints checked.
+        java.util.List<UUID> cancellableIds = new java.util.ArrayList<>();
+        for (UUID orderId : orderedIds) {
+            Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+            if (order == null) {
+                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                        orderId,
+                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.NOT_FOUND,
+                        "Order not found: " + orderId));
+                continue;
+            }
+            try {
+                requireCancellableOrder(order);
+                cancellableIds.add(orderId);
+            } catch (ConflictException exception) {
+                failures.add(new com.marketplace.orders.spi.OrderBulkCancelResult.Failure(
+                        orderId,
+                        com.marketplace.orders.spi.OrderBulkCancelResult.FailureKind.CONFLICT,
+                        exception.getMessage()));
+            }
+        }
+
+        int cancelledCount = 0;
+        for (UUID orderId : cancellableIds) {
+            // The 2026-11-08 #811 round-5 review (Minor · Functional
+            // Correctness): the administrative legs name their OWN
+            // authorship — the two-argument core used to stamp CONSUMER on
+            // every administrative cancel (V303's attribution column would
+            // carry the wrong author for any policy that reads it).
+            cancel(orderId, "Cancelled through the order-management bulk API", "ADMIN");
+            cancelledCount++;
+        }
+        return new com.marketplace.orders.spi.OrderBulkCancelResult(cancelledCount, failures);
+    }
+
+    /**
+     * Saleor P4 order-management mutation backed by the existing domain
+     * state machine. ADMIN authorization belongs at this service boundary.
+     * Cancellation locks and transitions the order, releases its stock
+     * reservation, and publishes OrderCancelledEvent so the existing
+     * payments owner settles its intent. No PSP or ledger logic is duplicated.
+     */
+    @Override
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    @Observed(name = "order.admin.cancel")
+    public OrderView cancelAsAdmin(UUID orderId) {
+        // The 2026-11-08 #811 round-5 review: the administrative leg names
+        // its own authorship (the two-argument core stamped CONSUMER).
+        Order cancelled = cancel(orderId, "Cancelled through the order-management API",
+                "ADMIN");
+        return new OrderView(cancelled.getId(), cancelled.getPlacedAt(), cancelled.getStatus().name());
+    }
+
     /**
      * Stage 6 (ADR-0002): the buyer's payment-intent surface — creates (or
      * idempotently returns) the order's intent through the EXISTING
@@ -871,14 +1239,29 @@ public class OrdersService implements OrderDeliveryPort {
      */
     @Transactional
     public void confirmFromPayment(java.util.UUID paymentIntentId) {
+        // Serialize concurrent/delivered-again payment completion events on
+        // the authoritative order row. A redelivery that observes CONFIRMED
+        // after the lock is acquired is a no-op, not a stale-state conflict.
+        //
+        // The 2026-11-05 #811 round (Minor · Data Integrity): the second
+        // read alone did NOT re-read the state — JPA's first-level cache
+        // returns the ALREADY-MANAGED instance for findByIdForUpdate, so
+        // the PLACED filter below (and confirm's own requireStatus) could
+        // read the status the UNLOCKED findByPaymentIntentId loaded, while
+        // a concurrent confirm committed CONFIRMED between the two reads:
+        // a double confirm and a duplicate OrderConfirmedEvent. The
+        // JPA-documented re-read-under-lock is refresh(entity,
+        // PESSIMISTIC_WRITE): the row lock is taken AND the managed
+        // entity's state is reloaded from the authoritative row — the
+        // filter and the confirm both decide on the locked truth.
         orderRepository.findByPaymentIntentId(paymentIntentId)
-                .filter(order -> order.getStatus() == OrderStatus.PLACED)
-                .ifPresentOrElse(order -> confirm(order.getId()),
-                        () -> {
-                            // The honest no-op: the order moved past PLACED
-                            // (or carries no such intent) — the machine's
-                            // current state is already the newer truth.
-                        });
+                .ifPresent(order -> {
+                    entityManager.refresh(order,
+                            jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+                    if (order.getStatus() == OrderStatus.PLACED) {
+                        confirm(order.getId());
+                    }
+                });
     }
 
     /**
@@ -1026,7 +1409,19 @@ public class OrdersService implements OrderDeliveryPort {
     @Transactional
     public OrderDetail cancelForUser(UUID orderId, String reason, Authentication authentication) {
         Order order = getOrderForUser(orderId, authentication);
-        Order cancelled = cancel(order.getId(), reason);
+        // The 2026-11-08 #811 round-7 review (Minor · Data Integrity &
+        // Integration): the authorship answers the EXECUTOR — the leg is
+        // gated consumer-OR-admin, and an admin cancelling another user's
+        // order through it recorded CONSUMER (the audit trail's own
+        // misattribution — V303's cancel_author exists to name WHO
+        // cancelled). The gate guarantees the only other passer is the
+        // admin.
+        String cancelAuthor = order.getConsumerId()
+                .equals(currentUserProvider.getCurrentUserId(authentication))
+                ? "CONSUMER" : "ADMIN";
+        // The 2026-11-05 #811 round-3 review: the BUYER's own words (the
+        // erasure surface V303 attributes).
+        Order cancelled = cancel(order.getId(), reason, cancelAuthor);
         return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
     }
 
@@ -1153,8 +1548,18 @@ public class OrdersService implements OrderDeliveryPort {
     @Transactional
     @Observed(name = "order.seller.cancel")
     public OrderDetail cancelForSeller(UUID orderId, String reason, Authentication authentication) {
-        requireSellerOrder(orderId, authentication);
-        Order cancelled = cancel(orderId, reason);
+        Order order = requireSellerOrder(orderId, authentication);
+        // The 2026-11-08 #811 round-7 review (Minor · Data Integrity &
+        // Integration): the seller leg's twin — the gate is
+        // seller-OR-admin, and an admin's cancel through it recorded
+        // SELLER. The round-5 authorship law, completed: the row names
+        // the executor (the seller for the seller's own cancel, the
+        // admin for everyone else the gate lets through — a
+        // seller-less legacy row is admin-only by the gate's own law).
+        String cancelAuthor = order.getSellerId() != null
+                && order.getSellerId().equals(currentUserProvider.getCurrentUserId(authentication))
+                ? "SELLER" : "ADMIN";
+        Order cancelled = cancel(orderId, reason, cancelAuthor);
         return new OrderDetail(cancelled, orderItemRepository.findByOrderId(orderId));
     }
 
