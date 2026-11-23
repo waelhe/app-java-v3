@@ -74,9 +74,15 @@ class TranslationWriteServiceTest {
         collectionRepository = mock(CollectionRepository.class);
         collectionProductRepository = mock(CollectionProductRepository.class);
         // The 2026-11-07 #808 round-20: the value translation rides the
-        // definition's FOR-UPDATE lock — the delete-pairing default.
-        lenient().when(attributeDefinitionRepository.findByIdForUpdate(any(UUID.class)))
-                .thenAnswer(invocation -> attributeDefinitionRepository.findById(invocation.getArgument(0)));
+        // definition's FOR-UPDATE lock — the delete-pairing default. The
+        // 2026-11-23 #809 review: the doReturn/when shape registers the
+        // read-through WITHOUT running it — a when(...).thenAnswer stub
+        // executes the answer once during stubbing, registering the inner
+        // findById call on the mock before the service ever runs and
+        // polluting the per-test call orders.
+        org.mockito.Mockito.doAnswer(invocation -> attributeDefinitionRepository
+                        .findById(invocation.getArgument(0)))
+                .when(attributeDefinitionRepository).findByIdForUpdate(any(UUID.class));
         // The 2026-11-09 #808 round-26 review: the drop/lock/load order's
         // read-through defaults — the DEFINITION-ID projection and the
         // option's OWN locked load both delegate to the findById stubs the
@@ -488,6 +494,13 @@ class TranslationWriteServiceTest {
         assertThat(outcomes.get(0).name()).isEqualTo("ألفا");
         assertThat(outcomes.get(0).languageCode()).isEqualTo("AR");
         assertThat(outcomes.get(1).name()).isEqualTo("بيتا");
+        // The 2026-11-23 #809 review: each outcome's rowId is its OWN
+        // item's row — a handler that returns the right names but swaps
+        // the row ids (alpha's id on both) still passes name checks while
+        // the consumer's rowId-driven update writes the wrong row.
+        assertThat(outcomes).extracting(TranslationBulkOutcome::rowId)
+                .containsExactly(alpha.getId(), beta.getId());
+        assertThat(outcomes).allSatisfy(TranslationBulkOutcome::success);
     }
 
     @Test
@@ -530,6 +543,9 @@ class TranslationWriteServiceTest {
             assertThat(outcome.success()).isTrue();
             assertThat(outcome.name()).isEqualTo("Crimson");
             assertThat(outcome.languageCode()).isEqualTo("EN");
+            // The 2026-11-23 #809 review: the row id identity holds on the
+            // values-bulk path too — the consumer keys on rowId.
+            assertThat(outcome.rowId()).isEqualTo(red.getId());
         });
     }
 
@@ -588,14 +604,25 @@ class TranslationWriteServiceTest {
 
         try (MockedStatic<TransactionAspectSupport> transaction =
                      org.mockito.Mockito.mockStatic(TransactionAspectSupport.class)) {
+            // The 2026-11-23 #809 review: the status is RETAINED and the
+            // rollback REQUEST asserted — answering the refusal outcomes
+            // without asking Spring to roll the first item's save back is
+            // a phantom-write regression the results alone cannot see.
+            TransactionStatus status = mock(TransactionStatus.class);
             transaction.when(TransactionAspectSupport::currentTransactionStatus)
-                    .thenReturn(mock(TransactionStatus.class));
+                    .thenReturn(status);
 
             List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributes(
                     List.of(new TranslationBulkItem(okRow.getId(), new TranslationAmendCommand("Amended", "EN")),
                             new TranslationBulkItem(missingRow.getId(), new TranslationAmendCommand("Amended", "EN"))),
                     "REJECT_EVERYTHING");
 
+            // The passing item's save happened BEFORE the marking request.
+            org.mockito.InOrder rollback = org.mockito.Mockito.inOrder(
+                    attributeDefinitionRepository, status);
+            rollback.verify(attributeDefinitionRepository).save(okRow);
+            rollback.verify(status).setRollbackOnly();
+            verify(status).setRollbackOnly();
             assertThat(outcomes).hasSize(2);
             assertThat(outcomes.get(0).success()).isFalse();
             assertThat(outcomes.get(0).name()).isNull();
@@ -623,14 +650,21 @@ class TranslationWriteServiceTest {
 
         try (MockedStatic<TransactionAspectSupport> transaction =
                      org.mockito.Mockito.mockStatic(TransactionAspectSupport.class)) {
+            // The same 2026-11-23 #809 review: the values-bulk twin keeps
+            // the rollback REQUEST asserted after the first item's save.
+            TransactionStatus status = mock(TransactionStatus.class);
             transaction.when(TransactionAspectSupport::currentTransactionStatus)
-                    .thenReturn(mock(TransactionStatus.class));
+                    .thenReturn(status);
 
             List<TranslationBulkOutcome> outcomes = service.bulkTranslateAttributeValues(
                     List.of(new TranslationBulkItem(okRow.getId(), new TranslationAmendCommand("Amended", "EN")),
                             new TranslationBulkItem(missingId, new TranslationAmendCommand("Amended", "EN"))),
                     "REJECT_EVERYTHING");
 
+            org.mockito.InOrder rollback = org.mockito.Mockito.inOrder(
+                    attributeOptionRepository, status);
+            rollback.verify(attributeOptionRepository).save(okRow);
+            rollback.verify(status).setRollbackOnly();
             assertThat(outcomes).hasSize(2);
             assertThat(outcomes.get(0).success()).isFalse();
             assertThat(outcomes.get(0).name()).isNull();
@@ -660,7 +694,11 @@ class TranslationWriteServiceTest {
         CatalogAttributeOption row = CatalogAttributeOption.create(
                 parent.getId(), "red", "Red", null, 1);
         when(attributeOptionRepository.findById(row.getId())).thenReturn(Optional.of(row));
-        when(attributeDefinitionRepository.findByIdForUpdate(parent.getId())).thenReturn(Optional.of(parent));
+        // The 2026-11-23 #809 review: the definition's locked-load stub
+        // rides doReturn/when too — the when() form runs the read-through
+        // default during stubbing and registers a phantom call order.
+        org.mockito.Mockito.doReturn(Optional.of(parent)).when(attributeDefinitionRepository)
+                .findByIdForUpdate(parent.getId());
         org.mockito.Mockito.doReturn(Optional.empty()).when(attributeOptionRepository)
                 .findByIdForUpdate(row.getId());
 
@@ -672,6 +710,15 @@ class TranslationWriteServiceTest {
                 .extracting(AttributeMutationError::code, AttributeMutationError::field)
                 .containsExactly(AttributeMutationErrorCode.NOT_FOUND, "id");
         verify(attributeOptionRepository, never()).save(any(CatalogAttributeOption.class));
+        // The 2026-11-23 #809 review: the ORDER is asserted — the
+        // definition's FOR-UPDATE lock precedes the option's OWN locked
+        // read (a service that reads the option BEFORE taking the
+        // definition lock, or skips the lock, passes the absence checks
+        // while racing the delete the lock exists to serialize with).
+        org.mockito.InOrder locked = org.mockito.Mockito.inOrder(
+                attributeDefinitionRepository, attributeOptionRepository);
+        locked.verify(attributeDefinitionRepository).findByIdForUpdate(parent.getId());
+        locked.verify(attributeOptionRepository).findByIdForUpdate(row.getId());
     }
 
 }

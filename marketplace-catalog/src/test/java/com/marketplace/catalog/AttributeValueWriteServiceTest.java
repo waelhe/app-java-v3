@@ -638,7 +638,20 @@ class AttributeValueWriteServiceTest {
                 parentB.getId(), "under-b", "Under B", null, 0);
         CatalogAttributeOption underA = CatalogAttributeOption.create(
                 parentA.getId(), "under-a", "Under A", null, 0);
-        // The caller names B's option FIRST — the lock order stays sorted.
+        // The 2026-11-23 #809 review: the caller list order must be the
+        // REVERSE of the sorted definition order ALWAYS — UUID.randomUUID()
+        // ids carry no guaranteed order, so a fixed (underB, underA) list
+        // could coincide with the sorted order and pass even if the service
+        // locked in CALLER order. Ordering at runtime by the parents' own
+        // random ids pins the regression: the caller's first option always
+        // belongs to the HIGHER-id definition, the opposite of the lock
+        // order the service must keep.
+        CatalogAttributeOption higherParentOption =
+                parentA.getId().compareTo(parentB.getId()) > 0 ? underA : underB;
+        CatalogAttributeOption lowerParentOption =
+                parentA.getId().compareTo(parentB.getId()) > 0 ? underB : underA;
+        // The caller names the higher-id parent's option FIRST — the lock
+        // order must still come out sorted.
         when(options.findDefinitionIdById(underB.getId())).thenReturn(Optional.of(parentB.getId()));
         when(options.findDefinitionIdById(underA.getId())).thenReturn(Optional.of(parentA.getId()));
         when(definitions.findByIdForUpdate(parentA.getId())).thenReturn(Optional.of(parentA));
@@ -646,7 +659,8 @@ class AttributeValueWriteServiceTest {
         when(options.findByIdForUpdate(underB.getId())).thenReturn(Optional.of(underB));
         when(options.findByIdForUpdate(underA.getId())).thenReturn(Optional.of(underA));
 
-        service.deleteAttributeValues(java.util.Arrays.asList(underB.getId(), underA.getId()));
+        service.deleteAttributeValues(java.util.Arrays.asList(
+                higherParentOption.getId(), lowerParentOption.getId()));
 
         java.util.List<UUID> sorted = java.util.stream.Stream.of(parentA.getId(), parentB.getId())
                 .sorted().toList();

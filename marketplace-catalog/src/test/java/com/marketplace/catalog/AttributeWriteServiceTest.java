@@ -424,8 +424,15 @@ class AttributeWriteServiceTest {
         when(repository.findByIdForUpdate(second.getId())).thenReturn(Optional.of(second));
 
         // The caller names the two attributes in the OPPOSITE of the sorted
-        // order — the locks still come sorted.
-        service.deleteAttributes(java.util.Arrays.asList(second.getId(), first.getId()));
+        // order — the locks still come sorted. The 2026-11-23 #809 review:
+        // the reversal must hold ALWAYS, not by luck — UUID.randomUUID()
+        // ids carry no order, so the caller list is ordered AT RUNTIME by
+        // the definitions' own ids (higher-id first): a regression that
+        // locks in caller order can then never coincide with the sorted
+        // pass and slip through.
+        service.deleteAttributes(java.util.Arrays.asList(
+                first.getId().compareTo(second.getId()) > 0 ? first.getId() : second.getId(),
+                first.getId().compareTo(second.getId()) > 0 ? second.getId() : first.getId()));
 
         java.util.List<UUID> sorted = java.util.stream.Stream.of(first.getId(), second.getId())
                 .sorted().toList();
@@ -755,9 +762,15 @@ class AttributeWriteServiceTest {
         CatalogAttributeDefinition second = row("second-attr", "Second");
         when(repository.findByIdForUpdate(any(UUID.class))).thenReturn(java.util.Optional.empty());
 
+        // The 2026-11-23 #809 review: the caller order must be the runtime-
+        // computed reverse of the sorted ids (UUID.randomUUID() carries no
+        // order) — a caller-order lock regression can never coincide with
+        // the sorted pre-pass and slip through.
+        CatalogAttributeDefinition higher = first.getId().compareTo(second.getId()) > 0 ? first : second;
+        CatalogAttributeDefinition lower = first.getId().compareTo(second.getId()) > 0 ? second : first;
         service.bulkUpdateAttributes(java.util.Arrays.asList(
-                new AttributeBulkUpdateItem(second.getId(), new AttributeUpdateCommand("Second!", null)),
-                new AttributeBulkUpdateItem(first.getId(), new AttributeUpdateCommand("First!", null))),
+                new AttributeBulkUpdateItem(higher.getId(), new AttributeUpdateCommand("Higher!", null)),
+                new AttributeBulkUpdateItem(lower.getId(), new AttributeUpdateCommand("Lower!", null))),
                 "IGNORE_FAILED");
 
         // Each id is locked TWICE (the sorted pre-pass, then the per-item
@@ -790,11 +803,19 @@ class AttributeWriteServiceTest {
         org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException(
                 "uq_catalog_attribute_definitions_code_live")).when(repository).flush();
 
+        // The 2026-11-23 #809 review: the mocked TransactionStatus is now
+        // RETAINED — the guarded-flux rewrite must also have REQUESTED the
+        // rollback (setRollbackOnly), not merely reclassified the batch as
+        // ALREADY_EXISTS. Asserting the outcomes alone would pass with a
+        // handler that answers the refusal while leaving the transaction
+        // committable, re-inserting the rival's claimed rows at commit.
+        org.springframework.transaction.TransactionStatus status =
+                org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class);
         java.util.List<com.marketplace.catalog.spi.AttributeBulkOutcome> outcomes;
         try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
                      org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
             transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
-                    .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
+                    .thenReturn(status);
 
             outcomes = service.bulkCreateAttributes(List.of(
                     new AttributeCreateCommand("Bulk One", "bulk-one", CatalogAttributeType.TEXT),
@@ -802,6 +823,10 @@ class AttributeWriteServiceTest {
                     "IGNORE_FAILED");
         }
 
+        // The flush collision requested the rollback — Spring will roll
+        // the whole batch back at the boundary (the save() calls stay
+        // uncommitted), the same contract the production handler owns.
+        verify(status).setRollbackOnly();
         assertThat(outcomes).hasSize(2);
         assertThat(outcomes).allSatisfy(outcome -> {
             assertThat(outcome.success()).isFalse();

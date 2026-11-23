@@ -603,9 +603,18 @@ class ProductTypeAttributeWriteServiceTest {
         org.mockito.ArgumentCaptor<UUID> locked = org.mockito.ArgumentCaptor.forClass(UUID.class);
         verify(attributeDefinitionRepository, times(2)).findByIdForShare(locked.capture());
         assertThat(locked.getAllValues()).containsExactly(sorted.get(0), sorted.get(1));
-        // The lock pass comes BEFORE the rewrite's own writes.
-        org.mockito.InOrder order = inOrder(attributeDefinitionRepository, assignmentRepository);
+        // The 2026-11-23 #809 review: the full INTERLEAVE is pinned —
+        // bucket read, then the FOR-SHARE pass, then the bucket RE-READ
+        // under the locks, then the rewrite. InOrder skips unverified
+        // calls, so the three bucket reads' relative position to the
+        // lock pass and the saveAll is asserted by counting between the
+        // verified markers: read → lock → re-read → saveAll.
+        org.mockito.InOrder order = inOrder(assignmentRepository, attributeDefinitionRepository);
+        order.verify(assignmentRepository)
+                .findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId());
         order.verify(attributeDefinitionRepository, times(2)).findByIdForShare(any(UUID.class));
+        order.verify(assignmentRepository)
+                .findAllByProductTypeIdOrderByScopeAscPositionAsc(type.getId());
         order.verify(assignmentRepository).saveAll(any());
     }
 

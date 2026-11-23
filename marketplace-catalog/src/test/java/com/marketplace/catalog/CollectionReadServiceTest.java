@@ -399,6 +399,11 @@ class CollectionReadServiceTest {
         assertThat(page.window().getContent()).isEmpty();
         verify(membershipRepository, never()).findByCollectionIdOrderByPositionAscIdAsc(any());
         verify(membershipRepository, never()).findFirstMembershipProductRows(any(), anyBoolean(), any());
+        // The 2026-11-23 #809 review: the COUNT query is a probe channel
+        // too — a hidden collection with active members would disclose its
+        // existence through a standalone count call even with the rows
+        // gated; the safe absence never consults the count at all.
+        verify(membershipRepository, never()).countVisibleMembershipProducts(any(), anyBoolean());
     }
 
     @Test
@@ -416,6 +421,10 @@ class CollectionReadServiceTest {
         assertThat(page.window().getContent()).isEmpty();
         verify(membershipRepository, never()).findByCollectionIdOrderByPositionAscIdAsc(any());
         verify(membershipRepository, never()).findFirstMembershipProductRows(any(), anyBoolean(), any());
+        // The same 2026-11-23 #809 review: the unknown-id shape keeps the
+        // count query unconsulted as well — no existence disclosure
+        // through any membership channel.
+        verify(membershipRepository, never()).countVisibleMembershipProducts(any(), anyBoolean());
     }
 
     @Test
@@ -485,10 +494,17 @@ class CollectionReadServiceTest {
     void thePageSizeLimitDrivesHasNextAndNeverLeaksTheProbeRow() {
         UUID collectionId = UUID.randomUUID();
         // The page ask is 10; the SQL returns 11 — the one-beyond probe
-        // row that answers hasNext inside the same statement.
+        // row that answers hasNext inside the same statement. The
+        // 2026-11-23 #809 review: the probe row's EXCLUSION is now
+        // asserted by identity, not by size alone — dropping the FIRST
+        // product while keeping the 11th would still answer hasNext +
+        // size 10 while leaking the probe row and silently paging wrong.
         List<Object[]> rows = new ArrayList<>();
+        java.util.List<UUID> memberIds = new ArrayList<>();
         for (int position = 1; position <= 11; position++) {
-            rows.add(row(position, activeProduct(UUID.randomUUID())));
+            UUID memberId = UUID.randomUUID();
+            memberIds.add(memberId);
+            rows.add(row(position, activeProduct(memberId)));
         }
         when(membershipRepository.findFirstMembershipProductRows(
                 eq(collectionId), eq(true), any(Pageable.class)))
@@ -501,6 +517,11 @@ class CollectionReadServiceTest {
         assertThat(page.window().hasNext()).isTrue();
         assertThat(page.window().getContent()).hasSize(10);
         assertThat(page.total()).isEqualTo(11);
+        // The served page is EXACTLY the first ten members in order — the
+        // 11th (the probe row) never rides the window.
+        assertThat(page.window().getContent())
+                .extracting(com.marketplace.catalog.spi.ProductView::id)
+                .containsExactlyElementsOf(memberIds.subList(0, 10));
     }
 
     @Test

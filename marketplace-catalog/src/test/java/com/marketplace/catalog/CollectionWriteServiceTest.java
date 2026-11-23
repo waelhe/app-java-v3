@@ -773,7 +773,16 @@ class CollectionWriteServiceTest {
         assertThat(phasePositions).containsExactly(
                 List.of(4, 5, 6),
                 List.of(1, 2, 3));
-        verify(membershipRepository).flush();
+        // The 2026-11-23 #809 review: the flush's POSITION matters — the
+        // park phase must be FLUSHED between the two saveAll calls (the
+        // V301 unique index only stays satisfied if the parked rows hit
+        // the database before the final dense order rewrites the emptied
+        // range). A saveAll → saveAll → flush sequence would pass every
+        // count-based assertion while violating the two-phase contract.
+        org.mockito.InOrder rewrite = org.mockito.Mockito.inOrder(membershipRepository);
+        rewrite.verify(membershipRepository).saveAll(any());
+        rewrite.verify(membershipRepository).flush();
+        rewrite.verify(membershipRepository).saveAll(any());
     }
 
     @Test
@@ -831,7 +840,13 @@ class CollectionWriteServiceTest {
                 List.of(new CollectionProductMove(productId, 0)));
 
         assertThat(result.success()).isTrue();
+        // The 2026-11-23 #809 review: the reorder path rides saveAll (not
+        // save) — a rewrite that re-saves the unchanged member verbatim
+        // would pass the single save() guard. Both write channels stay
+        // asserted unconsulted, flush included.
         verify(membershipRepository, never()).save(any());
+        verify(membershipRepository, never()).saveAll(any());
+        verify(membershipRepository, never()).flush();
     }
 
     @Test

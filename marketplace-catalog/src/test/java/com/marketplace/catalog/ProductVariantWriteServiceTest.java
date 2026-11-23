@@ -525,6 +525,35 @@ class ProductVariantWriteServiceTest {
                 .containsExactly(ProductVariantMutationErrorCode.NOT_FOUND, "id");
     }
 
+    /**
+     * The 2026-11-23 #809 review's isolation leg: the update's authority
+     * must NOT ride the scoped load alone. With the scoped load returning
+     * the stranger's row verbatim (a regression that drops the provider
+     * predicate from the query) and the parent's unscoped read absent (the
+     * parent belongs to the stranger), the update still answers the same
+     * safe absence and NEVER writes — the product-membership gate stands
+     * on its own, distinct from the load's scoping.
+     */
+    @Test
+    void aStrangersRowLoadedVerbatimStillAnswersTheSafeAbsenceAndNeverWrites() {
+        Product strangerProduct = productOwnedBy(ProviderIds.STRANGER);
+        ProductVariant strangerRow = variantUnder(strangerProduct, "SKU-9");
+        // The scoped load REGRESSED to return the stranger's row (the
+        // predicate dropped from the query) — the parent read stays
+        // scoped by its own absence: no parent for the caller.
+        when(variantRepository.findByIdAndProviderIdForUpdate(strangerRow.getId(), ProviderIds.CALLER))
+                .thenReturn(Optional.of(strangerRow));
+        when(productRepository.findById(strangerProduct.getId())).thenReturn(Optional.empty());
+
+        ProductVariantMutationResult result = service.updateVariant(
+                strangerRow.getId(), new ProductVariantUpdateCommand("SKU-2", null, null), caller);
+
+        assertThat(result.errors()).singleElement()
+                .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                .containsExactly(ProductVariantMutationErrorCode.NOT_FOUND, "id");
+        verify(variantRepository, never()).save(any(ProductVariant.class));
+    }
+
     @Test
     void theEmptyCommandAnswersTheCurrentProjectionWithoutAWrite() {
         Product parent = productOwnedBy(ProviderIds.CALLER);
@@ -899,13 +928,18 @@ class ProductVariantWriteServiceTest {
         // FOR-SHARE twin (the unscoped stub stays for the belt).
         when(productRepository.findByIdAndProviderIdForShare(parent.getId(), ProviderIds.CALLER))
                 .thenReturn(Optional.of(parent));
-        org.mockito.Mockito.lenient().when(variantRepository.findByProviderIdAndSku(ProviderIds.CALLER, "RACE-SKU"))
+        org.mockito.Mockito.lenient().when(variantRepository.findByProviderIdAndSku(
+                eq(ProviderIds.CALLER), any(String.class)))
                 .thenReturn(Optional.empty());
-        org.mockito.Mockito.lenient().when(variantRepository.countSkuReservationsIncludingDeleted(ProviderIds.CALLER, "RACE-SKU"))
+        org.mockito.Mockito.lenient().when(variantRepository.countSkuReservationsIncludingDeleted(
+                eq(ProviderIds.CALLER), any(String.class)))
                 .thenReturn(0L);
         org.mockito.Mockito.lenient().when(variantRepository.save(any(ProductVariant.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException(
+        // The 2026-11-23 #809 review: the flush succeeds for the FIRST
+        // item and throws the unique-index violation for the SECOND —
+        // the third item must never reach a statement.
+        org.mockito.Mockito.doAnswer(inv -> null).doThrow(new org.springframework.dao.DataIntegrityViolationException(
                 "could not execute statement; SQL n/a; constraint [uq_product_variants_provider_sku]"))
                 .when(variantRepository).flush();
 
@@ -914,24 +948,45 @@ class ProductVariantWriteServiceTest {
                      org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
             org.springframework.transaction.TransactionStatus status =
                     org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class);
-            // The single create's catch marks the batch — the loop's
-            // coordination reads the SAME marking and stops.
-            when(status.isRollbackOnly()).thenReturn(true);
+            // The 2026-11-23 #809 review: the rollback flag is STATEFUL —
+            // it starts false and flips only on the handler's own
+            // setRollbackOnly() call, so the loop's stop-coordination is
+            // actually exercised: a handler that never marks the rollback
+            // (or a loop that ignores the marking) fails this test now,
+            // instead of the flag being pre-set to true for both.
+            java.util.concurrent.atomic.AtomicBoolean marked =
+                    new java.util.concurrent.atomic.AtomicBoolean(false);
+            org.mockito.Mockito.doAnswer(inv -> {
+                marked.set(true);
+                return null;
+            }).when(status).setRollbackOnly();
+            when(status.isRollbackOnly()).thenAnswer(inv -> marked.get());
             transaction.when(org.springframework.transaction.interceptor.TransactionAspectSupport::currentTransactionStatus)
                     .thenReturn(status);
 
             outcomes = service.bulkCreateVariants(parent.getId(),
-                    List.of(new ProductVariantCreateCommand(parent.getId(), "RACE-SKU", "Racer", 100L)),
+                    List.of(new ProductVariantCreateCommand(parent.getId(), "RACE-A", "Racer A", 100L),
+                            new ProductVariantCreateCommand(parent.getId(), "RACE-B", "Racer B", 200L),
+                            new ProductVariantCreateCommand(parent.getId(), "RACE-C", "Racer C", 300L)),
                     caller, "IGNORE_FAILED");
         }
 
-        assertThat(outcomes).singleElement()
-                .extracting(ProductVariantBulkOutcome::success, o -> o.errors().get(0).code(),
-                        o -> o.errors().get(0).field())
-                .containsExactly(false, ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
-        // The single create's own flush — exactly once, never a second
-        // statement on the aborted transaction.
-        verify(variantRepository).flush();
+        // The mid-batch collision rewrites EVERY outcome honestly: the
+        // first item's earlier success becomes the collision answer too
+        // (the whole batch rolls back), the third never processed but
+        // still answered — the round-22 rewrite's own contract.
+        assertThat(outcomes).hasSize(3);
+        assertThat(outcomes).allSatisfy(outcome -> {
+            assertThat(outcome.success()).isFalse();
+            assertThat(outcome.errors()).singleElement()
+                    .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
+                    .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+        });
+        // The handler DID request the rollback (the stateful flag flipped),
+        // and the statement stopped after the colliding flush — exactly
+        // two flushes, never a third statement on the aborted transaction.
+        org.mockito.Mockito.verify(status).setRollbackOnly();
+        verify(variantRepository, org.mockito.Mockito.times(2)).flush();
     }
 
     @Test
