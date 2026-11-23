@@ -53,7 +53,7 @@ import static org.mockito.Mockito.doThrow;
  * proves the alt login is SAVED when the same move completes — the
  * email change's own durable effect.</p>
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.flyway.enabled=true",
         "spring.jpa.hibernate.ddl-auto=none",
 })
