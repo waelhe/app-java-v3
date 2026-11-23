@@ -161,29 +161,78 @@ public class EmailVerificationService {
      */
     @Observed(name = "email.verification.resend")
     public void resend(String email) {
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the lookup resolves the SAME normalized subject
+        // registration stores (trim + lowercase) — resending with the
+        // ORIGINAL mixed-case address used to answer the silent no-op
+        // (userExists is case-sensitive on the exact row), leaving the
+        // account unverified with a 202. The verbatim trimmed form stays
+        // the LEGACY fallback: the REST registration path historically
+        // stored mixed-case subjects, and those rows must keep matching.
         String subject = email.trim();
-        if (!userDetailsManager.userExists(subject)) {
+        String normalized = subject.toLowerCase(java.util.Locale.ROOT);
+        // The 2026-11-08 #810 round-5 review (Minor · Functional
+        // Correctness): the lookup resolves the SAME normalized subject
+        // registration stores (trim + lowercase) — resending with the
+        // ORIGINAL mixed-case address used to answer the silent no-op
+        // (userExists is case-sensitive on the exact row), leaving the
+        // account unverified with a 202. The verbatim trimmed form stays
+        // the LEGACY fallback: the REST registration path historically
+        // stored mixed-case subjects, and those rows must keep matching.
+        //
+        // The 2026-11-09 #807 round-3 review (Minor · Performance): the
+        // round-2 shape kept the normalized row's ADVISORY pending read
+        // after the subject check refused — `pendingVerification(normalized)
+        // ? normalized : normalized` answers the SAME value either way, so
+        // the read was dead weight (one extra token query per both-rows
+        // request). The resolution is the two-way choice alone: the
+        // MATCHING subject when it is the pending one, else the normalized
+        // row — and the post-lock state guard below remains the
+        // eligibility authority for whichever row the addressing chose.
+        String resolved;
+        if (normalized.equals(subject)) {
+            resolved = userDetailsManager.userExists(normalized) ? normalized : null;
+        } else {
+            boolean normalizedExists = userDetailsManager.userExists(normalized);
+            boolean subjectExists = userDetailsManager.userExists(subject);
+            if (normalizedExists && subjectExists) {
+                resolved = pendingVerification(subject) ? subject : normalized;
+            } else {
+                resolved = normalizedExists ? normalized : subjectExists ? subject : null;
+            }
+        }
+        if (resolved == null) {
             log.info("Verification resend requested for an address with no login account — silent no-op");
             return;
         }
         // row 8: the serialization point precedes the eligibility read —
         // the decision and the issuance both happen under the lock.
-        lockAccountRow(subject);
+        lockAccountRow(resolved);
         // The state guard: re-arm ONLY a pending verification. A consumed
         // latest row means finished — the owner completed it, or an
         // administrative surface consumed the outstanding right (the
         // ban-vs-verification invariant); either way this surface must not
         // mint a fresh redemption right for it. No row at all means the
         // hold never applied (grandfathered) — nothing to resend.
-        boolean pending = authActionTokenService
-                .latest(subject, AuthActionTokenPurpose.EMAIL_VERIFICATION)
+        if (pendingVerification(resolved)) {
+            issueFor(resolved);
+        } else {
+            log.info("Verification resend skipped — the account is not pending: subject={}", resolved);
+        }
+    }
+
+    /**
+     * The PENDING state of one login subject's verification right: a live
+     * (unconsumed) latest EMAIL_VERIFICATION token row. Shared by the
+     * resend's post-lock authority guard and the both-rows resolution the
+     * 2026-11-09 #807 round added (the resolution's advisory read — the
+     * guard under the lock decides).
+     */
+    private boolean pendingVerification(String loginSubject) {
+        return authActionTokenService
+                .latest(loginSubject, AuthActionTokenPurpose.EMAIL_VERIFICATION)
                 .map(token -> !token.isConsumed())
                 .orElse(false);
-        if (pending) {
-            issueFor(subject);
-        } else {
-            log.info("Verification resend skipped — the account is not pending: subject={}", subject);
-        }
     }
 
     /**
