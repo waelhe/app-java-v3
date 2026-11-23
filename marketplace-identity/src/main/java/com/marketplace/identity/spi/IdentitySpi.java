@@ -215,6 +215,43 @@ public interface IdentitySpi {
     java.util.Optional<UserAccountView> findCurrentUserAccount(Authentication authentication);
 
     /**
+     * The login store's own ENABLED truth for a subject (the
+     * {@code auth_users.enabled} flag the authentication chain reads —
+     * the state an administrative disable flips, L23). The 2026-11-05
+     * #806 round-3 review's disable race: a disable that lands between
+     * the password grant's {@code authenticate()} and its authorization
+     * {@code save()} deletes the account's rows BEFORE the grant's own
+     * insert lands, so the grant must re-verify this state AFTER its
+     * save and drop the raced row. A subject with no login row answers
+     * false (nothing may be granted for it).
+     *
+     * @param subject the login identifier (the principal name)
+     * @return true only when the login row exists and is enabled
+     */
+    boolean loginAccountEnabled(String subject);
+
+    /**
+     * The login store's own CURRENT effective authorities for a subject —
+     * the SAME {@code UserDetails} authorities the authentication chain
+     * reads at sign-in (the direct authorities union the role-derived
+     * ones, the V188 assembly), never a stale projection. The
+     * 2026-11-08 #806 round-9 review's role-revocation race: a role
+     * revoked between the password grant's {@code authenticate()} and its
+     * authorization {@code save()} leaves the raced row carrying the
+     * revoked role — and the refresh leg re-mints from the stored roles
+     * attribute until the family-age cap — so the grant must re-verify
+     * the roles AFTER its save (the same post-save wall shape
+     * {@link #loginAccountEnabled} carries for the disable race) and drop
+     * the raced row. A subject with no login row answers the EMPTY set
+     * (nothing may be granted for it).
+     *
+     * @param subject the login identifier (the principal name)
+     * @return the current effective authority names (the login chain's
+     *         own vocabulary, {@code ROLE_} prefixes intact); never null
+     */
+    java.util.Set<String> loginEffectiveAuthorities(String subject);
+
+    /**
      * P1 (the Saleor {@code user} root): the account projection by the
      * native UUID behind the typed global ID. Saleor requires
      * MANAGE_STAFF/MANAGE_USERS/MANAGE_ORDERS — enforced here as the
@@ -250,6 +287,16 @@ public interface IdentitySpi {
     java.util.Optional<UserAccountView> findUserAccountBySubject(String subject, Authentication authentication);
 
     /**
+     * The staff-surface verdict seam (the 2026-11-06 #806 round review,
+     * Minor · Security &amp; Privacy): the same ADMIN decision the scrolls
+     * carry, factored for the boundary's degenerate paths — the orders
+     * root's own {@code requireAdmin()} precedent. The {@code customers}
+     * and {@code staffUsers} roots' empty-page branches must answer the
+     * ADMIN verdict, never a success-shaped envelope that hides it.
+     */
+    void requireAdmin();
+
+    /**
      * P1 (the Saleor {@code staffUsers} root): one bounded page of the
      * staff/user roster as a forward-only keyset scroll in the requested
      * sort (an owning column + the {@code id} tiebreaker — the
@@ -269,4 +316,74 @@ public interface IdentitySpi {
                                      UserAccountSort sort,
                                      org.springframework.data.domain.KeysetScrollPosition position,
                                      org.springframework.data.domain.Limit limit);
+
+    /**
+     * P1 (the Saleor {@code customers} root): one bounded page of the
+     * CUSTOMER population — the accounts whose primary role is the
+     * platform's customer/consumer role ({@code CONSUMER}, the closed
+     * {@code UserRole} vocabulary's own customer concept) — as a
+     * forward-only keyset scroll in the requested sort (an owning column +
+     * the {@code id} tiebreaker — the exact {@code scrollStaffUsers} keyset
+     * contract, over the complementary customer-account population of the
+     * SAME single identity store: no duplicate identity store, staff
+     * accounts excluded by the population's own scoping). ADMIN-enforced at
+     * this owning use-case boundary (Saleor requires
+     * MANAGE_ORDERS/MANAGE_USERS — the catalog's mapped platform
+     * capability, the RBAC mapping row of the divergence registry); the
+     * returning page carries the CUSTOMER collection total Saleor's
+     * {@code totalCount} field expects (the population's own count, never
+     * the roster's).
+     *
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @param sort           the executed sort (never {@code null})
+     * @param position       the keyset scroll position — the initial
+     *                       position, or the position decoded from the
+     *                       client's opaque {@code after} cursor
+     * @param limit          the bounded page size (the boundary's own cap)
+     * @return the page of customer account projections plus the customer
+     *         population total
+     */
+    UserAccountPage scrollCustomers(Authentication authentication,
+                                    UserAccountSort sort,
+                                    org.springframework.data.domain.KeysetScrollPosition position,
+                                    org.springframework.data.domain.Limit limit);
+
+    /**
+     * P1 (the Saleor {@code permissionGroup} root): the permission-group
+     * projection by the native UUID behind the typed global ID. Saleor
+     * requires MANAGE_STAFF — enforced here as the platform's server-side
+     * ADMIN capability at the owning use-case boundary (the RBAC mapping
+     * row of the divergence registry). An unknown but well-formed UUID
+     * answers empty (the safe absence the nullable root carries — never an
+     * error, never a fabricated group).
+     *
+     * @param id             the native UUID (decoded by the boundary's codec)
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @return the permission-group projection, empty when no group matches
+     */
+    java.util.Optional<PermissionGroupView> findPermissionGroupById(UUID id, Authentication authentication);
+
+    /**
+     * P1 (the Saleor {@code permissionGroups} root): one bounded page of the
+     * permission-group collection as a forward-only keyset scroll in the
+     * requested sort (the owning sort field + the {@code id} tiebreaker —
+     * the {@code scrollStaffUsers} keyset precedent, over the closed role
+     * vocabulary that IS the platform's permission-group collection).
+     * ADMIN-enforced as above; the returning page carries the collection
+     * total Saleor's {@code totalCount} field expects.
+     *
+     * @param authentication the caller, whose ADMIN authority is verified
+     * @param sort           the executed sort (never {@code null})
+     * @param position       the keyset scroll position — the initial
+     *                       position, or the position decoded from the
+     *                       client's opaque {@code after} cursor
+     * @param limit          the bounded page size (the boundary's own cap;
+     *                       an unlimited limit answers the whole collection)
+     * @return the page of permission-group projections plus the collection
+     *         total
+     */
+    PermissionGroupPage scrollPermissionGroups(Authentication authentication,
+                                               PermissionGroupSort sort,
+                                               org.springframework.data.domain.KeysetScrollPosition position,
+                                               org.springframework.data.domain.Limit limit);
 }

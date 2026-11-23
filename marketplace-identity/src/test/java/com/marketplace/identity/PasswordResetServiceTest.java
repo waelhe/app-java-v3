@@ -20,6 +20,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -91,6 +92,33 @@ class PasswordResetServiceTest {
         assertThat(event.getValue().resetLink())
                 .isEqualTo("http://localhost:3000/reset-password?token=raw-one-time-token");
         assertThat(event.getValue().expiresAt()).isEqualTo(NOW.plus(TTL));
+    }
+
+    @Test
+    void requestReset_normalizesAMixedCaseAddressToTheStoredIdentifier() {
+        // The 2026-11-05 #806 round-3 review (Major): registration
+        // lowercases before storing and the login lookups are
+        // case-sensitive - a mixed-case reset request would MISS the
+        // account and silently no-op the mail. The service seam now
+        // applies the same discipline for BOTH transports (the GraphQL
+        // root and the REST controller).
+        when(userDetailsManager.userExists(EMAIL)).thenReturn(true);
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(member()));
+        when(authActionTokenService.issue(eq(EMAIL),
+                org.mockito.ArgumentMatchers.any(AuthActionTokenPurpose.class),
+                org.mockito.ArgumentMatchers.eq(TTL)))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "raw-one-time-token", NOW.plus(TTL))));
+
+        service.requestReset("  Member@Example.COM ");
+
+        // The stored (lowercase) identifier - never the raw input shape.
+        verify(userDetailsManager).userExists(EMAIL);
+        verify(userRepository).findBySubject(EMAIL);
+        verify(authActionTokenService).issue(eq(EMAIL),
+                org.mockito.ArgumentMatchers.eq(AuthActionTokenPurpose.PASSWORD_RESET),
+                org.mockito.ArgumentMatchers.eq(TTL));
+        verify(eventPublisher).publishEvent(any(PasswordResetRequestedEvent.class));
     }
 
     @Test
@@ -246,6 +274,41 @@ class PasswordResetServiceTest {
                 ArgumentCaptor.forClass(com.marketplace.shared.api.AccountCredentialsRotated.class);
         verify(eventPublisher).publishEvent(rotated.capture());
         assertThat(rotated.getValue().username()).isEqualTo(EMAIL);
+    }
+
+    /**
+     * The 2026-11-08 #810 round-6 review (Minor · Security & Privacy): the
+     * rotation rides the per-user advisory auth-state lock BEFORE the
+     * credential write and the outstanding-right kill — the rotation must
+     * serialize with the email-change request's verify-then-issue window,
+     * or a right minted under the OLD password could outlive the
+     * invalidateOutstanding that should have killed it.
+     */
+    @Test
+    void completeReset_takesTheAuthStateLockBeforeTheRotationWrites() {
+        User user = member();
+        AuthActionToken token = AuthActionToken.issue(
+                EMAIL, AuthActionTokenPurpose.PASSWORD_RESET, "c".repeat(64), NOW.plus(TTL));
+        when(authActionTokenService.consume("raw-token", AuthActionTokenPurpose.PASSWORD_RESET))
+                .thenReturn(token);
+        when(userDetailsManager.loadUserByUsername(EMAIL)).thenReturn(
+                org.springframework.security.core.userdetails.User.withUsername(EMAIL)
+                        .password("{noop}old-secret").authorities("ROLE_CONSUMER")
+                        .build());
+        when(userRepository.findBySubject(EMAIL)).thenReturn(Optional.of(user));
+
+        service.completeReset("raw-token", "the-new-password");
+
+        // The serialization point: the lock lands after the account's
+        // existence gate resolves the username, and BEFORE the password
+        // column write and the outstanding-right kill.
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository, jdbcTemplate,
+                authActionTokenService);
+        order.verify(userRepository).findBySubject(EMAIL);
+        order.verify(userRepository).lockUserAuth(user.getId().toString());
+        order.verify(jdbcTemplate).update(eq(PasswordResetService.UPDATE_PASSWORD_ONLY),
+                org.mockito.ArgumentMatchers.anyString(), eq(EMAIL));
+        order.verify(authActionTokenService).invalidateOutstanding(EMAIL);
     }
 
     @Test
