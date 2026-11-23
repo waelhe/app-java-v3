@@ -555,6 +555,46 @@ class VoucherWriteServiceTest {
         verify(voucherRepository).delete(second);
     }
 
+    /**
+     * The 2026-11-23 self-review's duplicate-and-order law (the
+     * adversarial sweep's own finding — the same three laws the CMS bulk
+     * delete/publish pair carries): a request naming the SAME voucher
+     * twice deletes and counts it ONCE, and the deletes run in the
+     * SORTED id order regardless of the caller's runtime order (two
+     * concurrent bulk deletes over overlapping vouchers in opposite
+     * orders can never deadlock).
+     */
+    @Test
+    void bulkDeleteCountsADuplicateOnceAndRunsInSortedOrder() {
+        Voucher first = row("BULK-DUP1");
+        Voucher second = row("BULK-DUP2");
+        when(voucherRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(voucherRepository.findById(first.getId())).thenReturn(Optional.of(first));
+        when(voucherRepository.findById(second.getId())).thenReturn(Optional.of(second));
+
+        // The caller names the duplicate pair first and in the runtime
+        // reverse of the sorted order — the count and the delete order
+        // stay honest anyway (the null id is skipped, not NPE).
+        java.util.List<UUID> runtime = new java.util.ArrayList<>();
+        UUID a = first.getId();
+        UUID b = second.getId();
+        UUID higher = a.compareTo(b) > 0 ? a : b;
+        UUID lower = a.compareTo(b) > 0 ? b : a;
+        runtime.add(higher);
+        runtime.add(null);
+        runtime.add(lower);
+        runtime.add(higher);
+        int count = service.deleteVouchers(runtime);
+
+        assertThat(count).isEqualTo(2);
+        verify(voucherRepository, org.mockito.Mockito.times(1)).delete(first);
+        verify(voucherRepository, org.mockito.Mockito.times(1)).delete(second);
+        java.util.List<UUID> sorted = java.util.stream.Stream.of(a, b).sorted().toList();
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(voucherRepository);
+        order.verify(voucherRepository).findById(sorted.get(0));
+        order.verify(voucherRepository).findById(sorted.get(1));
+    }
+
     @Test
     void bulkDeleteOfAnEmptyListAnswersZeroWithoutTouchingTheOwner() {
         assertThat(service.deleteVouchers(List.of())).isZero();

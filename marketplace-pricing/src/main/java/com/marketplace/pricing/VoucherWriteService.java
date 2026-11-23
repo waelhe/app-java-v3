@@ -333,9 +333,23 @@ public class VoucherWriteService implements VoucherWriteSpi {
         if (ids == null || ids.isEmpty()) {
             return 0;
         }
+        // The 2026-11-23 self-review (the adversarial sweep of the same
+        // session's bulkPublishPages fix — the same three laws the CMS
+        // bulk delete/publish pair carries): (1) de-duplicated (a
+        // request naming the SAME voucher twice deletes and counts it
+        // ONCE — the old loop ran the second delete on the already
+        // removed row), (2) sorted id order (the per-row deletes take
+        // their locks in caller order — two concurrent bulk deletes
+        // over overlapping vouchers in opposite orders used to
+        // deadlock exactly like the CMS bulk delete's own round-5
+        // finding), (3) null ids are skipped here exactly as the old
+        // loop skipped them (the per-row Optional.empty contract).
+        List<UUID> ordered = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(
+                ids.stream().filter(java.util.Objects::nonNull).toList()));
+        java.util.Collections.sort(ordered);
         int deleted = 0;
-        for (UUID id : ids) {
-            Optional<Voucher> addressed = id == null ? Optional.empty() : voucherRepository.findById(id);
+        for (UUID id : ordered) {
+            Optional<Voucher> addressed = voucherRepository.findById(id);
             if (addressed.isPresent()) {
                 voucherRepository.delete(addressed.get());
                 deleted++;
