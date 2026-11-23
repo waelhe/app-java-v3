@@ -160,9 +160,21 @@ public class CmsPageAdminService implements CmsPageSpi {
     @Observed(name = "cms.page.bulk_publish")
     public int bulkPublishPages(Authentication caller, List<UUID> ids, boolean published) {
         requireAdmin(caller);
+        // The 2026-11-23 #810 round review: the publish pass now carries
+        // the delete pass's own three laws — (1) de-duplicated (a request
+        // naming the SAME page twice counts it once, matching the
+        // per-row honesty of bulkDeletePages), (2) sorted id order (two
+        // concurrent bulk operations over overlapping pages in opposite
+        // caller orders can never deadlock), (3) the LOCKED load
+        // (findByIdForUpdate — the publish's row update serializes with
+        // the delete-vs-link law the single delete and this bulk pass
+        // both ride; the plain findById left the publish racing a delete
+        // commit between the read and the flush).
+        List<UUID> ordered = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(ids));
+        java.util.Collections.sort(ordered);
         int count = 0;
-        for (UUID id : ids) {
-            Optional<CmsPage> row = pageRepository.findById(id);
+        for (UUID id : ordered) {
+            Optional<CmsPage> row = pageRepository.findByIdForUpdate(id);
             if (row.isPresent()) {
                 row.get().setPublished(published);
                 count++;
