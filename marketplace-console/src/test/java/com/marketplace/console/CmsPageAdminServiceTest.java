@@ -100,6 +100,11 @@ class CmsPageAdminServiceTest {
         // The 2026-11-23 #810 round review: the publish pass rides the
         // LOCKED load (the delete-vs-link law's own family) — the plain
         // findById stub the old shape used no longer runs this path.
+        // The any()-fallback (stubbed FIRST, so the exact stubs below
+        // take precedence) answers the unknown row the caller mixes in;
+        // strict stubbing would otherwise flag that unstubbed third id.
+        org.mockito.Mockito.lenient().when(pageRepository.findByIdForUpdate(any(UUID.class)))
+                .thenReturn(Optional.empty());
         when(pageRepository.findByIdForUpdate(a)).thenReturn(Optional.of(pageA));
         when(pageRepository.findByIdForUpdate(b)).thenReturn(Optional.of(pageB));
 
