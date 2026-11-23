@@ -996,8 +996,9 @@ class ProductVariantWriteServiceTest {
         assertThat(outcomes.get(1).errors()).hasSize(2);
         assertThat(outcomes.get(1).errors())
                 .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
-                .containsExactly(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku",
-                        ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku");
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku"),
+                        org.assertj.core.groups.Tuple.tuple(ProductVariantMutationErrorCode.ALREADY_EXISTS, "sku"));
         // Item 3: never processed — the plain collision.
         assertThat(outcomes.get(2).errors()).singleElement()
                 .extracting(ProductVariantMutationError::code, ProductVariantMutationError::field)
