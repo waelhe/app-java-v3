@@ -22,9 +22,7 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.ScrollPosition;
 import org.springframework.data.domain.Window;
 import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +60,13 @@ public class UserDataFetcher {
      * {@code id} tiebreaker.
      */
     private static final UserAccountSort DEFAULT_SORT = UserAccountSort.of(UserAccountSort.Field.EMAIL, true);
+
+    /**
+     * The scroll's cursor-fingerprint identity (B18/CAT-06 — the 2026-11-03
+     * adversarial review, review-pr-808): the staffUsers connection's own
+     * stamp, distinct from every other scroll on the surface.
+     */
+    private static final String SCROLL_ID = "staffUsers with the same sortBy";
 
     private final IdentitySpi identitySpi;
     private final UserGraphQlMapper mapper;
@@ -162,7 +167,17 @@ public class UserDataFetcher {
                     "staffUsers supports forward-only pagination (first/after) on this platform");
         }
 
+        // The 2026-11-06 #806 round review (Minor · Security & Privacy +
+        // Minor · Functional Correctness): the ADMIN verdict and the
+        // cursor verdict BOTH precede the degenerate page — the
+        // empty-page branch used to return before {@code scrollStaffUsers}
+        // ran, hiding both the ADMIN wall that lives on that scroll (an
+        // authenticated NON-admin read a success-shaped empty connection)
+        // and the malformed-{@code after} validation (the customers root's
+        // own early-position order, applied to its twin).
+        identitySpi.requireAdmin();
         UserAccountSort sort = toOwnerSort(sortBy);
+        KeysetScrollPosition position = keysetPosition(after, sort);
         int requested = first == null ? properties.pagination().defaultPageSize() : first;
         if (requested <= 0) {
             // The degenerate page: no query executes (the services field's
@@ -177,10 +192,9 @@ public class UserDataFetcher {
                     .build();
         }
         int pageSize = Math.min(requested, properties.pagination().maxPageSize());
-        KeysetScrollPosition position = keysetPosition(after, sort);
         UserAccountPage page = identitySpi.scrollStaffUsers(
                 currentAuthentication(), sort, position, Limit.of(pageSize));
-        return toConnection(page, position);
+        return toConnection(page, position, sort);
     }
 
     /**
@@ -212,17 +226,25 @@ public class UserDataFetcher {
      * unparseable values answers the same VAL-001 taxonomy.
      */
     private KeysetScrollPosition keysetPosition(String after, UserAccountSort sort) {
-        String property = switch (sort.field()) {
+        java.util.function.Function<Object, Object> sortValue = switch (sort.field()) {
+            // The 2026-11-08 round-5 follow-up: the roster scrolls the WHOLE
+            // identity store, and an OIDC-provisioned staff account can keep
+            // a NULL email column too — the same nullable form the customers
+            // twin rides (the null-aware scroll + the null-tolerant gate).
+            case EMAIL -> KeysetCursorGate::nullableTextValue;
+            case CREATED_AT, LAST_MODIFIED_AT -> KeysetCursorGate::instantValue;
+        };
+        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, sortProperty(sort), sortValue,
+                SCROLL_ID, sort.ascending());
+    }
+
+    /** The executed sort's owning property — the cursor's fingerprint axis. */
+    private static String sortProperty(UserAccountSort sort) {
+        return switch (sort.field()) {
             case EMAIL -> "email";
             case CREATED_AT -> "createdAt";
             case LAST_MODIFIED_AT -> "updatedAt";
         };
-        java.util.function.Function<Object, Object> sortValue = switch (sort.field()) {
-            case EMAIL -> KeysetCursorGate::textValue;
-            case CREATED_AT, LAST_MODIFIED_AT -> KeysetCursorGate::instantValue;
-        };
-        return KeysetCursorGate.forwardKeyset(cursorStrategy, after, property, sortValue,
-                "staffUsers with the same sortBy");
     }
 
     /**
@@ -236,14 +258,16 @@ public class UserDataFetcher {
      * {@code totalCount} is the collection count (GraphQL Int's signed
      * 32-bit ceiling documented, hence the clamp).
      */
-    private UserCountableConnection toConnection(UserAccountPage page, KeysetScrollPosition position) {
+    private UserCountableConnection toConnection(UserAccountPage page,
+                                                 KeysetScrollPosition position, UserAccountSort sort) {
         Window<UserAccountView> window = page.window();
         List<UserAccountView> content = window.getContent();
         List<UserCountableEdge> edges = new ArrayList<>(content.size());
         for (int i = 0; i < content.size(); i++) {
             edges.add(UserCountableEdge.newBuilder()
                     .node(mapper.toGraphQlUser(content.get(i)))
-                    .cursor(cursorStrategy.toCursor(window.positionAt(i)))
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), SCROLL_ID, sortProperty(sort), sort.ascending())))
                     .build());
         }
         String startCursor = edges.isEmpty() ? null : edges.get(0).getCursor();
@@ -267,12 +291,10 @@ public class UserDataFetcher {
      * future public journey reopens the route policy).
      */
     private Authentication currentAuthentication() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new AuthenticationCredentialsNotFoundException(
-                    "Authentication is required for user administration");
-        }
-        return authentication;
+        // B24 (IDP-06): the shared identity-family wall — an anonymous
+        // token answers isAuthenticated() == true, so the TYPE check is
+        // part of the refusal (the TokenDataFetcher lesson, one authority).
+        return AuthenticatedCallers.require("user administration");
     }
 
 }
