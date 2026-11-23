@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -944,10 +945,13 @@ class ProductVariantWriteServiceTest {
                 .when(variantRepository).flush();
 
         List<ProductVariantBulkOutcome> outcomes;
+        // Declared OUTSIDE the mocked-static scope: the verification below
+        // reads the SAME reference after the try block (the flag's own
+        // state survives the close).
+        org.springframework.transaction.TransactionStatus status =
+                org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class);
         try (org.mockito.MockedStatic<org.springframework.transaction.interceptor.TransactionAspectSupport> transaction =
                      org.mockito.Mockito.mockStatic(org.springframework.transaction.interceptor.TransactionAspectSupport.class)) {
-            org.springframework.transaction.TransactionStatus status =
-                    org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class);
             // The 2026-11-23 #809 review: the rollback flag is STATEFUL —
             // it starts false and flips only on the handler's own
             // setRollbackOnly() call, so the loop's stop-coordination is
