@@ -173,6 +173,15 @@ management:
 marketplace:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  # W2 (adversarial behavioral review 2026-11-10), staging parity: the
+  # sandbox mails real account links through the real production path (the
+  # staging mail contract above), so identity's client-facing link origin is
+  # exactly as mandatory as production's — no default, an unset
+  # MARKETPLACE_IDENTITY_MAIL_BASE_URL fails at placeholder resolution before
+  # any reset-password / verify-email link is minted, instead of silently
+  # inheriting the base record's development default (localhost:3000).
+  identity:
+    mail-base-url: ${MARKETPLACE_IDENTITY_MAIL_BASE_URL}
   # Incident #682's root fix, staging parity: the sandbox submits real mail
   # through the real production path (the staging mail contract documented
   # above), so its sender identity is exactly as mandatory as production's —
