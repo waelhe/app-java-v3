@@ -11,6 +11,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.test.context.ActiveProfiles;
+import com.marketplace.payments.BoundFakePspChannelConfig;
+import org.springframework.context.annotation.Import;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -69,6 +71,7 @@ import static test.config.AuthorizationServerFixture.TOKEN_PATH;
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(BoundFakePspChannelConfig.class)
 class RmaRefundJourneyIntegrationTest {
 
     @Container

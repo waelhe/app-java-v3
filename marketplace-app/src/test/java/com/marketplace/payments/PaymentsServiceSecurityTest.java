@@ -71,6 +71,38 @@ class PaymentsServiceSecurityTest {
         }
 
         /**
+         * W3 (the fifth provider gate): processIntent now routes through
+         * requireChannel() — the security slice boots the real service, so
+         * the CONSUMER-path invocation needs a bound channel bean. A local
+         * no-network fake answers the remote-intent contract; the security
+         * assertions never read the remote values.
+         */
+        @org.springframework.context.annotation.Bean
+        PspChannel boundFakeChannel() {
+            return new PspChannel() {
+                @Override
+                public RemoteIntent createRemoteIntent(UUID marketplaceIntentId, long amountCents,
+                                                        String currency, String idempotencyKey) {
+                    return new RemoteIntent("pi_fake_" + marketplaceIntentId,
+                            "cs_fake_" + marketplaceIntentId);
+                }
+
+                @Override
+                public RemoteRefund createRemoteRefund(String pspIntentId, Long amountCents,
+                                                        String idempotencyKey) {
+                    return new RemoteRefund("re_fake_" + pspIntentId, "succeeded",
+                            amountCents != null ? amountCents : 0L);
+                }
+
+                @Override
+                public VerifiedWebhook verifyWebhook(String rawPayload, String signatureHeader) {
+                    throw new UnsupportedOperationException(
+                            "the security slice never verifies webhooks through the fake channel");
+                }
+            };
+        }
+
+        /**
          * W11 (the matrix's G5): the widened PaymentsService constructor's
          * new collaborator — the eligibility read service over the same
          * mocked repositories the slice already stubs, plus the ledger's

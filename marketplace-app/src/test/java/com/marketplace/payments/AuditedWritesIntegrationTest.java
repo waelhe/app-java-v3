@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -61,6 +62,7 @@ import static org.mockito.Mockito.when;
 })
 @ActiveProfiles("test")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(BoundFakePspChannelConfig.class)
 class AuditedWritesIntegrationTest {
 
     @Container
@@ -182,7 +184,7 @@ class AuditedWritesIntegrationTest {
     }
 
     @Test
-    void processIntentOnInertChannelRunsTheFullAuditedWrite() {
+    void processIntentOnBoundFakeChannelRunsTheFullAuditedWrite() {
         Authentication consumer = new TestingAuthenticationToken(
                 "audited-consumer@example.com", "n/a", "ROLE_CONSUMER");
         SecurityContextHolder.getContext().setAuthentication(consumer);
@@ -192,13 +194,17 @@ class AuditedWritesIntegrationTest {
                 return paymentIntentRepository.save(intent).getId();
             });
 
+            // W3: the channel precondition now holds (the bound fake), so
+            // the audited PROCESSING transition walks the REAL money path —
+            // the gate answers 503 SU-01 when no provider is bound, which is
+            // the PSP suite's own assertion.
             PaymentsService.ProcessIntentResult result = transactionTemplate.execute(status ->
                     paymentsService.processIntent(intentId, consumer));
 
             assertThat(result).isNotNull();
             assertThat(result.clientSecret())
-                    .as("no PAYMENTS_STRIPE_* credentials in CI — the channel stays inert")
-                    .isNull();
+                    .as("the bound fake channel hands back its own client secret")
+                    .isNotNull();
 
             Integer auditRows = jdbc.queryForObject(
                     "SELECT count(*) FROM payment_intents_aud WHERE id = ?",

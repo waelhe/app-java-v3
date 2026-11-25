@@ -701,9 +701,10 @@ public class PaymentsService implements PaymentsSpi {
 
     /**
      * Result of processing a payment intent: the local intent plus the PSP
-     * client secret when the real channel is bound (the calling client needs
-     * it to complete the payment on the provider side). Null clientSecret =
-     * channel inert, existing behavior.
+     * client secret the calling client needs to complete the payment on the
+     * provider side. The channel is a precondition of the operation itself
+     * (W3: an unbound channel answers 503 SU-001 before any local write), so
+     * the client secret is always the provider's own.
      */
     public record ProcessIntentResult(PaymentIntent intent, String clientSecret) {}
 
@@ -714,24 +715,29 @@ public class PaymentsService implements PaymentsSpi {
     @ConcurrencyLimit(5)
     public ProcessIntentResult processIntent(UUID id, Authentication authentication) {
         PaymentIntent intent = getIntentForUser(id, authentication);
+        // W3 (adversarial review 2026-11-10, owner-gate recommendation
+        // adopted 2026-11-12): the consumer money path is the FIFTH provider
+        // gate — an unbound channel answers 503 SU-001 ("capability OFF, not
+        // broken") through the same requireChannel() the webhook leg uses,
+        // BEFORE any local write: no intent flips to PROCESSING, no Payment
+        // row, no event. The pre-fix shape started a local-only PROCESSING
+        // that no provider could ever move and answered 200 — money that
+        // never moves anywhere. Ownership is verified first so the gate
+        // never reveals intent state to a non-owner.
+        PspChannel channel = requireChannel();
         intent.markProcessing();
-        // Real channel (roadmap B3): create the remote intent when the PSP is
-        // bound. The idempotency key is derived from the local intent id, so
+        // Real channel (roadmap B3): create the remote intent. The
+        // idempotency key is derived from the local intent id, so
         // retries replay the SAME remote intent (official idempotency-key
         // contract) instead of double-charging the flow.
-        PspChannel channel = pspChannel.getIfAvailable();
-        String clientSecret = null;
-        if (channel != null) {
-            var remote = channel.createRemoteIntent(
-                    intent.getId(), intent.getAmountCents(), intent.getCurrency(),
-                    "marketplace-intent-" + intent.getId());
-            intent.assignPspIntentId(remote.pspIntentId());
-            clientSecret = remote.clientSecret();
-        }
+        var remote = channel.createRemoteIntent(
+                intent.getId(), intent.getAmountCents(), intent.getCurrency(),
+                "marketplace-intent-" + intent.getId());
+        intent.assignPspIntentId(remote.pspIntentId());
         Payment payment = Payment.create(intent.getId(), intent.getAmountCents());
         paymentRepository.save(payment);
         eventPublisher.publishEvent(new CacheInvalidationRequested(Set.of("paymentIntents"), id));
-        return new ProcessIntentResult(intent, clientSecret);
+        return new ProcessIntentResult(intent, remote.clientSecret());
     }
 
     /**
@@ -1544,6 +1550,15 @@ public class PaymentsService implements PaymentsSpi {
         }
     }
 
+    /**
+     * The house provider-gate law's single choke point (B3): an unbound PSP
+     * channel is a capability that is OFF, not broken — callers answer 503
+     * SU-001 instead of silently running a money path no provider can ever
+     * move. Two doors route through here: the Stripe webhook leg and the
+     * consumer {@code processIntent} path (W3, the adversarial review's
+     * fifth-gate closure — same law as MAIL / MEDIA_S3 / sitemap /
+     * pseudonymizer gates).
+     */
     private PspChannel requireChannel() {
         PspChannel channel = pspChannel.getIfAvailable();
         if (channel == null) {
