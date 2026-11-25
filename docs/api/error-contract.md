@@ -120,6 +120,40 @@ Example:
   side and the 405 automatic side).
 
 
+### The framework-gate 400s — closed on this branch (F-821-1)
+
+The VAL-001 tree-shaped contract covers the failure classes the house advice
+owns — the type mismatch on path/query variables
+(`MethodArgumentTypeMismatchException`) included since this PR. Three
+framework-rejected 400 classes were registered here as a divergence
+(measured on main before this PR: they answered Boot's own automatic bare
+body — no `errorCode`, no `fieldErrors`), and are **closed on this branch**
+(the registered separate-batch disposition was revised when the 2026-11-15
+empty-approval measurement trapped the branch: closing the family in one
+place is the stronger disposition, and the review had recorded both shapes
+as acceptable):
+
+- `HttpMessageNotReadableException` (unparseable or enum-mismatched request
+  body) — the house VAL-001 tree with a FIXED detail (the parser's own
+  message carries input fragments and the leakage policy never surfaces
+  them) and an explicitly empty `fieldErrors` list (no field is
+  addressable when the body itself did not parse).
+- `MissingPathVariableException` — **its 400 member only**: the framework
+  answers 400 solely when `missingAfterConversion=true` (the path variable
+  resolved but its conversion to the declared type came out `null`); a
+  `@PathVariable` name that does not match the template's own variable is a
+  **server-side misconfiguration** that answers the house masked INT-001 500
+  (the generic net's own body), never a client 400 — a client error
+  contract must not absorb it (per the Spring Framework 7.0.10 source).
+- `HandlerMethodValidationException` — the same house VAL-001 tree the two
+  existing validation legs answer, with the parameter's own name as the
+  `fieldErrors[].field` (the plain-name shape — one violations list for
+  every 400 on every leg).
+
+The same client mistake therefore answers ONE 400 body on every rejection
+layer (the advice-owned tree), pinned by the contract tests in
+`GlobalExceptionHandlerTest` (`f821_1_*`).
+
 ## REST (RFC 7807) vs GraphQL error envelope
 
 Marketplace intentionally uses **two different error envelopes** depending on protocol:

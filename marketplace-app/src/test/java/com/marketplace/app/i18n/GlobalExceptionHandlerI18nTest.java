@@ -136,6 +136,64 @@ class GlobalExceptionHandlerI18nTest {
         });
     }
 
+    // ---- D4 i18n leg (CodeRabbit full-review round 2026-11-11): the
+    // ---- type-mismatch detail resolves from the dedicated
+    // ---- error.VAL-001.type-mismatch-detail bundle key WITH the rejected
+    // ---- parameter/value/type inserted — the real production bundles, not
+    // ---- the generic "Validation failed" detail. ----
+
+    private static org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+    typeMismatch(String value, Class<?> requiredType, String parameterName) throws NoSuchMethodException {
+        org.springframework.core.MethodParameter parameter = new org.springframework.core.MethodParameter(
+                Object.class.getDeclaredMethod("toString"), -1);
+        return new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                value, requiredType, parameterName, parameter, null);
+    }
+
+    @Test
+    void arabicLocale_localizesTypeMismatchDetailAndFieldErrorWithTheRejectedFacts() throws NoSuchMethodException {
+        runner.run(context -> {
+            LocaleContextHolder.setLocale(Locale.of("ar"));
+
+            var response = handlerFor(context.getBean(MessageSource.class)).handleTypeMismatch(
+                    typeMismatch("BUY", java.util.concurrent.TimeUnit.class, "purpose"),
+                    request("/api/v1/search"));
+
+            // the dedicated sub-key renders at the request locale WITH the
+            // rejected parameter/value/type inserted as arguments
+            assertThat(response.getDetail())
+                    .isEqualTo("قيمة غير صالحة 'BUY' للمعامل 'purpose' — النوع المتوقع 'TimeUnit'");
+            assertThat(response.getTitle()).isEqualTo("طلب غير صالح");
+            assertThat(response.getStatus()).isEqualTo(400);
+            assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+            @SuppressWarnings("unchecked")
+            java.util.List<com.marketplace.shared.api.ApiErrorPayload.FieldError> fieldErrors =
+                    (java.util.List<com.marketplace.shared.api.ApiErrorPayload.FieldError>)
+                            response.getProperties().get("fieldErrors");
+            assertThat(fieldErrors).hasSize(1);
+            assertThat(fieldErrors.get(0).field()).isEqualTo("purpose");
+            // the violations-list message carries the SAME localized text —
+            // one resolve, one text, both surfaces (the review finding)
+            assertThat(fieldErrors.get(0).message()).isEqualTo(response.getDetail());
+        });
+    }
+
+    @Test
+    void englishLocale_typeMismatchDetailCarriesRejectedValueFacts() throws NoSuchMethodException {
+        runner.run(context -> {
+            LocaleContextHolder.setLocale(Locale.ENGLISH);
+
+            var response = handlerFor(context.getBean(MessageSource.class)).handleTypeMismatch(
+                    typeMismatch("BUY", java.util.concurrent.TimeUnit.class, "purpose"),
+                    request("/api/v1/search"));
+
+            assertThat(response.getDetail())
+                    .isEqualTo("Invalid value 'BUY' for parameter 'purpose' — expected TimeUnit");
+            assertThat(response.getStatus()).isEqualTo(400);
+            assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        });
+    }
+
     @Test
     void everyTaxonomyCode_hasATitleAndUserEntry_inBothBundles() {
         runner.run(context -> {

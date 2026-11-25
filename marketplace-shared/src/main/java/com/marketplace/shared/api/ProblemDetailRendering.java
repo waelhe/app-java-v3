@@ -61,7 +61,14 @@ final class ProblemDetailRendering {
                                  String userMessage, String detailKeySuffix, MessageSource messageSource) {
         String traceId = traceId(request);
 
-        String localizedDetail = resolve(messageSource, KEY_PREFIX + taxonomy.errorCode() + "." + detailKeySuffix, detail);
+        // A null detail key suffix passes an ALREADY-localized detail through
+        // unchanged: the caller resolved it itself through the args-aware
+        // resolve below (the D4 type-mismatch leg inserts the rejected
+        // parameter/value/type into its message, so it resolves once and the
+        // problem body carries that exact text — never a second blind pass).
+        String detailKey = detailKeySuffix != null
+                ? KEY_PREFIX + taxonomy.errorCode() + "." + detailKeySuffix : null;
+        String localizedDetail = resolve(messageSource, detailKey, detail);
         String resolvedUserMessage = userMessage != null
                 ? userMessage
                 : resolve(messageSource, KEY_PREFIX + taxonomy.errorCode() + ".user", null);
@@ -85,6 +92,46 @@ final class ProblemDetailRendering {
             return fallback;
         }
         return messageSource.getMessage(code, null, fallback, LocaleContextHolder.getLocale());
+    }
+
+    /**
+     * Resolves a parameterized message at the request locale — the official
+     * {@code MessageSource.getMessage(code, args, defaultMessage, locale)}
+     * insertion mechanism (Spring Framework docs: Externalized Messages) —
+     * with the same null-source/null-key fallback contract as the argless
+     * resolve above. The args-aware leg exists for the detail keys whose
+     * bundle entries carry {0}/{1}/{2} placeholders (the D4
+     * type-mismatch-detail leg: rejected parameter, value, declared type).
+     *
+     * <p><b>The fallback is requested through the {@code null}-default
+     * overload and merged by hand.</b> {@code AbstractMessageSource}
+     * renders a NON-null default through {@code MessageFormat} when
+     * arguments are present (Framework 7.0.10 — the version this build
+     * pins via spring-boot-starter-parent 4.1.2 —
+     * {@code AbstractMessageSource.getMessage:145}:
+     * {@code return renderDefaultMessage(defaultMessage, args, locale)}),
+     * and this fallback embeds the RAW rejected value. A value such as
+     * {@code '{0,number}} collapses the apostrophe quoting and turns the
+     * rejected parameter's name into an active {@code number}-styled
+     * element whose String argument throws
+     * {@code IllegalArgumentException} — the handler would 500 instead of
+     * answering VAL-001 (the 2026-11-13 full-review finding). With the
+     * {@code null} default the documented contract is exact (lines
+     * 142-144 of the same source): a missing key answers
+     * {@code getDefaultMessage(code)} — {@code null} here, because
+     * {@code useCodeAsDefaultMessage} is not enabled anywhere in this
+     * codebase (grep-verified; the Boot {@code MessageSourceProperties}
+     * default is {@code false}) — so the English floor below answers
+     * byte-identical, never formatted. The localized text itself keeps
+     * the official formatting path (the bundle's own quoting is
+     * author-controlled).</p>
+     */
+    static String resolve(MessageSource messageSource, String code, String fallback, Object... args) {
+        if (messageSource == null || code == null) {
+            return fallback;
+        }
+        String localized = messageSource.getMessage(code, args, null, LocaleContextHolder.getLocale());
+        return localized != null ? localized : fallback;
     }
 
     static URI typeUri(ApiErrorTaxonomy taxonomy) {

@@ -303,9 +303,186 @@ class GlobalExceptionHandlerTest {
      * ordering this composition is measured on.
      */
 
+    @Test
+    void f821_1_unreadableBodyAnswersTheHouseValTreeNeverTheBareAutomaticBody() {
+        // F-821-1's first gate: malformed/untypeable JSON answers the house
+        // VAL-001 tree — errorCode/category present, a FIXED detail (the
+        // parser's own message carries input fragments and must never leak),
+        // and an explicitly empty fieldErrors list (no field is addressable
+        // when the body itself did not parse).
+        var ex = new org.springframework.http.converter.HttpMessageNotReadableException(
+                "Malformed JSON payload", (org.springframework.http.HttpInputMessage) null);
+        HttpServletRequest request = new StubHttpServletRequest("/api/listings");
+
+        var response = handler.handleUnreadableBody(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        assertThat(response.getDetail()).isEqualTo("The request body could not be parsed for the expected shape.");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(List.of());
+    }
+
+    @Test
+    void f821_1_missingPathVariable400MemberAnswersTheHouseValTree() throws NoSuchMethodException {
+        // F-821-1's second gate, the 400 member ONLY: the variable resolved
+        // but its conversion came out null (missingAfterConversion=true) —
+        // a client-contract violation with the variable named in
+        // fieldErrors, never the bare automatic body.
+        MethodParameter parameter = new MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        var ex = new org.springframework.web.bind.MissingPathVariableException("status", parameter, true);
+        HttpServletRequest request = new StubHttpServletRequest("/api/orders/42/items");
+
+        var response = handler.handleMissingPathVariable(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("status", "Invalid value for path parameter 'status'.")));
+    }
+
+    @Test
+    void f821_1_missingPathVariableMisconfigurationMemberAnswersTheMasked500() throws NoSuchMethodException {
+        // The registered split's other member: a @PathVariable name absent
+        // from the template is a SERVER misconfiguration — the client
+        // contract must not absorb it. The answer is the house masked
+        // INT-001 500 (the generic net's own body), never a 400.
+        MethodParameter parameter = new MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        var ex = new org.springframework.web.bind.MissingPathVariableException("wrongName", parameter, false);
+        HttpServletRequest request = new StubHttpServletRequest("/api/orders/42/items");
+
+        var response = handler.handleMissingPathVariable(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("INT-001");
+        assertThat(response.getDetail()).isEqualTo("An unexpected error occurred");
+        assertThat(response.getProperties()).doesNotContainKey("fieldErrors");
+    }
+
+    @Test
+    void f821_1_methodValidationAnswersTheHouseValTreeWithParameterFieldErrors() throws NoSuchMethodException {
+        // F-821-1's third gate: the @Validated method surface answers the
+        // SAME tree the two existing validation legs answer — the
+        // parameter's own name as the field (the plain-name shape), the
+        // constraint's already-localized message as the entry.
+        MethodParameter parameter = new MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        org.springframework.validation.method.ParameterValidationResult result =
+                org.mockito.Mockito.mock(org.springframework.validation.method.ParameterValidationResult.class);
+        org.mockito.Mockito.when(result.getMethodParameter()).thenReturn(parameter);
+        // Framework 7 flattened the 6.1 wildcard: getResolvableErrors()
+        // answers List<MessageSourceResolvable> directly.
+        java.util.List<org.springframework.context.MessageSourceResolvable> errors =
+                java.util.List.of(new org.springframework.validation.FieldError(
+                        "cmd", "email", "must be a well-formed email address"));
+        org.mockito.Mockito.when(result.getResolvableErrors()).thenReturn(errors);
+        // Framework 7's HandlerMethodValidationException wraps a
+        // MethodValidationResult (the 6.1 List<ParameterValidationResult>
+        // constructor is gone); the official static factory builds it.
+        var ex = new org.springframework.web.method.annotation.HandlerMethodValidationException(
+                org.springframework.validation.method.MethodValidationResult.create(
+                        new TestController(),
+                        TestController.class.getDeclaredMethod("submit", String.class),
+                        java.util.List.of(result)));
+        HttpServletRequest request = new StubHttpServletRequest("/api/users");
+
+        var response = handler.handleMethodValidation(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("email", "must be a well-formed email address")));
+    }
+
     static class TestController {
         public void submit(String email) {
         }
+    }
+
+    // ---- D4 (adversarial review 2026-11-10): the type-mismatch gate → the
+    // ---- house VAL-001 400, never the masked INT-001 500 ----
+
+    @Test
+    void handleTypeMismatch_answersTheHouse400WithTheRejectedParameter()
+            throws NoSuchMethodException {
+        // The D4 scenario: an unknown enum vocabulary value on a raw
+        // enum-bound @RequestParam (search's purpose=BUY) — the binding
+        // fails and the handler must answer the one error pipeline's
+        // validation shape: VAL-001, the rejected parameter named in the
+        // violations list, and the declared type surfaced for the client.
+        org.springframework.core.MethodParameter parameter = new org.springframework.core.MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex =
+                new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                        "BUY", java.util.concurrent.TimeUnit.class, "purpose", parameter, null);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/search");
+        var response = handler.handleTypeMismatch(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/validation"));
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("validation");
+        String detail = response.getDetail();
+        assertThat(detail).contains("purpose").contains("BUY").contains("TimeUnit");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("purpose", detail)));
+    }
+
+    @Test
+    void handleTypeMismatch_answersTheHouse400WhenTheRequiredTypeIsUnknown()
+            throws NoSuchMethodException {
+        // The required type can be absent (null) — the detail still names
+        // the parameter and value, never a 500.
+        org.springframework.core.MethodParameter parameter = new org.springframework.core.MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex =
+                new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                        "abc", null, "page", parameter, null);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/search");
+        var response = handler.handleTypeMismatch(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        String detail = response.getDetail();
+        assertThat(detail).contains("page").contains("abc").contains("the declared type");
+    }
+
+    @Test
+    void handleTypeMismatch_rendersTheRepeatedParameterValues_notTheArrayIdentity()
+            throws NoSuchMethodException {
+        // CodeRabbit full-review round 2026-11-14: a repeated query
+        // parameter (purpose=BUY&purpose=SELL) binds as String[] — when
+        // its conversion fails the exception's value IS the array, and
+        // the raw String.valueOf renders the JVM's identity string
+        // («[Ljava.lang.String;@…») where the client needs the rejected
+        // values. Both surfaces — the fallback detail and the i18n
+        // argument — must carry the elements, joined, never the identity.
+        org.springframework.core.MethodParameter parameter = new org.springframework.core.MethodParameter(
+                TestController.class.getDeclaredMethod("submit", String.class), 0);
+        String[] rejected = {"BUY", "SELL"};
+        org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex =
+                new org.springframework.web.method.annotation.MethodArgumentTypeMismatchException(
+                        rejected, java.util.concurrent.TimeUnit.class, "purpose", parameter, null);
+
+        HttpServletRequest request = new StubHttpServletRequest("/api/v1/search");
+        var response = handler.handleTypeMismatch(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("VAL-001");
+        String detail = response.getDetail();
+        assertThat(detail)
+                .as("the rejected values render as their elements on both surfaces")
+                .contains("BUY, SELL")
+                .contains("purpose")
+                .doesNotContain("[Ljava.lang.String;");
+        assertThat(response.getProperties().get("fieldErrors")).isEqualTo(
+                List.of(new ApiErrorPayload.FieldError("purpose", detail)));
     }
 
     // ---- L31: the unique-violation (23505) backstop → 409 CONFLICT ----
