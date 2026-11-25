@@ -440,6 +440,109 @@ when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(or
         assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
     }
 
+    /**
+     * ORD-02 (the 2026-11-03 adversarial scan, P2): the frozen share is
+     * the EXACT half-up integer of the true rational — no binary
+     * floating-point intermediate, no tolerance margin. The pin lands
+     * exactly on the half boundary: goods 10_003 × (20_000 − 10_000) /
+     * 20_000 = 5_001.5 exactly — half-up freezes 5_002 (the double form
+     * reaches the same value here through a representable quotient; the
+     * integer form proves it can never be anything else).
+     */
+    @Test
+    void theFrozenShareIsTheExactHalfUpIntegerOnTheHalfBoundary() {
+        Order order = fulfilledOrderWithShipping(20_000L, 10_000L, 0L, true, 500L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 1, 10_003L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "half boundary", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 1)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        OrderReturn approved = service.approve(r.getId());
+
+        // 10_003 × 10_000 / 20_000 = 5_001.5 → the exact half-up integer.
+        assertThat(approved.getRefundAmountMinor()).isEqualTo(5_002L);
+        assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
+    }
+
+    /**
+     * ORD-02's exact-arithmetic contract, the 2026-11-05 #811 round's
+     * form: a magnitude whose INTERMEDIATE PRODUCT exceeds {@code Long}
+     * while the FINAL QUOTIENT is representable — 4e9 × 4e9 = 1.6e19
+     * overflows, yet the share 1.6e19 / 4e9 = 4e9 fits comfortably —
+     * now computes the honest share through the BigInteger intermediate.
+     * The previous form (2026-11-04) refused this computable refund with
+     * the classified 503 because Math.multiplyExact rejected the
+     * PRODUCT; the reviewer's finding: the platform's ratio is
+     * discountedGoods/subtotal ≤ 1 ALWAYS (a discount reduces), so the
+     * quotient ≤ the goods value ≤ the money range — the loud 503
+     * remains ONLY as longValueExact's defense-in-depth for a corrupted
+     * magnitude beyond every declared bound, unreachable through the
+     * approve() construction itself.
+     */
+    @Test
+    void aMagnitudeWhoseQuotientIsRepresentableComputesTheHonestShare() {
+        Order order = fulfilledOrderWithShipping(4_000_000_000L, 0L, 0L, true, 1L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 1, 4_000_000_000L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "pathological magnitude", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 1)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        when(returns.save(any(OrderReturn.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OrderReturn approved = service.approve(r.getId());
+
+        // 4e9 × 4e9 overflows Long — but the share IS the line's full
+        // value (no discount): 4e9 exactly, computed never refused.
+        assertThat(approved.getRefundAmountMinor()).isEqualTo(4_000_000_000L);
+        assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
+    }
+
+    /**
+     * The 2026-11-23 #808 review's nitpick (ORD-02's exact-arithmetic
+     * contract): a magnitude whose true share sits JUST BELOW the half
+     * boundary — 9,999,999,999 × 5,000,000,001 / 10,000,000,000 =
+     * 5,000,000,000.4999999999 exactly (the measured remainder is
+     * 4,999,999,999 of 10,000,000,000). The exact half-up freezes
+     * 5,000,000,000L — the fraction is strictly below the half — while
+     * the DOUBLE form's product rounds UP (5.0000000005e19), the quotient
+     * reads 5,000,000,000.5, and Math.round drifts one unit to
+     * 5,000,000,001L: the measurable divergence the integer law exists
+     * to prevent. The half-boundary pin above lands on a representable
+     * quotient (both forms agree there) and cannot detect a regression
+     * to binary floating point — this magnitude can, and does (verified
+     * numerically before writing: exact 5,000,000,000 vs double 5,000,000,001).
+     */
+    @Test
+    void aShareJustBelowTheHalfBoundaryAtLargeMagnitudeFreezesDownNotUp() {
+        Order order = fulfilledOrderWithShipping(10_000_000_000L, 4_999_999_999L, 0L, true, 1L);
+        OrderItem item = itemOf(order, UUID.randomUUID(), 1, 9_999_999_999L);
+        OrderReturn r = OrderReturn.requested(order.getId(), buyer,
+                OrderReturn.ReturnType.RETURN, "double detector", "SAR", Instant.now());
+        when(returns.findById(r.getId())).thenReturn(Optional.of(r));
+        when(returnLines.findByOrderReturnId(r.getId())).thenReturn(List.of(
+                OrderReturnLine.of(r.getId(), item, 1)));
+        when(orderItemRepository.findByOrderId(order.getId())).thenReturn(List.of(item));
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        OrderReturn approved = service.approve(r.getId());
+
+        // 9,999,999,999 × (10,000,000,000 − 4,999,999,999) / 10,000,000,000
+        //   = 5,000,000,000.4999999999 → the exact half-up integer DOWN;
+        //   the double form would answer 5,000,000,001L here.
+        assertThat(approved.getRefundAmountMinor()).isEqualTo(5_000_000_000L);
+        assertThat(approved.getStatus()).isEqualTo(OrderReturn.ReturnStatus.APPROVED);
+    }
+
     @Test
     void anExchangeCompletionCreatesTheZeroPaymentReplacementAndReservesItsShelf() {
         Order order = fulfilledOrder();
