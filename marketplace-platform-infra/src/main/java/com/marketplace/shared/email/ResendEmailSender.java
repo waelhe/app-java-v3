@@ -48,7 +48,21 @@ public class ResendEmailSender implements EmailSender {
         this.from = mailProperties.from();
     }
 
+    /**
+     * The legacy 4-arg entry (finding 840-2, CodeRabbit round 2 on #840):
+     * the resilience annotations must ride THIS overload too — a caller
+     * holding the {@link EmailSender} interface enters here, and a plain
+     * {@code this.send(...)} call bypasses the Spring proxy (documented
+     * self-invocation semantics), losing retry/circuit/concurrency/observation.
+     * Annotating BOTH overloads keeps the interface contract identical on
+     * the SMTP and Resend transports (the SMTP bean annotates its concrete
+     * 4-arg method; annotations are not inherited through delegation).
+     */
     @Override
+    @Retry(name = "mailSend")
+    @CircuitBreaker(name = "mailSend")
+    @ConcurrencyLimit(3)
+    @Observed(name = "email.send")
     public void send(String to, String subject, String template, Map<String, Object> variables) {
         send(to, subject, template, variables, null);
     }

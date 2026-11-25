@@ -140,7 +140,8 @@ public class NotificationService {
                 NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(intent.consumerId(),
                     text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId()));
         }
         sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
         sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
@@ -209,12 +210,14 @@ public class NotificationService {
             if (preferences.isChannelEffectivelyEnabled(intent.consumerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(intent.consumerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
-                        "email/notification", Map.of("message", message));
+                        "email/notification", Map.of("message", message),
+                        deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId()));
             }
             if (preferences.isChannelEffectivelyEnabled(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(bookingInfo.providerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
-                        "email/notification", Map.of("message", message));
+                        "email/notification", Map.of("message", message),
+                        deliveryKey("PAYMENT_STATE", bookingInfo.providerId(), intent.paymentIntentId()));
             }
             sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
             sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
@@ -249,7 +252,8 @@ public class NotificationService {
                 NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(providerUserId,
                     text.compose("email.LEAD_RECEIVED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("LEAD_RECEIVED", providerUserId, leadId));
         }
         sendWebSocket(providerUserId, NotificationType.LEAD_RECEIVED, message);
         sendPush(providerUserId, NotificationType.LEAD_RECEIVED, message);
@@ -279,7 +283,8 @@ public class NotificationService {
                 NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(userId,
                     text.compose("email.SAVED_SEARCH_MATCH.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("SAVED_SEARCH_MATCH", userId, listingId));
         }
         sendWebSocket(userId, NotificationType.SAVED_SEARCH_MATCH, message);
         sendPush(userId, NotificationType.SAVED_SEARCH_MATCH, message);
@@ -311,7 +316,8 @@ public class NotificationService {
                 NotificationType.POST_COMMENTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_COMMENTED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("POST_COMMENTED", postAuthorId, postId));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_COMMENTED, message);
         sendPush(postAuthorId, NotificationType.POST_COMMENTED, message);
@@ -343,7 +349,8 @@ public class NotificationService {
                 NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.NEW_LISTING_IN_NEIGHBORHOOD.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("NEW_LISTING_IN_NEIGHBORHOOD", recipientId, listingId));
         }
         sendWebSocket(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
         sendPush(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
@@ -379,7 +386,8 @@ public class NotificationService {
                 NotificationType.CONTENT_MODERATED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.CONTENT_MODERATED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("CONTENT_MODERATED", recipientId, targetId));
         }
         sendWebSocket(recipientId, NotificationType.CONTENT_MODERATED, message);
         sendPush(recipientId, NotificationType.CONTENT_MODERATED, message);
@@ -411,7 +419,8 @@ public class NotificationService {
                 NotificationType.POST_REACTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_REACTED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("POST_REACTED", postAuthorId, postId));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
         sendPush(postAuthorId, NotificationType.POST_REACTED, message);
@@ -445,7 +454,8 @@ public class NotificationService {
                 NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.FOLLOWED_PROVIDER_NEW_LISTING.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("FOLLOWED_PROVIDER_NEW_LISTING", recipientId, listingId));
         }
         sendWebSocket(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
         sendPush(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
@@ -526,7 +536,8 @@ public class NotificationService {
                 NotificationType.ORDER_CONFIRMED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Confirmed", "email/notification",
-                    Map.of("message", "Your order " + orderId + " has been confirmed."));
+                    Map.of("message", "Your order " + orderId + " has been confirmed."),
+                    deliveryKey("ORDER_CONFIRMED", consumerId, orderId));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_CONFIRMED, message);
         sendPush(consumerId, NotificationType.ORDER_CONFIRMED, message);
@@ -542,7 +553,8 @@ public class NotificationService {
                 NotificationType.ORDER_FULFILLED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Fulfilled", "email/notification",
-                    Map.of("message", "Your order " + orderId + " has been fulfilled."));
+                    Map.of("message", "Your order " + orderId + " has been fulfilled."),
+                    deliveryKey("ORDER_FULFILLED", consumerId, orderId));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_FULFILLED, message);
         sendPush(consumerId, NotificationType.ORDER_FULFILLED, message);
@@ -560,7 +572,8 @@ public class NotificationService {
         if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Cancelled", "email/notification",
                     Map.of("message", "Your order " + orderId + " was cancelled"
-                            + (reason == null || reason.isBlank() ? "." : ": " + reason)));
+                            + (reason == null || reason.isBlank() ? "." : ": " + reason)),
+                    deliveryKey("ORDER_CANCELLED", consumerId, orderId));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_CANCELLED, message);
         sendPush(consumerId, NotificationType.ORDER_CANCELLED, message);
@@ -579,7 +592,8 @@ public class NotificationService {
                 NotificationType.LOAN_REQUESTED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(ownerId, NotificationType.LOAN_REQUESTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(ownerId, "Lending Request", "email/notification",
-                    Map.of("message", "A borrowing request arrived for your item (loan " + loanId + ")."));
+                    Map.of("message", "A borrowing request arrived for your item (loan " + loanId + ")."),
+                    deliveryKey("LOAN_REQUESTED", ownerId, loanId));
         }
         sendWebSocket(ownerId, NotificationType.LOAN_REQUESTED, message);
         sendPush(ownerId, NotificationType.LOAN_REQUESTED, message);
@@ -591,7 +605,8 @@ public class NotificationService {
                 NotificationType.LOAN_APPROVED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(borrowerId, NotificationType.LOAN_APPROVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(borrowerId, "Lending Approved", "email/notification",
-                    Map.of("message", "Your borrowing request " + loanId + " was approved — the fee's payment is ready."));
+                    Map.of("message", "Your borrowing request " + loanId + " was approved — the fee's payment is ready."),
+                    deliveryKey("LOAN_APPROVED", borrowerId, loanId));
         }
         sendWebSocket(borrowerId, NotificationType.LOAN_APPROVED, message);
         sendPush(borrowerId, NotificationType.LOAN_APPROVED, message);
@@ -617,7 +632,8 @@ public class NotificationService {
                     NotificationType.LOAN_DISPUTED.name(), message));
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Disputed", "email/notification",
-                        Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."));
+                        Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."),
+                        deliveryKey("LOAN_DISPUTED", recipient, loanId));
             }
             sendWebSocket(recipient, NotificationType.LOAN_DISPUTED, message);
             sendPush(recipient, NotificationType.LOAN_DISPUTED, message);
@@ -631,7 +647,8 @@ public class NotificationService {
                     NotificationType.LOAN_DISPUTE_RESOLVED.name(), message));
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Dispute Resolved", "email/notification",
-                        Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."));
+                        Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."),
+                        deliveryKey("LOAN_DISPUTE_RESOLVED", recipient, loanId));
             }
             sendWebSocket(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
             sendPush(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
@@ -650,7 +667,8 @@ public class NotificationService {
                     NotificationType.LOAN_CLOSED.name(), message));
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Closed", "email/notification",
-                        Map.of("message", "Loan " + loanId + " is closed — the settlement record is complete."));
+                        Map.of("message", "Loan " + loanId + " is closed — the settlement record is complete."),
+                        deliveryKey("LOAN_CLOSED", recipient, loanId));
             }
             sendWebSocket(recipient, NotificationType.LOAN_CLOSED, message);
             sendPush(recipient, NotificationType.LOAN_CLOSED, message);
@@ -745,7 +763,8 @@ public class NotificationService {
                 NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(userId,
                     text.compose("email.MEMBERSHIP_VERIFIED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("MEMBERSHIP_VERIFIED", userId, locationId));
         }
         sendWebSocket(userId, NotificationType.MEMBERSHIP_VERIFIED, message);
         sendPush(userId, NotificationType.MEMBERSHIP_VERIFIED, message);
@@ -784,7 +803,8 @@ public class NotificationService {
                 NotificationType.REPORT_RESOLVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(reporterId,
                     text.compose("email.REPORT_RESOLVED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("REPORT_RESOLVED", reporterId, targetId));
         }
         sendWebSocket(reporterId, NotificationType.REPORT_RESOLVED, message);
         sendPush(reporterId, NotificationType.REPORT_RESOLVED, message);
@@ -999,7 +1019,14 @@ public class NotificationService {
         }
     }
 
-    private static String deliveryKey(String type, UUID recipientId, Object... occurrenceIds) {
+    /**
+     * The email occurrence key (CodeRabbit round 2 on #840 — finding 840-1):
+     * PUBLIC static so every email door in the module (the routing and
+     * dispute deliveries included) composes the ONE house format —
+     * "marketplace-email-<TYPE>-<recipient>-<occurrence ids>" — instead of
+     * each class re-deriving its own.
+     */
+    public static String deliveryKey(String type, UUID recipientId, Object... occurrenceIds) {
         StringBuilder key = new StringBuilder("marketplace-email-").append(type).append('-').append(recipientId);
         for (Object id : occurrenceIds) {
             key.append('-').append(id);

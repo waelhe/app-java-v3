@@ -103,10 +103,16 @@ class EmailServiceGreenMailTest {
         String recipient = "user@example.com";
         String resetLink = "https://app.example.com/reset?token=proof-token-1";
 
+        // Finding 840-5 (CodeRabbit round 2 on #840): the template reads
+        // ${expiresAtUtc} since the immutable-expiry fix — feeding the removed
+        // expirationMinutes left the expiry line rendering EMPTY (Thymeleaf
+        // null-variable th:text), so the real-template render was no longer
+        // pinned for the expiry content. Feed the real variable and assert it.
+        String expiresAtUtc = "2026-11-25T12:30:00Z";
         emailService.send(recipient, "إعادة تعيين كلمة المرور",
                 "email/password-reset",
                 Map.of("name", "أحمد", "resetLink", resetLink,
-                       "expirationMinutes", 30));
+                       "expiresAtUtc", expiresAtUtc));
 
         MimeMessage[] received = greenMail.getReceivedMessages();
         assertThat(received).hasSize(1);
@@ -126,16 +132,17 @@ class EmailServiceGreenMailTest {
         String body = received[0].getContent().toString();
         assertThat(body).contains(resetLink);
         assertThat(body).contains("أحمد");
+        assertThat(body).contains(expiresAtUtc);
     }
 
     @Test
     void twoSendsArriveAsTwoMessages() {
         emailService.send("a@example.com", "Subject A", "email/password-reset",
                 Map.of("name", "A", "resetLink", "https://x/a",
-                       "expirationMinutes", 30));
+                       "expiresAtUtc", "2026-11-25T12:30:00Z"));
         emailService.send("b@example.com", "Subject B", "email/password-reset",
                 Map.of("name", "B", "resetLink", "https://x/b",
-                       "expirationMinutes", 30));
+                       "expiresAtUtc", "2026-11-25T12:30:00Z"));
 
         assertThat(greenMail.getReceivedMessages()).hasSize(2);
     }

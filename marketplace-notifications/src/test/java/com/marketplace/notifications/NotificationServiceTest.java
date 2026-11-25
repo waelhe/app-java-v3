@@ -607,6 +607,74 @@ class NotificationServiceTest {
         verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
+    /**
+     * Finding 840-1 (CodeRabbit round 2 on #840, P2): every email door must
+     * carry an OCCURRENCE delivery key — two distinct occurrences of the same
+     * type to the same recipient render byte-identically, and without a key
+     * the transport's fallback content-fingerprint collapses them into ONE
+     * provider idempotency record (the second email silently never goes out
+     * while its event completes as delivered). This pin FAILS on the previous
+     * code: these doors called the 4-arg send (no key argument at all), so
+     * the 5-arg verify below finds zero invocations.
+     */
+    @Test
+    void unkeyedDoorsCarryOccurrenceDeliveryKeysDistinctOccurrences() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        // LEAD_RECEIVED: two leads on the same listing (the door's own event
+        // id is leadId — the fallback fingerprint rendered both identical).
+        UUID listingId = create(UUID.class);
+        UUID firstLeadId = create(UUID.class);
+        UUID secondLeadId = create(UUID.class);
+        service.onLeadReceived(firstLeadId, listingId, PROVIDER_ID);
+        service.onLeadReceived(secondLeadId, listingId, PROVIDER_ID);
+
+        // ORDER_CONFIRMED: two orders for the same consumer.
+        UUID firstOrderId = create(UUID.class);
+        UUID secondOrderId = create(UUID.class);
+        service.onOrderConfirmed(firstOrderId, CONSUMER_ID);
+        service.onOrderConfirmed(secondOrderId, CONSUMER_ID);
+
+        // LOAN_DISPUTED: both parties of one dispute, then a second dispute.
+        // The parties are the two lookup-known users (the mock's map answers
+        // only CONSUMER_ID/PROVIDER_ID — an unknown user resolves empty and
+        // the send leg stays silent by design).
+        UUID loanId = create(UUID.class);
+        UUID otherLoanId = create(UUID.class);
+        service.onLoanDisputed(loanId, CONSUMER_ID, PROVIDER_ID);
+        service.onLoanDisputed(otherLoanId, CONSUMER_ID, PROVIDER_ID);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        // 2 LEAD_RECEIVED + 2 ORDER_CONFIRMED + 4 LOAN_DISPUTED (each call
+        // delivers to BOTH parties — the loop door) = 8 keyed sends.
+        verify(emailService, times(8)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-LEAD_RECEIVED-" + PROVIDER_ID + "-" + firstLeadId,
+                "marketplace-email-LEAD_RECEIVED-" + PROVIDER_ID + "-" + secondLeadId,
+                "marketplace-email-ORDER_CONFIRMED-" + CONSUMER_ID + "-" + firstOrderId,
+                "marketplace-email-ORDER_CONFIRMED-" + CONSUMER_ID + "-" + secondOrderId,
+                // same loan, two DISTINCT recipients: two distinct keys
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + loanId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + loanId,
+                // second dispute: its own key even for the same recipient
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + otherLoanId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + otherLoanId);
+        // None of these doors may fall back to the transport's content
+        // fingerprint (a null key): every captured key is non-null and
+        // prefixed with the house format.
+        assertThat(deliveryKeys.getAllValues()).allSatisfy(key ->
+                assertThat(key).startsWith("marketplace-email-").doesNotContain("null"));
+    }
+
     @Test
     void onPostCommentedAlertsThePostAuthorOnEveryDefaultChannel() {
         // L42 (neighborhood community plan §5): the recipient is the post's
