@@ -27,6 +27,15 @@ public class User extends BaseEntity {
     @Column(name = "email", length = 320)
     private String email;
 
+    /**
+     * Agent 1 (V251 — the email-change journey): the requested NEW
+     * address awaiting redemption. {@code null} = no pending change; the
+     * request leg records the pair, the confirm leg consumes it (the
+     * single pending pair per account; a re-request overwrites it).
+     */
+    @Column(name = "pending_email", length = 320)
+    private String pendingEmail;
+
     @Column(name = "display_name", length = 200)
     private String displayName;
 
@@ -119,6 +128,38 @@ public class User extends BaseEntity {
         this.subject = replacementSubject;
         this.email = null;
         this.displayName = null;
+        this.pendingEmail = null;
         this.pseudonymizedAt = Instant.now();
+    }
+
+    /** Agent 1 (V251): records the pending email-change pair (one per account). */
+    void requestEmailChange(String newEmail) {
+        this.pendingEmail = newEmail == null ? null : newEmail.trim();
+    }
+
+    /** Agent 1 (V251): consumes the pending pair — null when none is outstanding. */
+    String consumePendingEmailChange() {
+        String pending = this.pendingEmail;
+        this.pendingEmail = null;
+        return pending;
+    }
+
+    /**
+     * Agent 1 (the CodeRabbit integrity round — the subject==username
+     * invariant): moves the projection row's login identity TOGETHER —
+     * the subject AND the email column change in the same write. The
+     * platform's identity invariant is subject == login username
+     * ({@code register} sets both to the email); moving only the email
+     * left the subject pointing at the dead login name, so every
+     * {@code findBySubject(caller.getName())} lookup after a confirmed
+     * email change answered 404 and the account was effectively broken.
+     * Package-private on purpose: both owning paths (the self-service
+     * email change and the administrative moveEmail) live in this
+     * module.
+     */
+    void changeLoginIdentity(String newEmail) {
+        this.subject = newEmail;
+        this.email = newEmail;
+        this.pendingEmail = null;
     }
 }

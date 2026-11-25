@@ -22,6 +22,7 @@ import static org.instancio.Select.field;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyMap;
+import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
@@ -1086,5 +1087,62 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains("تم رفض البلاغ");
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
         verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+    }
+    // ------------------------------------------------------------------
+    // B11 (ORD-03) — the account-lifecycle security mail legs
+    // ------------------------------------------------------------------
+
+    @Test
+    void onAccountDeletionRequestedSendsTheSecurityMailAlone() {
+        // The mail channel ALONE: the caller asked to LEAVE the
+        // application, so no in-app row can reach them — and the
+        // one-time token IS the mail's content (the frozen
+        // payload-exception contract).
+        NotificationRepository repository = mock(NotificationRepository.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        NotificationService service = createService(repository, mock(BookingParticipantProvider.class),
+                mock(PaymentIntentLookupPort.class), currentUserProvider, mockUserLookup(),
+                java.util.Optional.empty(), java.util.Optional.of(emailService));
+
+        // The 2026-11-05 #810 round review: the right mails the PINNED
+        // address (the event's own email — the userId lookup no longer
+        // decides the mailbox), and the template payload carries a
+        // NUMERIC expiration inside the issued window (a dropped or
+        // zeroed minutes value used to pass the token-only check).
+        String pinnedAddress = "leaving-member@example.com";
+        service.onAccountDeletionRequested(CONSUMER_ID, pinnedAddress, "one-time-deletion-token",
+                java.time.Instant.now().plus(java.time.Duration.ofMinutes(30)));
+
+        verify(emailService).send(eq(pinnedAddress), eq("Confirm Your Account Deletion"),
+                eq("email/account-deletion"), argThat(vars ->
+                        "one-time-deletion-token".equals(vars.get("deletionToken"))
+                                && vars.get("expirationMinutes") instanceof Number minutes
+                                && minutes.longValue() > 0 && minutes.longValue() <= 30));
+        verify(repository, never()).save(any(Notification.class));
+    }
+
+    @Test
+    void onEmailChangeRequestedSendsTheSecurityMailAlone() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        NotificationService service = createService(repository, mock(BookingParticipantProvider.class),
+                mock(PaymentIntentLookupPort.class), currentUserProvider, mockUserLookup(),
+                java.util.Optional.empty(), java.util.Optional.of(emailService));
+
+        service.onEmailChangeRequested(CONSUMER_ID, "old@example.com", "new@example.com",
+                "one-time-change-token", java.time.Instant.now().plus(java.time.Duration.ofMinutes(30)));
+
+        // The 2026-11-05 #810 round review: the same numeric-expiration
+        // assertion the deletion leg now carries.
+        verify(emailService).send(eq("new@example.com"), eq("Confirm Your Email Change"),
+                eq("email/email-change"), argThat(vars ->
+                        "old@example.com".equals(vars.get("oldEmail"))
+                                && "new@example.com".equals(vars.get("newEmail"))
+                                && "one-time-change-token".equals(vars.get("changeToken"))
+                                && vars.get("expirationMinutes") instanceof Number minutes
+                                && minutes.longValue() > 0 && minutes.longValue() <= 30));
+        verify(repository, never()).save(any(Notification.class));
     }
 }

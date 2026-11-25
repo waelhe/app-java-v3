@@ -210,6 +210,29 @@ public class MediaService {
 
         mediaAssetRepository.lockProductPositionAllocation(productId.toString());
 
+        // B19 (CAT-07 — the 2026-11-03 adversarial review, review-pr-809): the
+        // per-product media cap, checked while the advisory allocation lock is
+        // held (the maxAssetsPerReview posture verbatim). productMediaReorder's
+        // absolute-order semantics require the WHOLE displayable set in one
+        // GraphQL list, and the bulk-list bound (default 200) refuses a longer
+        // one — a product above that bound could never be reordered again.
+        // The cap counts PENDING uploads too (they occupy positions until
+        // cleaned), so the displayable set can never outgrow the reorderable
+        // bound; deleted rows are hard deletes and free their slots. The
+        // 2026-11-06 #809 round: the count is the LIVE one — an abandoned
+        // pending upload the PendingUploadCleanupJob reaped (terminal
+        // EXPIRED, un-confirmable, object best-effort deleted) never
+        // occupies a slot again, while a merely presign-EXPIRED row still
+        // does (presign expiry alone never frees a slot; only the job's
+        // expiry does).
+        long attached = mediaAssetRepository
+                .countByProductIdAndStatusNot(productId, MediaAssetStatus.EXPIRED);
+        if (attached >= properties.limits().maxAssetsPerProduct()) {
+            throw new BadRequestException(
+                    "A product carries at most " + properties.limits().maxAssetsPerProduct()
+                            + " media assets (including pending uploads)");
+        }
+
         String objectKey = buildProductObjectKey(productId, normalizedType);
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForProduct(
                 productId, product.providerId(), objectKey, normalizedType,

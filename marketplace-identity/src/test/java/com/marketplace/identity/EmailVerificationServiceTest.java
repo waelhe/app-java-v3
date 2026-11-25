@@ -127,6 +127,85 @@ class EmailVerificationServiceTest {
         verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
     }
 
+    /**
+     * The 2026-11-09 #807 round (Minor · Functional Correctness): when BOTH
+     * case-form rows exist (the case-sensitive primary key admits the
+     * legacy mixed-case row AND the normalized one), the normalized-first
+     * resolution used to strand the PENDING legacy account forever — the
+     * normalized (verified) row won the resolution and answered the silent
+     * skip. The resolution now prefers the PENDING account: the legacy row
+     * when only it is the pending one.
+     */
+    @Test
+    void resend_thePendingLegacyRowWinsWhenBothCaseFormsExist() {
+        String legacy = "Member@Example.com";
+        when(userDetailsManager.userExists(EMAIL)).thenReturn(true);   // the normalized row
+        when(userDetailsManager.userExists(legacy)).thenReturn(true);  // the legacy row
+        // The normalized row FINISHED (consumed latest) — the legacy row
+        // is the PENDING one. The round-2 subject-first resolution checks
+        // the legacy row's pending state FIRST and resolves it without
+        // ever consulting the normalized twin's token — the stub stays
+        // lenient (it documents the scenario's BOTH-rows state, the
+        // resolution order decides which is read).
+        org.mockito.Mockito.lenient().when(
+                authActionTokenService.latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(true)));
+        when(authActionTokenService.latest(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject(legacy))
+                .thenReturn(Optional.of(User.create(legacy, legacy, "Member", UserRole.CONSUMER)));
+        when(authActionTokenService.issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "legacy-fresh-token", NOW.plus(TTL))));
+
+        service.resend(legacy);
+
+        // The PENDING legacy account is re-armed — the fresh right and the
+        // mail event ride the legacy subject, never the verified
+        // normalized one.
+        verify(authActionTokenService).issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL);
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+    }
+
+    /**
+     * The 2026-11-09 #807 round-2 review (Minor · Functional
+     * Correctness): when BOTH case-form rows are PENDING, the round-5
+     * normalized-first order armed the NORMALIZED row while the
+     * requester's own mixed-case link armed the address they named —
+     * the requested account stayed disabled forever (the round's own
+     * stranded-account defect, mirrored). Among pending rows the
+     * MATCHING subject now wins.
+     */
+    @Test
+    void resend_theMatchingSubjectWinsWhenBothCaseFormsArePending() {
+        String legacy = "Member@Example.com";
+        when(userDetailsManager.userExists(EMAIL)).thenReturn(true);   // the normalized row
+        when(userDetailsManager.userExists(legacy)).thenReturn(true);  // the legacy row
+        // BOTH rows are PENDING (live latest rows). The subject-first
+        // resolution consults the MATCHING row alone — the normalized
+        // twin's stub documents the both-pending state without being
+        // read (lenient — the resolution order decides).
+        org.mockito.Mockito.lenient().when(
+                authActionTokenService.latest(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(authActionTokenService.latest(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject(legacy))
+                .thenReturn(Optional.of(User.create(legacy, legacy, "Member", UserRole.CONSUMER)));
+        when(authActionTokenService.issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "legacy-fresh-token", NOW.plus(TTL))));
+
+        service.resend(legacy);
+
+        // The MATCHING (legacy/subject) account is re-armed — the fresh
+        // right rides the exact row the requester named, never the
+        // normalized twin (which stays pending for its own resend).
+        verify(authActionTokenService).issue(legacy, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL);
+        verify(authActionTokenService, never()).issue(EMAIL, AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL);
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+    }
+
     @Test
     void resend_aConsumedLatestRowIsSkipped_theBanAndFinishedStatesRefuse() {
         // The invariant's own guard: a consumed latest row means finished —
@@ -272,4 +351,53 @@ class EmailVerificationServiceTest {
 
         verify(userDetailsManager, never()).updateUser(any(UserDetails.class));
     }
+    /**
+     * The 2026-11-08 #810 round-5 review (Minor · Functional Correctness):
+     * the resend resolves the SAME normalized subject registration stores —
+     * a mixed-case address used to answer the silent no-op (a 202 with no
+     * mail), leaving the account unverified.
+     */
+    @Test
+    void resend_aMixedCaseAddressResolvesTheNormalizedSubject() {
+        // The normalized form of the TEST INPUT ("  Mixed@Example.COM " →
+        // "mixed@example.com") — not the fixture's own address.
+        when(userDetailsManager.userExists("mixed@example.com")).thenReturn(true);
+        when(authActionTokenService.latest("mixed@example.com",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject("mixed@example.com"))
+                .thenReturn(Optional.of(member()));
+        when(authActionTokenService.issue("mixed@example.com",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "fresh-token", NOW.plus(TTL))));
+
+        service.resend("  Mixed@Example.COM ");
+
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+        verify(authActionTokenService).latest("mixed@example.com",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION);
+    }
+
+    @Test
+    void resend_aLegacyMixedCaseRowStillMatchesTheVerbatimForm() {
+        // The REST registration path historically stored mixed-case
+        // subjects — the verbatim trimmed form stays the fallback so those
+        // rows keep matching.
+        when(userDetailsManager.userExists("mixed@example.com")).thenReturn(false);
+        when(userDetailsManager.userExists("Mixed@Example.COM")).thenReturn(true);
+        when(authActionTokenService.latest("Mixed@Example.COM",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION))
+                .thenReturn(Optional.of(verificationToken(false)));
+        when(userRepository.findBySubject("Mixed@Example.COM")).thenReturn(Optional.of(member()));
+        when(authActionTokenService.issue("Mixed@Example.COM",
+                AuthActionTokenPurpose.EMAIL_VERIFICATION, TTL))
+                .thenReturn(Optional.of(new AuthActionTokenService.IssuedToken(
+                        "fresh-token", NOW.plus(TTL))));
+
+        service.resend("  Mixed@Example.COM ");
+
+        verify(eventPublisher).publishEvent(any(EmailVerificationRequestedEvent.class));
+    }
+
 }

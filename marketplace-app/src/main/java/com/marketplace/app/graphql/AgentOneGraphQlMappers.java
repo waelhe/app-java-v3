@@ -1,0 +1,279 @@
+package com.marketplace.app.graphql;
+
+import com.marketplace.app.graphql.generated.types.AccountError;
+import com.marketplace.app.graphql.generated.types.AccountErrorCode;
+import com.marketplace.app.graphql.generated.types.Address;
+import com.marketplace.app.graphql.generated.types.CustomerType;
+import com.marketplace.app.graphql.generated.types.CustomerTypeCountableEdge;
+import com.marketplace.app.graphql.generated.types.CustomerTypeCountableConnection;
+import com.marketplace.app.graphql.generated.types.MenuError;
+import com.marketplace.app.graphql.generated.types.MenuErrorCode;
+import com.marketplace.app.graphql.generated.types.PageError;
+import com.marketplace.app.graphql.generated.types.PageErrorCode;
+import com.marketplace.app.graphql.generated.types.PageInfo;
+import com.marketplace.app.graphql.generated.types.ShopError;
+import com.marketplace.app.graphql.generated.types.ShopErrorCode;
+import com.marketplace.app.graphql.generated.types.StaffError;
+import com.marketplace.identity.spi.AddressView;
+import com.marketplace.identity.spi.CustomerTypeView;
+import org.springframework.data.domain.ScrollPosition;
+import org.springframework.data.domain.Window;
+import org.springframework.graphql.data.pagination.EncodingCursorStrategy;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Agent 1 (the Saleor 458-root campaign, assignment packet PR #696): the
+ * shared transport mappers of this packet's Users-domain surfaces — one
+ * wire projection per entity (the UserGraphQlMapper discipline: the
+ * mapper owns ONLY the typed global-ID encode and the wire shape, never
+ * a business rule), plus the payload error builders every fetcher rides.
+ */
+@Component
+class AgentOneGraphQlMappers {
+
+    static final String ADDRESS_TYPE = "Address";
+    static final String CUSTOMER_TYPE_TYPE = "CustomerType";
+
+    private final SaleorGlobalIdCodec globalIdCodec;
+    private final EncodingCursorStrategy<ScrollPosition> cursorStrategy;
+
+    AgentOneGraphQlMappers(SaleorGlobalIdCodec globalIdCodec,
+                           EncodingCursorStrategy<ScrollPosition> cursorStrategy) {
+        this.globalIdCodec = globalIdCodec;
+        this.cursorStrategy = cursorStrategy;
+    }
+
+    // ---------------------------------------------------------------------
+    // Entities
+    // ---------------------------------------------------------------------
+
+    Address toGraphQlAddress(AddressView view) {
+        return Address.newBuilder()
+                .id(globalIdCodec.encode(ADDRESS_TYPE, view.id()))
+                .firstName(nullToEmpty(view.firstName()))
+                .lastName(nullToEmpty(view.lastName()))
+                .companyName(nullToEmpty(view.companyName()))
+                .streetAddress1(nullToEmpty(view.streetAddress1()))
+                .streetAddress2(nullToEmpty(view.streetAddress2()))
+                .city(nullToEmpty(view.city()))
+                .cityArea(nullToEmpty(view.cityArea()))
+                .postalCode(nullToEmpty(view.postalCode()))
+                .country(com.marketplace.app.graphql.generated.types.CountryDisplay.newBuilder()
+                        .code(countryCodeOf(view.country()))
+                        .country(countryName(view.country()))
+                        .build())
+                .countryArea(nullToEmpty(view.countryArea()))
+                .phone(view.phone())
+                .isDefaultShippingAddress(view.defaultShipping())
+                .isDefaultBillingAddress(view.defaultBilling())
+                .build();
+    }
+
+    AddressView toAddressView(com.marketplace.app.graphql.generated.types.AddressInput input) {
+        return new AddressView(null, null,
+                input.getFirstName(), input.getLastName(), input.getCompanyName(),
+                input.getStreetAddress1(), input.getStreetAddress2(),
+                input.getCity(), input.getCityArea(), input.getPostalCode(),
+                input.getCountry() == null ? null : input.getCountry().name(),
+                input.getCountryArea(), input.getPhone(), false, false);
+    }
+
+    CustomerType toGraphQlCustomerType(CustomerTypeView view) {
+        List<com.marketplace.app.graphql.generated.types.Attribute> attributes = null;
+        return CustomerType.newBuilder()
+                .id(globalIdCodec.encode(CUSTOMER_TYPE_TYPE, view.id()))
+                .name(view.name())
+                .slug(view.slug())
+                .isDefault(view.defaultType())
+                .attributes(attributes)
+                .build();
+    }
+
+    com.marketplace.app.graphql.generated.types.StaffNotificationRecipient
+    toGraphQlRecipient(com.marketplace.identity.spi.RecipientView view,
+                       com.marketplace.app.graphql.generated.types.User user) {
+        // The 2026-11-05 #806 round-3 review (Major · Functional
+        // Correctness): the user field was hardcoded null — a recipient
+        // created or updated WITH a user id answered no owner projection
+        // at all (the DB constraint is oneof user/email, so the email is
+        // empty on the user-owned rows). The caller resolves the user
+        // (the fetcher's own userById seam) and the oneof renders whole.
+        return com.marketplace.app.graphql.generated.types.StaffNotificationRecipient.newBuilder()
+                .id(globalIdCodec.encode("StaffNotificationRecipient", view.id()))
+                .user(user)
+                .email(view.email())
+                .active(view.active())
+                .build();
+    }
+
+    // ---------------------------------------------------------------------
+    // Connections
+    // ---------------------------------------------------------------------
+
+    <T> CustomerTypeCountableConnection toCustomerTypeConnection(Window<CustomerTypeView> window,
+                                                                  long total, boolean hasPreviousPage,
+                                                                  String scrollId, String sortProperty,
+                                                                  boolean ascending) {
+        List<CustomerTypeCountableEdge> edges = new ArrayList<>(window.getContent().size());
+        for (int i = 0; i < window.getContent().size(); i++) {
+            edges.add(CustomerTypeCountableEdge.newBuilder()
+                    .node(toGraphQlCustomerType(window.getContent().get(i)))
+                    // B18 (CAT-06): the scroll's fingerprint rides the emitted
+                    // cursor — the gate refuses it on any other scroll, sort,
+                    // or direction.
+                    .cursor(cursorStrategy.toCursor(KeysetCursorGate.stamped(
+                            window.positionAt(i), scrollId, sortProperty, ascending)))
+                    .build());
+        }
+        return CustomerTypeCountableConnection.newBuilder()
+                .edges(edges)
+                .pageInfo(PageInfo.newBuilder()
+                        .hasNextPage(window.hasNext())
+                        .hasPreviousPage(hasPreviousPage)
+                        .startCursor(edges.isEmpty() ? null : edges.get(0).getCursor())
+                        .endCursor(edges.isEmpty() ? null : edges.get(edges.size() - 1).getCursor())
+                        .build())
+                .totalCount((int) Math.min(total, Integer.MAX_VALUE))
+                .build();
+    }
+
+    // ---------------------------------------------------------------------
+    // Payload error builders (the frozen §5 wire taxonomy)
+    // ---------------------------------------------------------------------
+
+    List<AccountError> accountErrors(Throwable failure) {
+        return List.of(AccountError.newBuilder()
+                .field(null).message(SaleorMutationErrors.of(failure).message())
+                .code(SaleorMutationErrors.translate(AccountErrorCode.class, SaleorMutationErrors.codeOf(failure)))
+                .build());
+    }
+
+    List<AccountError> emptyAccountErrors() {
+        return List.of();
+    }
+
+    /**
+     * The tokenCreate rejection payload (AUTH-01, the 2026-11-03
+     * adversarial scan): the pinned Saleor 3.23.45 contract
+     * (create_token.py) answers a failed password grant as
+     * {@code errors:[{field: "email", message: "Please, enter valid
+     * credentials", code: INVALID_CREDENTIALS}]} — the platform
+     * unifies the unknown-email, wrong-password and disabled-account
+     * legs onto that ONE triple (the anti-enumeration divergence row
+     * "tokenCreate authentication rejection"; Saleor's own INACTIVE
+     * answer for a disabled account is deliberately collapsed).
+     */
+    List<AccountError> invalidCredentialsAccountErrors() {
+        return List.of(AccountError.newBuilder()
+                .field("email")
+                .message("Please, enter valid credentials")
+                .code(AccountErrorCode.INVALID_CREDENTIALS)
+                .build());
+    }
+
+    /**
+     * The tokenRefresh rejection payload (AUTH-01): the pinned Saleor
+     * 3.23.45 contract (refresh_token.py) answers an invalid, expired
+     * or revoked refresh token as {@code errors:[{field:
+     * "refreshToken", message: "Incorrect refreshToken", code:
+     * JWT_INVALID_TOKEN}]} — every rotation-rejection leg of this
+     * platform's one-time-use store answers that triple.
+     */
+    List<AccountError> invalidRefreshTokenAccountErrors() {
+        return List.of(AccountError.newBuilder()
+                .field("refreshToken")
+                .message("Incorrect refreshToken")
+                .code(AccountErrorCode.JWT_INVALID_TOKEN)
+                .build());
+    }
+
+    List<StaffError> staffErrors(Throwable failure) {
+        return List.of(StaffError.newBuilder()
+                .field(null).message(SaleorMutationErrors.of(failure).message())
+                .code(SaleorMutationErrors.translate(AccountErrorCode.class, SaleorMutationErrors.codeOf(failure)))
+                .build());
+    }
+
+    List<StaffError> emptyStaffErrors() {
+        return List.of();
+    }
+
+    List<ShopError> shopErrors(Throwable failure) {
+        return List.of(ShopError.newBuilder()
+                .field(null).message(SaleorMutationErrors.of(failure).message())
+                .code(SaleorMutationErrors.translate(ShopErrorCode.class, SaleorMutationErrors.codeOf(failure)))
+                .build());
+    }
+
+    List<ShopError> emptyShopErrors() {
+        return List.of();
+    }
+
+    List<PageError> pageErrors(Throwable failure) {
+        return List.of(PageError.newBuilder()
+                .field(null).message(SaleorMutationErrors.of(failure).message())
+                .code(SaleorMutationErrors.translate(PageErrorCode.class, SaleorMutationErrors.codeOf(failure)))
+                .build());
+    }
+
+    List<PageError> emptyPageErrors() {
+        return List.of();
+    }
+
+    List<MenuError> menuErrors(Throwable failure) {
+        return List.of(MenuError.newBuilder()
+                .field(null).message(SaleorMutationErrors.of(failure).message())
+                .code(SaleorMutationErrors.translate(MenuErrorCode.class, SaleorMutationErrors.codeOf(failure)))
+                .build());
+    }
+
+    List<MenuError> emptyMenuErrors() {
+        return List.of();
+    }
+
+    // ---------------------------------------------------------------------
+    // Internals
+    // ---------------------------------------------------------------------
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String countryName(String code) {
+        // The shard review (Minor · Functional Correctness, 2026-11-01
+        // wave 2): the deprecated-for-removal Locale constructor (JDK 19+)
+        // is replaced by the official factory Locale.of — identical
+        // behavior on this JDK 25 runtime.
+        return Locale.of("", code == null ? "" : code)
+                .getDisplayCountry(Locale.ENGLISH);
+    }
+
+    /**
+     * The SDL pins {@code CountryDisplay.code: CountryCode!} — the read
+     * path must answer a member of the enum, never a null. The platform's
+     * OWN write path guarantees it (AddressInput.country is the enum
+     * itself and the identity owner rejects anything but ^[A-Z]{2}$,
+     * verified against AddressFields); this guard is the defense-in-depth
+     * for legacy/imported rows: a missing or unknown code answers the
+     * classified validation error (the surface's error taxonomy), not a
+     * raw non-null violation or a bare valueOf IAE from deep inside the
+     * mapper.
+     */
+    private static com.marketplace.app.graphql.generated.types.CountryCode countryCodeOf(
+            String code) {
+        if (code == null) {
+            throw new IllegalArgumentException(
+                    "A stored address is missing its country code (data integrity)");
+        }
+        try {
+            return com.marketplace.app.graphql.generated.types.CountryCode.valueOf(code);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    "A stored address carries an unknown country code: " + code);
+        }
+    }
+}

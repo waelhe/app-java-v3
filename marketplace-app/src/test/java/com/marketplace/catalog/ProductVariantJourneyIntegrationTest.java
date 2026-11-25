@@ -427,9 +427,18 @@ class ProductVariantJourneyIntegrationTest {
 
         HttpResponse<String> anonymous = postJsonWithoutBearer("/graphql", objectMapper.writeValueAsString(Map.of(
                 "query", "query { storeProducts(first: 1) { edges { node { id } } } }")));
+        // The reopened pre-login gate contract: the anonymous POST reaches
+        // PreLoginGraphQlGate, which parses the document, finds the
+        // protected `storeProducts` root, and answers the classified
+        // AUTHN-001 GraphQL error INSIDE the envelope (HTTP 200, no data) —
+        // the catalog reads stay behind the gate's wall, never resolved.
         assertThat(anonymous.statusCode())
-                .as("GraphQL catalog reads remain behind the resource-server authentication boundary")
-                .isEqualTo(401);
+                .as("the gate answers the classified AUTHN-001 envelope, not the old blanket 401")
+                .isEqualTo(200);
+        assertThat(anonymous.body())
+                .contains("\"errorCode\":\"AUTHN-001\"")
+                .contains("\"category\":\"authz\"");
+        assertThat(anonymous.body()).doesNotContain("\"data\"");
 
         String createQuery = """
                 mutation CreateStoreProduct($input: StoreProductCreateInput!) {
