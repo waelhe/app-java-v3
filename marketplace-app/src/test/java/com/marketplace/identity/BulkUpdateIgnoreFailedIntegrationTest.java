@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 
 /**
@@ -127,8 +126,21 @@ class BulkUpdateIgnoreFailedIntegrationTest {
         // the move's own order is lockUserAuth → probe → loadUser →
         // createUser(new) → purgeHistory(old) → deleteUser(old). The
         // throw lands with the alt login already written.
+        //
+        // The stub is scoped to the FAILING row's old subject (the CI
+        // cuts of 2026-11-23 on head ab842eb9dd, shard 7/8): the
+        // anyString() stub threw for the healthy row's OWN purgeHistory
+        // call too, so row 2 answered its legitimate INVALID and the
+        // third claim below (the NEXT row still succeeds) could never be
+        // observed — the healthy row's errorCode assertion failed with
+        // "expected: null but was: INVALID" (Tests run: 2, Failures: 1),
+        // while the success twin in this class rode the same unstubbed
+        // move and was green in the very same run. Registration stores
+        // the subject as the trimmed lower-cased address
+        // (UserService.register), so the exact-string argument IS the
+        // failing row's old subject.
         doThrow(new IllegalArgumentException("injected purge failure"))
-                .when(authActionTokenService).purgeHistory(anyString());
+                .when(authActionTokenService).purgeHistory(failingOld);
 
         List<BulkRowResult> results = service.bulkUpdateCustomers(admin,
                 List.of(failingUser.getId(), healthyUser.getId()),
