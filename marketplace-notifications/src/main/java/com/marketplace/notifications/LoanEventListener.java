@@ -49,13 +49,13 @@ public class LoanEventListener {
     /** ADR-0009 (the dispute cycle + the settlement receipt): the three late legs. */
     @ApplicationModuleListener
     public void onLoanDisputed(LoanDisputedEvent event) {
-        notificationService.onLoanDisputed(event.loanId(), event.borrowerId(), event.ownerId());
+        notificationService.onLoanDisputed(event.disputeId(), event.loanId(), event.borrowerId(), event.ownerId());
         log.info("Notification sent for loan disputed: {}", event.loanId());
     }
 
     @ApplicationModuleListener
     public void onLoanDisputeResolved(LoanDisputeResolvedEvent event) {
-        notificationService.onLoanDisputeResolved(event.loanId(), event.borrowerId(), event.ownerId());
+        notificationService.onLoanDisputeResolved(event.disputeId(), event.loanId(), event.borrowerId(), event.ownerId());
         log.info("Notification sent for loan dispute resolved: {}", event.loanId());
     }
 

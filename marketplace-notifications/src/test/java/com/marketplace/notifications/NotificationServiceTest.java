@@ -648,26 +648,34 @@ class NotificationServiceTest {
         // the send leg stays silent by design).
         UUID loanId = create(UUID.class);
         UUID otherLoanId = create(UUID.class);
-        service.onLoanDisputed(loanId, CONSUMER_ID, PROVIDER_ID);
-        service.onLoanDisputed(otherLoanId, CONSUMER_ID, PROVIDER_ID);
+        UUID firstDisputeId = create(UUID.class);
+        UUID secondDisputeId = create(UUID.class);
+        // R2: the dispute id — the cycle identity — rides the door; the same
+        // dispute redelivered keeps its key, a NEW cycle gets its own.
+        service.onLoanDisputed(firstDisputeId, loanId, CONSUMER_ID, PROVIDER_ID);
+        service.onLoanDisputed(firstDisputeId, loanId, CONSUMER_ID, PROVIDER_ID);
+        service.onLoanDisputed(secondDisputeId, otherLoanId, CONSUMER_ID, PROVIDER_ID);
 
         org.mockito.ArgumentCaptor<String> deliveryKeys =
                 org.mockito.ArgumentCaptor.forClass(String.class);
-        // 2 LEAD_RECEIVED + 2 ORDER_CONFIRMED + 4 LOAN_DISPUTED (each call
-        // delivers to BOTH parties — the loop door) = 8 keyed sends.
-        verify(emailService, times(8)).send(anyString(), anyString(), anyString(), anyMap(),
+        // 2 LEAD_RECEIVED + 2 ORDER_CONFIRMED + 6 LOAN_DISPUTED (a redelivered
+        // cycle + a new cycle, each to BOTH parties) = 10 keyed sends.
+        verify(emailService, times(10)).send(anyString(), anyString(), anyString(), anyMap(),
                 deliveryKeys.capture());
         assertThat(deliveryKeys.getAllValues()).containsExactly(
                 "marketplace-email-LEAD_RECEIVED-" + PROVIDER_ID + "-" + firstLeadId,
                 "marketplace-email-LEAD_RECEIVED-" + PROVIDER_ID + "-" + secondLeadId,
                 "marketplace-email-ORDER_CONFIRMED-" + CONSUMER_ID + "-" + firstOrderId,
                 "marketplace-email-ORDER_CONFIRMED-" + CONSUMER_ID + "-" + secondOrderId,
-                // same loan, two DISTINCT recipients: two distinct keys
-                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + loanId,
-                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + loanId,
-                // second dispute: its own key even for the same recipient
-                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + otherLoanId,
-                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + otherLoanId);
+                // one dispute, both parties: two distinct recipient keys
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + firstDisputeId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + firstDisputeId,
+                // the SAME dispute redelivered: the SAME keys (retry dedup)
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + firstDisputeId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + firstDisputeId,
+                // a NEW dispute cycle: its own keys
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + secondDisputeId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + secondDisputeId);
         // None of these doors may fall back to the transport's content
         // fingerprint (a null key): every captured key is non-null and
         // prefixed with the house format.

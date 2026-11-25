@@ -141,7 +141,12 @@ public class NotificationService {
             emailNotificationService.sendEmail(intent.consumerId(),
                     text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
                     "email/notification", Map.of("message", message),
-                    deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId()));
+                    // CodeRabbit round on 2d1081f8 (R1): the state word rides
+                    // the key — PENDING then COMPLETED on one intent are two
+                    // DISTINCT occurrences (Resend 409s a same-key/different-
+                    // body replay; a retry of the SAME transition keeps the
+                    // same word and still deduplicates).
+                    deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId(), stateWord));
         }
         sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
         sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
@@ -211,13 +216,13 @@ public class NotificationService {
                 emailNotificationService.sendEmail(intent.consumerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
                         "email/notification", Map.of("message", message),
-                        deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId()));
+                        deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId(), stateWord));
             }
             if (preferences.isChannelEffectivelyEnabled(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(bookingInfo.providerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
                         "email/notification", Map.of("message", message),
-                        deliveryKey("PAYMENT_STATE", bookingInfo.providerId(), intent.paymentIntentId()));
+                        deliveryKey("PAYMENT_STATE", bookingInfo.providerId(), intent.paymentIntentId(), stateWord));
             }
             sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
             sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
@@ -625,7 +630,7 @@ public class NotificationService {
      * both parties' receipts (the payload carries the truth, the listeners
      * derive nothing); the channels ride the standing preference gates.
      */
-    public void onLoanDisputed(UUID loanId, UUID borrowerId, UUID ownerId) {
+    public void onLoanDisputed(UUID disputeId, UUID loanId, UUID borrowerId, UUID ownerId) {
         String message = "Loan disputed: " + loanId;
         for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
             repository.save(Notification.create(recipient,
@@ -633,14 +638,18 @@ public class NotificationService {
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Disputed", "email/notification",
                         Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."),
-                        deliveryKey("LOAN_DISPUTED", recipient, loanId));
+                        // CodeRabbit round on 2d1081f8 (R2): the DISPUTE id is
+                        // the cycle identity — a loan can be disputed again
+                        // after a resume; loanId alone collapsed the second
+                        // cycle's email into the first's provider record.
+                        deliveryKey("LOAN_DISPUTED", recipient, disputeId));
             }
             sendWebSocket(recipient, NotificationType.LOAN_DISPUTED, message);
             sendPush(recipient, NotificationType.LOAN_DISPUTED, message);
         }
     }
 
-    public void onLoanDisputeResolved(UUID loanId, UUID borrowerId, UUID ownerId) {
+    public void onLoanDisputeResolved(UUID disputeId, UUID loanId, UUID borrowerId, UUID ownerId) {
         String message = "Loan dispute resolved: " + loanId;
         for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
             repository.save(Notification.create(recipient,
@@ -648,7 +657,7 @@ public class NotificationService {
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Dispute Resolved", "email/notification",
                         Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."),
-                        deliveryKey("LOAN_DISPUTE_RESOLVED", recipient, loanId));
+                        deliveryKey("LOAN_DISPUTE_RESOLVED", recipient, disputeId));
             }
             sendWebSocket(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
             sendPush(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);

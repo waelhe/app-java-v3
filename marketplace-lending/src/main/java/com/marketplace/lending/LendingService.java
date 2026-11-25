@@ -324,7 +324,7 @@ public class LendingService {
                     loan.markDisputed();
                     loanRepository.save(loan);
                     eventPublisher.publishEvent(new LoanDisputedEvent(
-                            loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
+                            disputeId, loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
                 });
     }
 
@@ -422,7 +422,7 @@ public class LendingService {
                         loan.resumeFromDispute();
                         loanRepository.save(loan);
                         eventPublisher.publishEvent(new LoanDisputeResolvedEvent(
-                                loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
+                                disputeId, loan.getId(), loan.getBorrowerId(), loan.getOwnerId()));
                     }
                     // else: another open dispute still requires the freeze,
                     // or an approved refund awaits its delivery — the loan

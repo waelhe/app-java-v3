@@ -12,5 +12,8 @@ import java.util.UUID;
  * loan-side state and the event exist now") — the ADR-0009 closure makes
  * the promise true in code, not prose.
  */
-public record LoanDisputedEvent(UUID loanId, UUID borrowerId, UUID ownerId) {
+// CodeRabbit round on 2d1081f8 (R2): the dispute id rides the event — the
+// freeze CYCLE's identity (a loan can be disputed again after a resume; the
+// notifications delivery key deduplicates per cycle, not per loan).
+public record LoanDisputedEvent(UUID disputeId, UUID loanId, UUID borrowerId, UUID ownerId) {
 }
