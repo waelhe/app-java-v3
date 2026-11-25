@@ -89,16 +89,53 @@ class DisputesModuleIntegrationTest {
     void contextLoads() {
     }
 
+    /**
+     * The booking-scoped read's dual assertion (the E4 closure of the
+     * 2026-11-10 adversarial review: the former shape asserted an empty list
+     * against a database with NO disputes at all — emptiness indistinguishable
+     * from a broken booking filter, and a tolerant {@code any()} booking stub
+     * masking the per-booking authorization). Seeds TWO disputes across TWO
+     * bookings (a second consumer's row included), then proves BOTH sides of
+     * the scope: the requested booking returns EXACTLY its own dispute (the
+     * seeded row alone — a filter that ignores the booking argument would
+     * leak the second consumer's row here), and an unknown-but-participating
+     * booking stays empty (emptiness comes from the scope, not from an empty
+     * database). The booking stub is argument-specific — the participant gate
+     * stays honest per booking.
+     */
     @Test
-    void listForBooking_returnsEmptyForUnknownBooking() {
+    @Transactional
+    void listForBooking_scopesToTheRequestedBooking_only_andUnknownBookingsStayEmpty() {
         var auth = Mockito.mock(Authentication.class);
         var userId = UUID.randomUUID();
+        var otherConsumer = UUID.randomUUID();
+        var bookingId = UUID.randomUUID();
+        var otherBooking = UUID.randomUUID();
+        var unknownBooking = UUID.randomUUID();
         when(currentUserProvider.getCurrentUserId(any())).thenReturn(userId);
-        when(bookingParticipantProvider.getBookingInfo(any())).thenReturn(
+        when(bookingParticipantProvider.getBookingInfo(bookingId)).thenReturn(
                 new BookingInfo(UUID.randomUUID(), userId, "CONFIRMED",
                         1000L, "USD", java.time.Instant.now(), java.time.Instant.now()));
-        var disputes = disputeService.listForBooking(UUID.randomUUID(), auth);
-        assertThat(disputes).isEmpty();
+        when(bookingParticipantProvider.getBookingInfo(unknownBooking)).thenReturn(
+                new BookingInfo(UUID.randomUUID(), userId, "CONFIRMED",
+                        1000L, "USD", java.time.Instant.now(), java.time.Instant.now()));
+
+        Dispute owned = disputeRepository.save(
+                Dispute.openBooking(bookingId, userId, "the consumer's authored damage report"));
+        disputeRepository.save(
+                Dispute.openBooking(otherBooking, otherConsumer, "the second consumer's report"));
+        entityManager.flush();
+
+        var scoped = disputeService.listForBooking(bookingId, auth);
+        assertThat(scoped).as("the requested booking returns EXACTLY its own dispute")
+                .hasSize(1);
+        assertThat(scoped.getFirst().getId()).as("the returned row is the seeded booking's dispute")
+                .isEqualTo(owned.getId());
+
+        assertThat(disputeService.listForBooking(unknownBooking, auth))
+                .as("an unknown participating booking stays empty — emptiness from the scope, "
+                        + "not from an empty database")
+                .isEmpty();
     }
 
     /**
