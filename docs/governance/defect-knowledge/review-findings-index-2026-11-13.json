@@ -1,0 +1,1029 @@
+{
+  "schemaVersion": 1,
+  "title": "Post-October review and remediation index",
+  "asOf": "2026-11-13",
+  "repository": "waelhe/app-java-v3",
+  "baseline": {
+    "main": "f92873c947e94c76ed3e7ea211db40a985ea3d63",
+    "commerceCandidate": {
+      "branch": "integration/saleor-full-commerce-20261021",
+      "head": "b97747f0d7de2ff67af855f9cd0f69a1f0aa29c5",
+      "pr": 787
+    },
+    "initialMainMeasurement": "445f421d67ad58bd533d42be9d5bbf6d268d9161"
+  },
+  "countingPolicy": {
+    "findingCount": "Only individually adjudicated records in the 2026-11-10 review are counted as 34 findings; the 2026-11-12 follow-up adds W7 and W8.",
+    "commentCount": "CodeRabbit review comments, review submissions and threads are signals, not defect counts.",
+    "duplicatePolicy": "Repeated review comments or repeated scans are not new findings unless the triggering invariant or root cause is materially distinct.",
+    "statusPolicy": "fixed-main means the repair commit is reachable from the latest measured main SHA in baseline.main; addressed-on-open-pr means review threads were resolved on an open PR but the fix is not yet on main; candidate-fix-pending-validation means the correction exists only on the current PR candidate and still needs passing CI/review."
+  },
+  "sources": [
+    {
+      "id": "CR-2026-10-25-26",
+      "kind": "CodeRabbit repository scans",
+      "url": "https://github.com/waelhe/app-java-v3/blob/integration/saleor-full-commerce-20261021/docs/governance/coderabbit-agent-findings-2026-10-26.md",
+      "rawResultAppearances": 205,
+      "interpretation": "Five exports 35+46+41+54+29. Fingerprint reconciliation is required; not 205 unique defects."
+    },
+    {
+      "id": "HISTORY-2026-10-27",
+      "kind": "Historical engineering investigation",
+      "url": "https://github.com/waelhe/app-java-v3/pull/746",
+      "pullRequestsInventoried": 715,
+      "workflowRunsClassified": 14575,
+      "workflowFailures": 2569,
+      "evidenceCasesAtCreation": 22,
+      "interpretation": "Workflow failures are not bug counts."
+    },
+    {
+      "id": "CR-2026-10-29",
+      "kind": "CodeRabbit sync review",
+      "url": "https://github.com/waelhe/app-java-v3/pull/758",
+      "reviewObservations": 16,
+      "interpretation": "Five merge-resolution findings, four verified main-line defects, one additional non-reproducible observation; remaining comments are review observations, not automatically accepted bugs."
+    },
+    {
+      "id": "SALEOR-SHARDS-2026-11-13",
+      "kind": "Six current review shards",
+      "urls": [
+        "https://github.com/waelhe/app-java-v3/pull/806",
+        "https://github.com/waelhe/app-java-v3/pull/807",
+        "https://github.com/waelhe/app-java-v3/pull/808",
+        "https://github.com/waelhe/app-java-v3/pull/809",
+        "https://github.com/waelhe/app-java-v3/pull/810",
+        "https://github.com/waelhe/app-java-v3/pull/811"
+      ],
+      "reviewThreads": 653,
+      "resolvedThreads": 228,
+      "unresolvedThreads": 425,
+      "codeRabbitInlineComments": 682,
+      "interpretation": "Snapshot of review activity; comments require adjudication and deduplication."
+    },
+    {
+      "id": "ADV-2026-11-10",
+      "kind": "Adversarial behavioral review",
+      "url": "https://github.com/waelhe/app-java-v3/pull/816",
+      "findings": 34,
+      "confirmed": 32,
+      "suspected": 2
+    },
+    {
+      "id": "ADV-2026-11-12",
+      "kind": "Adversarial follow-up",
+      "url": "https://github.com/waelhe/app-java-v3/pull/826",
+      "newFindings": [
+        "W7",
+        "W8"
+      ],
+      "interpretation": "W7 fixed by #813; W8 has an operational workaround but no structural repair verified."
+    },
+    {
+      "id": "REPAIR-PR-REVIEW-SWEEP-2026-11-13",
+      "kind": "CodeRabbit review refinements on repair PRs",
+      "measuredAt": "2026-11-13",
+      "prs": [
+        819,
+        821,
+        822,
+        823,
+        829
+      ],
+      "threads": 19,
+      "distinctFingerprints": 19,
+      "resolvedThreads": 19,
+      "comments": {
+        "819": {
+          "threads": 1,
+          "fingerprints": [
+            "6056f465697a0c6cc12d255c"
+          ],
+          "state": "open PR; thread resolved"
+        },
+        "821": {
+          "threads": 3,
+          "fingerprints": [
+            "ac3e594e0534f06e07fe39fe",
+            "e2c6d50b26cbf68f5f05efe9",
+            "305cfa98db5721ca03989123"
+          ],
+          "state": "open PR; all threads resolved"
+        },
+        "822": {
+          "threads": 2,
+          "fingerprints": [
+            "90dfc8d16024de702dead78e",
+            "0a1452eafed4aa4741de45c2"
+          ],
+          "state": "open PR; all threads resolved"
+        },
+        "823": {
+          "threads": 1,
+          "fingerprints": [
+            "821920d82b791e9f657ee4cf"
+          ],
+          "state": "open PR; thread resolved"
+        },
+        "829": {
+          "threads": 12,
+          "fingerprints": [
+            "19fd2089dd880a56ca59c2d6",
+            "6f34a73fc9e2eb46e2fb9a6d",
+            "15ed2d13f76721c231090721",
+            "4b60b618d8f031cc158c9cb3",
+            "741076d758f0c71a4144a277",
+            "2730eaec11b7f0a9dfe7ac80",
+            "e21e537cc289fdbbed9eebae",
+            "bd14ad527bc8b5e915c87bb0",
+            "61ed4bfa9ce8a9b1ce65d654",
+            "e8ef37aa1d2e8151ba073c79",
+            "96a64638802e0027d5ea5a84",
+            "3f99923d2ad1ab8f5a697f72"
+          ],
+          "state": "merged PR; all 12 threads resolved"
+        }
+      },
+      "interpretation": "These are distinct CodeRabbit review fingerprints raised while fixing earlier findings. They are repair refinements/secondary defects, not automatically 19 new independent product defects; each has a linked E-case and a branch-aware disposition."
+    },
+    {
+      "id": "ADV-IMPLEMENTATION-2026-11-13",
+      "kind": "Adversarial review of defect-knowledge intake and evidence gate",
+      "url": "https://github.com/waelhe/app-java-v3/pull/834",
+      "measuredHead": "985bac53fe6c88920ffc943a7cf90f36b589702a",
+      "findings": [
+        "G8",
+        "G9",
+        "G10"
+      ],
+      "interpretation": "Two confirmed defects were found in the new governance implementation itself: intake issue creation could race between issue_comment and a scheduled sweep, and fixed dispositions trusted an unverified workflow-run URL. Both corrections are in the current PR branch; final closure requires CI proof. G10 is a third confirmed defect: marker ownership was not verified, so human-authored lookalikes could hijack deduplication or managed-comment updates; its branch fix is pending CI."
+    }
+  ],
+  "findings": [
+    {
+      "id": "A1",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P4",
+        "P11"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 832,
+      "summary": "Delivery fee entered seller settlement and commission base, carrier payable was missing, and order-leg completion lacked the formal payment-intent binding."
+    },
+    {
+      "id": "A2",
+      "classification": "confirmed-defect",
+      "severity": "moderate-high",
+      "status": "fixed-main",
+      "patterns": [
+        "P4"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 829,
+      "summary": "Full refund now reverses both the seller credit and its posted commission mirror; PR #829 merged to main at f92873c9 on 2026-11-13. Its 12 CodeRabbit review findings were resolved before merge and are separately recorded as E-33..E-42."
+    },
+    {
+      "id": "A3",
+      "classification": "confirmed-defect",
+      "severity": "moderate-high",
+      "status": "open",
+      "patterns": [
+        "P4",
+        "P11"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 831,
+      "summary": "Concurrent delivery refund-delta read/modify/write could overbook cumulative refund totals."
+    },
+    {
+      "id": "A4",
+      "classification": "confirmed-defect",
+      "severity": "moderate-high",
+      "status": "open",
+      "patterns": [
+        "P4"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 828,
+      "summary": "Retryable refund work ran inside a REQUIRED carrier transaction and could poison the caller after an external PSP effect."
+    },
+    {
+      "id": "A5",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P4",
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Refunding a fulfilled but never-paid order was rejected, leaving the return stuck in RECEIVED."
+    },
+    {
+      "id": "B1",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "fixed-main",
+      "patterns": [
+        "P5"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 818,
+      "summary": "Role-revoke endpoint could remove the last active ADMIN; #818 is merged and its merge commit is reachable from main."
+    },
+    {
+      "id": "B2",
+      "classification": "confirmed-defect",
+      "severity": "medium-high",
+      "status": "open",
+      "patterns": [
+        "P5"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 830,
+      "summary": "A disabled account could perform irreversible self-service deletion while an access token remained valid."
+    },
+    {
+      "id": "B3",
+      "classification": "confirmed-defect",
+      "severity": "medium-high",
+      "status": "open",
+      "patterns": [
+        "P5"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Provider-eligibility law could not be reached by a team member without PROVIDER role; claim-approval ownership handoff did not grant the required role."
+    },
+    {
+      "id": "B4",
+      "classification": "suspected",
+      "severity": "unclassified",
+      "status": "suspected",
+      "patterns": [
+        "P5"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Administrative decision engines and review-queue reads may lack the service-layer third gate; the original report marks this suspected."
+    },
+    {
+      "id": "G1",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "fixed-main",
+      "patterns": [
+        "P5",
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 817,
+      "summary": "Community purge statements did not advance optimistic versions, allowing stale writes to race erasure; #817 is merged and reachable from main."
+    },
+    {
+      "id": "G2",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "fixed-main",
+      "patterns": [
+        "P5",
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 817,
+      "summary": "Messaging purge did not advance the row version, permitting stale inbox transitions to conflict with erased PII."
+    },
+    {
+      "id": "G3",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P5"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 833,
+      "summary": "Account erasure left media rows UPLOADED and S3 objects available to signed-URL read surfaces."
+    },
+    {
+      "id": "G4",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "fixed-main",
+      "patterns": [
+        "P5",
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 817,
+      "summary": "Notifications purge did not advance lock versions and had no adapter test; #824 adds real-PostgreSQL proof and remains open.",
+      "evidenceNote": "The code/version-advance adapter fix and an initial adapter test are on main through #817; stronger real-PostgreSQL/Testcontainers proof remains open in #824, so the concurrency-evidence follow-up is not closed."
+    },
+    {
+      "id": "G5",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "fixed-main",
+      "patterns": [
+        "P5",
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 817,
+      "summary": "Jobs purge advanced the application version but not the authored job text version."
+    },
+    {
+      "id": "G6",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "fixed-main",
+      "patterns": [
+        "P5",
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 817,
+      "summary": "Catalog listing/Q&A purge omitted optimistic-version advancement on relevant authored rows."
+    },
+    {
+      "id": "G7",
+      "classification": "suspected",
+      "severity": "unclassified",
+      "status": "suspected",
+      "patterns": [
+        "P5"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Knowledge tombstone filtering may not cover all public board/search/detail read rails; the original report marks this suspected."
+    },
+    {
+      "id": "D1",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P3"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 819,
+      "summary": "GraphQL exception mapping discarded the shared ApiProblemDetail taxonomy and exposed inconsistent error codes compared with REST."
+    },
+    {
+      "id": "D2",
+      "classification": "confirmed-defect",
+      "severity": "medium-high",
+      "status": "open",
+      "patterns": [
+        "P3",
+        "P4"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "PaymentStateChangedEvent used free-form states with divergent vocabularies; listeners could silently ignore events."
+    },
+    {
+      "id": "D3",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P3"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Favorites REST endpoint returned a raw Page while the rest of the API returned PagedResponse."
+    },
+    {
+      "id": "D4",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P3"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 821,
+      "summary": "Enum/type-mismatch request failures returned 500 instead of the documented 400 VAL-001 response."
+    },
+    {
+      "id": "D5",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P3"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Money had inconsistent GraphQL representations (Float versus String minor units) in the same schema."
+    },
+    {
+      "id": "D6",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P3"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Geographic autocomplete silently truncated results at 20 with no has-more indicator."
+    },
+    {
+      "id": "D7",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P3"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Unified search silently discarded a sort parameter that the sibling surface validated or rejected."
+    },
+    {
+      "id": "D8",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P3"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "REST errors carried traceId while GraphQL errors omitted it by default."
+    },
+    {
+      "id": "E1",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 823,
+      "summary": "Webhook deduplication test did not exercise the V42 unique-index serialization path on the real migration schema."
+    },
+    {
+      "id": "E2",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 820,
+      "summary": "Terminal-state test asserted one forbidden edge while claiming to prove that all terminal states reject every outgoing transition."
+    },
+    {
+      "id": "E3",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Vertex-mode test was skipped by assumeTrue in CI because the required ADC environment was absent."
+    },
+    {
+      "id": "E4",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P12"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 823,
+      "summary": "Booking-scope integration test could pass with an empty database and therefore did not prove that the correct booking's dispute was selected."
+    },
+    {
+      "id": "W1",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P1",
+        "P9"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Aggregate production health was DOWN due to SMTP contribution and repeated public-endpoint probe failures; owner decision is required for SMTP policy."
+    },
+    {
+      "id": "W2",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P1"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 822,
+      "summary": "Deployable profiles inherited localhost as the identity-mail link origin, causing password-reset and verification links to point to localhost."
+    },
+    {
+      "id": "W3",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P1",
+        "P5"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": 827,
+      "summary": "Missing PSP channel silently entered a local inert consumer-money path rather than failing with 503 SU-001."
+    },
+    {
+      "id": "W4",
+      "classification": "confirmed-defect",
+      "severity": "moderate-high",
+      "status": "open",
+      "patterns": [
+        "P9"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Governance docs on main claimed gate-health.yml was present although that workflow existed only on the commerce candidate at the audit head."
+    },
+    {
+      "id": "W5",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P1",
+        "P6"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Versioned Railway target record drifted from the live deployment-variable inventory; CI cannot query provider truth."
+    },
+    {
+      "id": "W6",
+      "classification": "confirmed-defect",
+      "severity": "medium",
+      "status": "open",
+      "patterns": [
+        "P1"
+      ],
+      "sourceReport": "ADV-2026-11-10",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/816",
+      "repairPr": null,
+      "summary": "Staging AI/RAG configuration diverged from production despite a documented staging-is-production-like contract."
+    },
+    {
+      "id": "W7",
+      "classification": "confirmed-defect",
+      "severity": "moderate-high",
+      "status": "fixed-main",
+      "patterns": [
+        "P1",
+        "P14"
+      ],
+      "sourceReport": "ADV-2026-11-12",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/826",
+      "repairPr": 813,
+      "summary": "OpenRewrite invoked system Maven 3.9.15 while the project enforcer required Maven >=3.10; #813 switched to the pinned wrapper and the fix is on main."
+    },
+    {
+      "id": "W8",
+      "classification": "confirmed-defect",
+      "severity": "moderate-high",
+      "status": "open",
+      "patterns": [
+        "P13",
+        "P14"
+      ],
+      "sourceReport": "ADV-2026-11-12",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/826",
+      "repairPr": null,
+      "summary": "CodeRabbit Gate poll accepted an empty-body approval while exact processed-file coverage rejected the same review, creating a deadlock after threads were resolved."
+    },
+    {
+      "id": "G8",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P4",
+        "P12"
+      ],
+      "sourceReport": "ADV-IMPLEMENTATION-2026-11-13",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/834",
+      "repairPr": 834,
+      "summary": "Issue-comment intake and scheduled sweeps could execute concurrently under different concurrency keys and create duplicate intake issues for one PR."
+    },
+    {
+      "id": "G9",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P12"
+      ],
+      "sourceReport": "ADV-IMPLEMENTATION-2026-11-13",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/834",
+      "repairPr": 834,
+      "summary": "D11 trusted a self-reported passed status and any github.com URL; it did not resolve the Actions run, verify completed/success, verify repository, or bind run head SHA to current PR head."
+    },
+    {
+      "id": "G10",
+      "classification": "confirmed-defect",
+      "severity": "high",
+      "status": "open",
+      "patterns": [
+        "P15",
+        "P12"
+      ],
+      "sourceReport": "ADV-IMPLEMENTATION-2026-11-13",
+      "sourceUrl": "https://github.com/waelhe/app-java-v3/pull/834",
+      "repairPr": 834,
+      "fingerprint": "sha256:738695bfd8cb965decac012fad2e9686dade7dc8ad2d20cd52d08ab77d16f380",
+      "caseId": "E-52",
+      "summary": "Human-authored issue/comment markers could spoof intake ownership, suppress source ingestion, or make the collector overwrite a human comment."
+    }
+  ],
+  "separateHistoricalCases": [
+    {
+      "id": "E-24",
+      "source": "https://github.com/waelhe/app-java-v3/issues/749",
+      "status": "open",
+      "summary": "Order/delivery row locks were acquired in opposite order on concurrent paths, creating an ABBA deadlock window.",
+      "patterns": [
+        "P4",
+        "P11"
+      ]
+    },
+    {
+      "id": "E-25",
+      "source": "https://github.com/waelhe/app-java-v3/issues/749",
+      "status": "open",
+      "summary": "OSRM route lookup performed outbound HTTP while a database transaction and order row lock were held.",
+      "patterns": [
+        "P1",
+        "P11"
+      ]
+    },
+    {
+      "id": "E-26",
+      "source": "https://github.com/waelhe/app-java-v3/pull/826",
+      "status": "open",
+      "summary": "The review poll and the exact-file evidence verifier used incompatible acceptance rules for an empty-body CodeRabbit approval.",
+      "patterns": [
+        "P13",
+        "P14"
+      ]
+    },
+    {
+      "id": "E-27",
+      "source": "https://github.com/waelhe/app-java-v3/pull/826",
+      "status": "fixed-main",
+      "summary": "OpenRewrite used an unpinned Maven executable and failed against the repository's Maven Enforcer floor; #813 now uses the Maven Wrapper.",
+      "patterns": [
+        "P1",
+        "P14"
+      ]
+    },
+    {
+      "id": "E-28",
+      "source": "https://github.com/waelhe/app-java-v3/pull/764",
+      "status": "fixed-main",
+      "summary": "The purge version-advance change had only weak structural proof until a real PostgreSQL/Testcontainers test proved stale writes fail and replay remains idempotent.",
+      "patterns": [
+        "P12"
+      ]
+    },
+    {
+      "id": "E-29",
+      "source": "https://github.com/waelhe/app-java-v3/pull/770",
+      "status": "fixed-main",
+      "summary": "The OpenRewrite catalog job ran on Dependabot PRs and converted a supported automated dependency update into a persistent CI failure requiring manual intervention.",
+      "patterns": [
+        "P9",
+        "P14"
+      ]
+    },
+    {
+      "id": "E-30",
+      "source": "https://github.com/waelhe/app-java-v3/pull/771",
+      "status": "fixed-main",
+      "summary": "Nine vendored Neon skills existed without a reviewed pin/provenance registry; the merged change introduced a reviewed pinned skills surface.",
+      "patterns": [
+        "P13"
+      ]
+    },
+    {
+      "id": "E-31",
+      "source": "https://github.com/waelhe/app-java-v3/pull/758",
+      "status": "fixed-main",
+      "summary": "BCrypt password reset must validate the 72-byte UTF-8 implementation bound before consuming a one-time token."
+    },
+    {
+      "id": "E-32",
+      "source": "https://github.com/waelhe/app-java-v3/pull/758",
+      "status": "fixed-main",
+      "summary": "JPEG marker scanning must accept legal repeated 0xFF fill bytes rather than treating them as a new marker."
+    },
+    {
+      "id": "E-33",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "legacy refund reversal reads original posted commission, not recomputed live rate"
+    },
+    {
+      "id": "E-34",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "asynchronous REFUNDED event cannot silently complete before settlement commission is posted"
+    },
+    {
+      "id": "E-35",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "zero commission is distinguished from a commission row not yet posted"
+    },
+    {
+      "id": "E-36",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "historical full refunds and deploy-overlap stragglers require idempotent reconciliation"
+    },
+    {
+      "id": "E-37",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "multiple reversals for one provider/currency are aggregated before one UPSERT"
+    },
+    {
+      "id": "E-38",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "native SQL reconciliation advances the ProviderBalance optimistic version"
+    },
+    {
+      "id": "E-39",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "net ledger aggregation treats commission reversal as a positive credit"
+    },
+    {
+      "id": "E-40",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "ledger response sign metadata describes reversal credit as positive"
+    },
+    {
+      "id": "E-41",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "shared async test fixtures model lookup state by phase instead of call order"
+    },
+    {
+      "id": "E-42",
+      "source": "https://github.com/waelhe/app-java-v3/pull/829",
+      "status": "fixed-main",
+      "summary": "scheduled refund reconciliation bounds its payment-intent scan"
+    },
+    {
+      "id": "E-43",
+      "source": "https://github.com/waelhe/app-java-v3/pull/819",
+      "status": "addressed-on-open-pr",
+      "summary": "GraphQL error resolver uses a safe fallback for a null exception message"
+    },
+    {
+      "id": "E-44",
+      "source": "https://github.com/waelhe/app-java-v3/pull/821",
+      "status": "addressed-on-open-pr",
+      "summary": "VAL-001 field error messages follow the request locale"
+    },
+    {
+      "id": "E-45",
+      "source": "https://github.com/waelhe/app-java-v3/pull/821",
+      "status": "addressed-on-open-pr",
+      "summary": "type mismatch detail preserves field, rejected value and expected type"
+    },
+    {
+      "id": "E-46",
+      "source": "https://github.com/waelhe/app-java-v3/pull/821",
+      "status": "addressed-on-open-pr",
+      "summary": "MessageFormat fallback does not parse untrusted rejected input as a pattern"
+    },
+    {
+      "id": "E-47",
+      "source": "https://github.com/waelhe/app-java-v3/pull/822",
+      "status": "addressed-on-open-pr",
+      "summary": "unresolved mail-base placeholder is rejected at Spring Boot startup rather than emitted as a literal URL"
+    },
+    {
+      "id": "E-48",
+      "source": "https://github.com/waelhe/app-java-v3/pull/822",
+      "status": "addressed-on-open-pr",
+      "summary": "mail origin rejects query and fragment components including empty delimiters"
+    },
+    {
+      "id": "E-49",
+      "source": "https://github.com/waelhe/app-java-v3/pull/823",
+      "status": "addressed-on-open-pr",
+      "summary": "fix-plan summary and counts match the detailed owner-gate records"
+    },
+    {
+      "id": "E-50",
+      "source": "https://github.com/waelhe/app-java-v3/pull/834",
+      "status": "candidate-fix-pending-validation",
+      "summary": "Single-writer review intake prevents issue_comment and scheduled-sweep concurrency from creating duplicate intake issues."
+    },
+    {
+      "id": "E-51",
+      "source": "https://github.com/waelhe/app-java-v3/pull/834",
+      "status": "candidate-fix-pending-validation",
+      "summary": "D11 resolves the workflow run via the GitHub Actions API and verifies completed/success plus exact PR-head SHA before fixed can pass."
+    },
+    {
+      "id": "E-52",
+      "source": "https://github.com/waelhe/app-java-v3/pull/834",
+      "status": "candidate-fix-pending-validation",
+      "summary": "Collector control markers are accepted only from bot-authored objects; intake issue identity is bound to its reserved title and exact source PR link."
+    }
+  ],
+  "capabilityAndDecisionGaps": [
+    {
+      "id": "ISSUE-774",
+      "url": "https://github.com/waelhe/app-java-v3/issues/774",
+      "classification": "capability-gap",
+      "summary": "Discount/voucher semantics are not fully proven: manual discount precedence, voucher suppression/restoration, shipping-voucher exceptions and manual line discounts."
+    },
+    {
+      "id": "ISSUE-775",
+      "url": "https://github.com/waelhe/app-java-v3/issues/775",
+      "classification": "capability-gap",
+      "summary": "Order discount mutations and Saleor-style proportional discount allocation are not implemented/proven; currency quantization and remainder behavior remain gaps."
+    },
+    {
+      "id": "ISSUE-776",
+      "url": "https://github.com/waelhe/app-java-v3/issues/776",
+      "classification": "capability-gap",
+      "summary": "Catalog/inventory/stock/warehouse semantic coverage requires a dedicated audit."
+    },
+    {
+      "id": "ISSUE-779",
+      "url": "https://github.com/waelhe/app-java-v3/issues/779",
+      "classification": "decision-gap",
+      "summary": "Gift-card liability ownership and full lifecycle require owner-approved D-GC-001 decisions."
+    },
+    {
+      "id": "ISSUE-780",
+      "url": "https://github.com/waelhe/app-java-v3/issues/780",
+      "classification": "decision-gap",
+      "summary": "Tax-class and configuration behavior is split between NOT_STARTED and BLOCKED_BY_DECISION under D-TAX-001."
+    },
+    {
+      "id": "ISSUE-781",
+      "url": "https://github.com/waelhe/app-java-v3/issues/781",
+      "classification": "decision-gap",
+      "summary": "Commerce-channel ownership and cross-domain context need D-CHANNEL-001."
+    },
+    {
+      "id": "ISSUE-782",
+      "url": "https://github.com/waelhe/app-java-v3/issues/782",
+      "classification": "decision-gap",
+      "summary": "Shop/refund/return settings ownership needs D-SHOP-001 and D-SETTINGS-001."
+    }
+  ],
+  "mainBranchVerification": [
+    {
+      "pr": 813,
+      "mergeCommit": "445f421d67ad58bd533d42be9d5bbf6d268d9161",
+      "status": "ancestor-of-main",
+      "url": "https://github.com/waelhe/app-java-v3/pull/813"
+    },
+    {
+      "pr": 817,
+      "mergeCommit": "5de7564faa8cb12a58a36c9cd777fa13e755d85e",
+      "status": "ancestor-of-main",
+      "url": "https://github.com/waelhe/app-java-v3/pull/817"
+    },
+    {
+      "pr": 818,
+      "mergeCommit": "55f1a1961a061f6e19f065bf86558e49b85b28e0",
+      "status": "ancestor-of-main",
+      "url": "https://github.com/waelhe/app-java-v3/pull/818"
+    },
+    {
+      "pr": 829,
+      "mergeCommit": "f92873c947e94c76ed3e7ea211db40a985ea3d63",
+      "status": "current-main-tip",
+      "url": "https://github.com/waelhe/app-java-v3/pull/829"
+    }
+  ],
+  "limitations": [
+    "The 75 PR entries created after #746 were inventoried from GitHub PR metadata and available descriptions; detailed diffs/review evidence were concentrated on PRs that report or carry defects, remediations, review shards, or governance changes. Dependency/OpenRewrite-only PRs were classified by their purpose and description, not treated as defect findings.",
+    "The 682 CodeRabbit comments on #806–#811 are individual review comments with distinct comment fingerprints in that snapshot, not 682 confirmed unique defects. A single finding can generate multiple comments/review iterations; some comments are test-shard artifacts, nits, false positives, or repeated observations.",
+    "The review finding registry is a reconciliation index for the named reports. It does not claim a complete historical diff audit of every commit in all 75 PRs.",
+    "The Nov 13 repair-PR review sweep added 19 distinct CodeRabbit fingerprints across #819/#821/#822/#823/#829. All 19 review threads were resolved at measurement; only #829 had merged, so its E-33..E-42 cases are fixed on main while the other cases remain attached to open PRs.",
+    "The Nov 13 adversarial review of the governance implementation itself found G8 and G9; both fixes are on PR #834 only and remain open until the final-head CI evidence passes and an independent review assesses the revised implementation."
+  ],
+  "repairReviewReconciliations": [
+    {
+      "pr": 829,
+      "threads": 12,
+      "fingerprints": [
+        "19fd2089dd880a56ca59c2d6",
+        "6f34a73fc9e2eb46e2fb9a6d",
+        "15ed2d13f76721c231090721",
+        "4b60b618d8f031cc158c9cb3",
+        "741076d758f0c71a4144a277",
+        "2730eaec11b7f0a9dfe7ac80",
+        "e21e537cc289fdbbed9eebae",
+        "bd14ad527bc8b5e915c87bb0",
+        "61ed4bfa9ce8a9b1ce65d654",
+        "e8ef37aa1d2e8151ba073c79",
+        "96a64638802e0027d5ea5a84",
+        "3f99923d2ad1ab8f5a697f72"
+      ],
+      "status": "fixed-main",
+      "note": "All 12 CodeRabbit threads resolved before the A2 repair merged; E-33..E-42 record the mechanisms."
+    },
+    {
+      "pr": 819,
+      "threads": 1,
+      "fingerprints": [
+        "6056f465697a0c6cc12d255c"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Null GraphQL error detail fallback addressed; PR itself remains open."
+    },
+    {
+      "pr": 821,
+      "threads": 3,
+      "fingerprints": [
+        "ac3e594e0534f06e07fe39fe",
+        "e2c6d50b26cbf68f5f05efe9",
+        "305cfa98db5721ca03989123"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Localization, rendered diagnostic detail, and safe MessageFormat fallback; PR remains open."
+    },
+    {
+      "pr": 822,
+      "threads": 2,
+      "fingerprints": [
+        "90dfc8d16024de702dead78e",
+        "0a1452eafed4aa4741de45c2"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Spring Boot unresolved-placeholder fail-fast and URI query/fragment rejection; PR remains open."
+    },
+    {
+      "pr": 823,
+      "threads": 1,
+      "fingerprints": [
+        "821920d82b791e9f657ee4cf"
+      ],
+      "status": "addressed-on-open-pr",
+      "note": "Documentation gate counts/summary corrected; PR remains open."
+    }
+  ]
+}

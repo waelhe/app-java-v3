@@ -1,0 +1,23 @@
+name: Defect Knowledge Intake Capture
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  issue_comment:
+    types: [created, edited, deleted]
+
+# Deliberately no token scopes, secrets, checkout, artifacts or PR-code execution.
+# The privileged receiver re-reads source records through the GitHub API.
+permissions: {}
+
+jobs:
+  signal:
+    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request }}
+    name: Unprivileged review-event signal
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Emit a static completion signal
+        run: echo "Review event captured; trusted intake workflow will reconcile from the GitHub API."
