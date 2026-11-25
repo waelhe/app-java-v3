@@ -4,9 +4,11 @@ import com.marketplace.shared.api.BookingInfo;
 import com.marketplace.shared.api.BookingParticipantProvider;
 import com.marketplace.shared.api.LoanOwnerPort;
 import com.marketplace.shared.api.OrderSellerPort;
+import com.marketplace.shared.api.OrderSettlementFacts;
 import com.marketplace.shared.api.PaymentIntentDetails;
 import com.marketplace.shared.api.PaymentIntentLookupPort;
 import com.marketplace.shared.api.PaymentStateChangedEvent;
+import com.marketplace.shared.api.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -106,15 +108,88 @@ public class LedgerPaymentEventListener {
         // the OrderSellerPort seam — the ledger never imports the orders
         // module (the BookingParticipantProvider twin verbatim).
         if (intent.isOrderOrigin()) {
-            java.util.UUID sellerId = orderSellerPort.sellerOf(intent.orderId());
-            ledgerService.creditFromPayment(sellerId, intent.paymentIntentId(),
-                    intent.amountCents(), intent.currency());
-            long commissionCents = commissionCents(intent.amountCents(), intent);
-            ledgerService.debitFromCommission(sellerId, intent.paymentIntentId(), commissionCents, intent.currency());
-            log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission — "
-                            + "the order settlement (intent {})",
-                    intent.amountCents(), intent.currency(), sellerId, commissionCents,
-                    intent.currency(), intent.paymentIntentId());
+            // A1 (owner-gate batch 6a — the ADR-0013 D4 execution): the
+            // settlement reads the order's fulfillment FACTS beside the
+            // seller (the widened OrderSellerPort seam — the
+            // PaymentIntentDetails widening precedent: one carrier, one
+            // hop). The platform-delivery fee the checkout froze inside
+            // the total is the PLATFORM's own charge (the platform is
+            // the merchant of record, D1): the seller's allocation is
+            // the goods (+tax) value net of the fee, and the commission
+            // computes on the goods base — «رسم واحد لمالك واحد». The
+            // pre-fix branch credited the seller the FULL amount
+            // including the fee and computed the commission on it (the
+            // ledger's own finding A1).
+            OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
+            java.util.UUID sellerId = facts.sellerId();
+            long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
+            long goodsCents = intent.amountCents() - feeCents;
+            // CodeRabbit round 3 (2026-11-14T21:06Z review): the fee and
+            // commission decisions bind to the credit write's OWN outcome
+            // inside this transaction — the pre-read
+            // (`paymentCreditPosted` before the write, the round-2
+            // firstDelivery flag) left a read-then-decide window. The
+            // redelivery of a settlement recorded BEFORE this change (its
+            // PAYMENT_CREDIT row already landed) must never produce a NEW
+            // financial effect.
+            //
+            // CodeRabbit round 4 (2026-11-15T07:13Z review): the debit legs
+            // must not be consumable by a FOREIGN writer of the same credit
+            // row. The admin controller's manual credit (`creditFromPayment`
+            // — the controller/AD entry) writes the identical PAYMENT_CREDIT
+            // row; under the round-3 gate alone that pre-existing row made
+            // the settlement skip the commission and fee debits FOREVER (the
+            // completion path the review demanded). The disambiguator: every
+            // settlement redelivery in ANY world (legacy or current) carries
+            // its commission row once commission is due — the legacy shape
+            // always posted commission, the current shape posts it in the
+            // credit's own transaction — so a pre-existing credit whose DUE
+            // commission is still unposted is a foreign write, and the
+            // settlement applies the debits it owes. The zero-commission
+            // residual is the documented edge: a pre-existing credit on an
+            // intent whose due commission is zero is row-identical to a
+            // legacy zero-commission settlement's redelivery, so the debits
+            // stay skipped there (never a retroactive fee — the round-2
+            // law); the admin endpoint's contract documents not to
+            // pre-credit zero-commission fee-bearing order intents.
+            LedgerService.PaymentCreditPosting credit = ledgerService.creditFromPaymentPosting(
+                    sellerId, intent.paymentIntentId(), intent.amountCents(), intent.currency());
+            long commissionCents = commissionCents(goodsCents, intent);
+            boolean debitLegsDue = credit.createdThisRun()
+                    || (commissionCents > 0
+                        && ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty());
+            if (debitLegsDue) {
+                ledgerService.debitFromCommission(sellerId, intent.paymentIntentId(), commissionCents, intent.currency());
+                if (feeCents > 0) {
+                    // The fee's own disclosed debit — the commission debit's
+                    // disclosure discipline (D2: the seller's statement reads
+                    // it): the platform keeps the fee to fund the carrier.
+                    ledgerService.debitFromDeliveryFee(sellerId, intent.paymentIntentId(), feeCents, intent.currency());
+                }
+            }
+            // Major-2 (CodeRabbit round 8 — the 2026-11-20T17:53Z review,
+            // Data Integrity): the settlement's OWN zero-commission
+            // decision of record, written in the SAME transaction that
+            // created the credit row. The zero shape posts no
+            // COMMISSION_DEBIT row (the zero-amount rule), so without this
+            // marker a later rate change left the refund gate inferring a
+            // DUE commission from TODAY'S live rate for legacy null-rate
+            // rows — an eternal rejection with no repair row. First
+            // delivery ONLY: a redelivery (a pre-existing credit row)
+            // never rewrites a decision the original run alone knows.
+            if (credit.createdThisRun() && commissionCents == 0) {
+                ledgerService.markSettlementZeroCommission(
+                        sellerId, intent.paymentIntentId(), intent.currency());
+            }
+            log.info("Ledger processed: credited {} {} to seller {}, debited {} {} as commission on the "
+                            + "goods base {} — the order settlement (intent {}, fee {} {} kept by the platform{})",
+                    intent.amountCents(), intent.currency(), sellerId,
+                    debitLegsDue ? commissionCents : 0L,
+                    intent.currency(), goodsCents, intent.paymentIntentId(), feeCents, intent.currency(),
+                    feeCents > 0
+                            ? debitLegsDue ? " (ADR-0013 D4)"
+                            : " (skipped — redelivery of a settled intent)"
+                            : "");
             return;
         }
         // Stage 8 (ADR-0004): the LOAN settlement — the owner's fee credit
@@ -122,13 +197,25 @@ public class LedgerPaymentEventListener {
         // one port hop away; no second rate, no escrow vocabulary).
         if (intent.isLoanOrigin()) {
             java.util.UUID ownerId = loanOwnerPort.ownerOf(intent.loanId());
-            ledgerService.creditFromPayment(ownerId, intent.paymentIntentId(),
-                    intent.amountCents(), intent.currency());
-            long commissionCents = commissionCents(intent.amountCents(), intent);
-            ledgerService.debitFromCommission(ownerId, intent.paymentIntentId(), commissionCents, intent.currency());
+            // CodeRabbit round 3: the loan twin of the same atomic binding.
+            // Round 4 (2026-11-15T07:13Z): the loan twin of the foreign-writer
+            // disambiguation — a manual controller credit must not consume
+            // the loan's commission debit (the order branch's own law: a
+            // due-but-unposted commission under a pre-existing credit is a
+            // foreign write; the zero-commission residual stays skipped).
+            LedgerService.PaymentCreditPosting credit = ledgerService.creditFromPaymentPosting(
+                    ownerId, intent.paymentIntentId(), intent.amountCents(), intent.currency());
+            long loanCommissionCents = commissionCents(intent.amountCents(), intent);
+            boolean loanDebitDue = credit.createdThisRun()
+                    || (loanCommissionCents > 0
+                        && ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty());
+            if (loanDebitDue) {
+                ledgerService.debitFromCommission(ownerId, intent.paymentIntentId(), loanCommissionCents, intent.currency());
+            }
             log.info("Ledger processed: credited {} {} to owner {}, debited {} {} as commission — "
                             + "the loan-fee settlement (intent {})",
-                    intent.amountCents(), intent.currency(), ownerId, commissionCents,
+                    intent.amountCents(), intent.currency(), ownerId,
+                    loanDebitDue ? loanCommissionCents : 0L,
                     intent.currency(), intent.paymentIntentId());
             return;
         }
@@ -148,11 +235,25 @@ public class LedgerPaymentEventListener {
             // are keyed (provider, currency) now, so the credit, the commission
             // and the refund all move the payment's own currency.
             String currency = bookingInfo.currency();
-            ledgerService.creditFromPayment(bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
-            long commissionCents = commissionCents(priceCents, intent);
-            ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), commissionCents, currency);
+            // CodeRabbit round 3: the commission rides the credit write's
+            // own outcome (a redelivery's debit would no-op on its key —
+            // the call itself is now skipped, the same atomic binding as
+            // the order branch). Round 4 (2026-11-15T07:13Z): the booking
+            // twin of the foreign-writer disambiguation — the manual
+            // controller credit must not consume the booking's commission
+            // debit (the order branch's own law, verbatim).
+            LedgerService.PaymentCreditPosting credit = ledgerService.creditFromPaymentPosting(
+                    bookingInfo.providerId(), intent.paymentIntentId(), priceCents, currency);
+            long bookingCommissionCents = commissionCents(priceCents, intent);
+            boolean bookingDebitDue = credit.createdThisRun()
+                    || (bookingCommissionCents > 0
+                        && ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty());
+            if (bookingDebitDue) {
+                ledgerService.debitFromCommission(bookingInfo.providerId(), intent.paymentIntentId(), bookingCommissionCents, currency);
+            }
             log.info("Ledger processed: credited {} {} to provider {}, debited {} {} as commission",
-                    priceCents, currency, bookingInfo.providerId(), commissionCents, currency);
+                    priceCents, currency, bookingInfo.providerId(),
+                    bookingDebitDue ? bookingCommissionCents : 0L, currency);
             return;
         }
         // Fail closed: an origin this consumer does not know is a defect,
@@ -221,6 +322,35 @@ public class LedgerPaymentEventListener {
                                 + ") — no ledger movement was booked; the publication stays "
                                 + "recoverable for replay after the settlement lands");
             }
+            // CodeRabbit round 7 (minor — the refund gate's settlement proof,
+            // 2026-11-19T13:33Z review): the credit row ALONE is not proof the
+            // settlement's debit legs completed. A manual controller credit
+            // (the foreign write) posts the identical PAYMENT_CREDIT row
+            // WITHOUT the commission/fee debits, and a refund admitted on the
+            // credit row alone debited the full amount while the reversals
+            // read the still-absent posted rows — a negative balance until the
+            // reconciliation sweep repaired it. The durable admission evidence
+            // mirrors the settlement's own round-4 disambiguator: the refund
+            // waits until a debit leg's row exists (a posted COMMISSION_DEBIT
+            // or a posted DELIVERY_FEE_DEBIT — either leg proves the
+            // settlement's transaction ran) OR the commission is provably not
+            // due (a frozen zero rate, or a computed zero on the goods base —
+            // the documented zero-commission settlement whose credit row is
+            // the only row it ever posts). Redeliveries stay safe: a completed
+            // settlement's leg rows persist, so a replayed refund re-admits;
+            // the manual-credit → refund → settlement → refund-replay ordering
+            // is pinned by the round-7 ordering test.
+            if (ledgerService.postedCommissionCents(intent.paymentIntentId()).isEmpty()
+                    && ledgerService.postedDeliveryFeeCents(intent.paymentIntentId()).isEmpty()
+                    && !commissionNotDue(intent)) {
+                throw new IllegalStateException(
+                        "Order refund's settlement posting carries no debit legs yet (intent "
+                                + intent.paymentIntentId() + "): the PAYMENT_CREDIT row exists but neither "
+                                + "the commission nor the delivery-fee debit landed — a manual credit that "
+                                + "outran the settlement (its refund must wait for the settlement's own "
+                                + "legs) — no ledger movement was booked; the publication stays recoverable "
+                                + "for replay after the settlement's debit legs land");
+            }
             ledgerService.debitFromRefund(sellerId, intent.paymentIntentId(),
                     intent.amountCents(), intent.currency());
             // CodeRabbit round 1 (major — data integrity): the mirror reverses
@@ -235,6 +365,22 @@ public class LedgerPaymentEventListener {
             ledgerService.creditFromCommissionReversal(
                     sellerId, intent.paymentIntentId(),
                     ledgerService.postedCommissionCents(intent.paymentIntentId()).orElse(0L),
+                    intent.currency());
+            // F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the
+            // fee the settlement ACTUALLY debited is reversed by the SAME
+            // mirror rule — the posted DELIVERY_FEE_DEBIT row's own amount
+            // (postedDeliveryFeeCents, the postedCommissionCents discipline
+            // verbatim), never a recomputation from live order facts (the
+            // facts can move between settlement and refund; the posted row
+            // cannot). A PICKUP order's zero fee posts no row — orElse(0L)
+            // makes the reversal the documented no-op (nothing posted,
+            // nothing to reverse). Without this leg every full refund of a
+            // platform-delivery order left the seller's balance negative by
+            // exactly the fee: the buyer got his fee back while the seller
+            // kept paying for it.
+            ledgerService.creditFromDeliveryFeeReversal(
+                    sellerId, intent.paymentIntentId(),
+                    ledgerService.postedDeliveryFeeCents(intent.paymentIntentId()).orElse(0L),
                     intent.currency());
             log.info("Ledger processed: debited {} {} from seller {} — the order refund "
                             + "mirrors its settlement credit (intent {})",
@@ -339,5 +485,113 @@ public class LedgerPaymentEventListener {
                 .multiply(effectiveCommissionRate(intent))
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValue();
+    }
+
+    /**
+     * CodeRabbit round 7 (the refund gate's settlement proof,
+     * 2026-11-19T13:33Z review) + round 8 Major-2 (2026-11-20T17:53Z
+     * review): whether a commission debit leg is EVER expected for this
+     * intent — the zero-commission shapes whose settlement deliberately
+     * posts no COMMISSION_DEBIT row (the round-2 law), so the refund's
+     * debit-legs gate cannot wait for a row that will never exist. A
+     * FROZEN zero rate needs no facts (no goods base can make it due);
+     * a frozen non-zero rate computes the due on the goods base exactly
+     * as the settlement computed it (the fee from the order's settlement
+     * facts — safe here: the refund path resolved the seller first, so
+     * the facts lookup cannot hit the legacy no-seller 404). A LEGACY
+     * null-rate row never computes from the live rate (round 8's
+     * measured defect): its zero-commission evidence is the
+     * settlement's own persisted marker alone.
+     */
+    private boolean commissionNotDue(PaymentIntentDetails intent) {
+        // Major-2 (CodeRabbit round 8 — the 2026-11-20T17:53Z review): the
+        // settlement's OWN decision of record, never a live-rate inference.
+        // The FROZEN-rate path is deterministic — the settlement computed
+        // the same arithmetic from the same frozen value (ADR-0013 D2), so
+        // the recomputation here is the settlement's own decision replayed,
+        // not an inference. The LEGACY null-rate path's decision is
+        // unknowable from any live value: only the settlement's own
+        // persisted zero-commission marker (written by the settlement
+        // transaction itself, unforgeable by the manual credit path)
+        // admits the refund — the reviewer's measured defect was exactly
+        // the old code's fallback to TODAY'S live rate here (a zero-rate
+        // settlement + a later 0.10 change = an eternal refund rejection).
+        // A legacy row without the marker keeps the refund waiting — the
+        // documented owner-gate residual: fail closed, because an
+        // inferred historical decision is never evidence.
+        if (intent.commissionRate() != null) {
+            if (BigDecimal.ZERO.compareTo(intent.commissionRate()) == 0) {
+                return true;
+            }
+            OrderSettlementFacts facts = orderSellerPort.settlementFactsOf(intent.orderId());
+            long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
+            return commissionCents(intent.amountCents() - feeCents, intent) == 0L;
+        }
+        return ledgerService.settlementZeroCommissionMarked(intent.paymentIntentId());
+    }
+
+    /**
+     * CodeRabbit round 5 (2026-11-15T08:27Z review): the ONE state a manual
+     * credit must never create — an ORDER intent whose due commission is
+     * ZERO while a delivery fee is DUE. The round-4 disambiguator reads the
+     * commission row: every settled redelivery carries it once commission is
+     * due, so a pre-existing credit with a due-but-unposted commission is a
+     * foreign write and the settlement still posts its debits. But at ZERO
+     * due commission that signal vanishes — a pre-existing credit on such an
+     * intent is row-identical to a legacy zero-commission settlement's
+     * redelivery, and no ledger row can tell them apart. The settlement
+     * deliberately keeps its debit legs skipped there (never a retroactive
+     * fee — the round-2 law), so the ambiguous state itself is refused at
+     * the door: the admin credit endpoint calls this guard BEFORE writing,
+     * and the refusal (IllegalArgumentException — the VAL-001 400 path)
+     * keeps the settlement the fee's only writer. The listener-level skip
+     * stays as the second line (defense in depth), and crediting after the
+     * settlement event lands remains the documented manual path.
+     */
+    public void assertCreditTargetIsNotSettlementAmbiguous(java.util.UUID paymentIntentId) {
+        paymentIntentLookupPort.findById(paymentIntentId)
+                .filter(PaymentIntentDetails::isOrderOrigin)
+                .filter(intent -> intent.orderId() != null)
+                .ifPresent(intent -> {
+                    // Round 6 (2026-11-15T10:47Z): the refusal guards the
+                    // CREATION of the ambiguous state only — a replay after
+                    // the settlement landed (its PAYMENT_CREDIT row exists,
+                    // the existing verification mechanism) is the endpoint's
+                    // documented idempotent no-op answering the balance
+                    // without a second entry, and must pass through.
+                    if (ledgerService.paymentCreditPosted(paymentIntentId)) {
+                        return;
+                    }
+                    // CodeRabbit round 7 (major — the legacy no-seller
+                    // shape, 2026-11-19T13:33Z review): the facts lookup is
+                    // THIS guard's own input, never the credit path's gate.
+                    // A legacy order without a seller
+                    // (settlementFactsOf's documented 404 — "a fee-bearing
+                    // seller-less row cannot exist", the placement
+                    // invariant) is NOT the ambiguous shape this guard
+                    // refuses: its fee is zero by invariant, so the
+                    // zero-commission-fee-bearing rule cannot apply, and the
+                    // manual credit keeps its main-branch availability. The
+                    // lookup's failure therefore fails OPEN — this guard
+                    // narrows one specific ambiguous shape only, and an
+                    // accidental 404 from the facts converter must never
+                    // decide the credit path's behavior.
+                    OrderSettlementFacts facts;
+                    try {
+                        facts = orderSellerPort.settlementFactsOf(intent.orderId());
+                    } catch (ResourceNotFoundException e) {
+                        return;
+                    }
+                    long feeCents = facts.platformDelivery() ? facts.shippingAmountMinor() : 0L;
+                    long goodsCents = intent.amountCents() - feeCents;
+                    if (feeCents > 0 && commissionCents(goodsCents, intent) == 0L) {
+                        throw new IllegalArgumentException(
+                                "A manual credit cannot target a zero-commission fee-bearing order intent ("
+                                        + paymentIntentId + "): no ledger row can distinguish it from a legacy "
+                                        + "settlement's redelivery, and the settlement must stay the fee's only "
+                                        + "writer (never a retroactive fee). Credit after the settlement event "
+                                        + "lands instead.");
+                    }
+                });
     }
 }

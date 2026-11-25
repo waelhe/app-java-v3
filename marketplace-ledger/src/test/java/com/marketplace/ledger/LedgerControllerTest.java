@@ -20,6 +20,9 @@ class LedgerControllerTest {
     @Mock
     private LedgerService ledgerService;
 
+    @Mock
+    private LedgerPaymentEventListener settlementListener;
+
     @InjectMocks
     private LedgerController controller;
 
@@ -36,6 +39,26 @@ class LedgerControllerTest {
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isSameAs(balance);
+    }
+
+    @Test
+    void creditProviderRefusesTheSettlementAmbiguousTargetBeforeWriting() {
+        // CodeRabbit round 5 (2026-11-15T08:27Z): the one state a manual
+        // credit must never create — a zero-commission fee-bearing order
+        // intent — is refused BEFORE any write: the guard throws
+        // (IllegalArgumentException → the VAL-001 400 path) and the
+        // credit itself never runs.
+        UUID providerId = UUID.randomUUID();
+        UUID paymentIntentId = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("ambiguous"))
+                .when(settlementListener).assertCreditTargetIsNotSettlementAmbiguous(paymentIntentId);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> controller.creditProvider(providerId, paymentIntentId, 5000, "SAR"))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.mockito.Mockito.verify(ledgerService, org.mockito.Mockito.never())
+                .creditFromPayment(org.mockito.Mockito.any(), org.mockito.Mockito.any(),
+                        org.mockito.Mockito.anyLong(), org.mockito.Mockito.any());
     }
 
     @Test

@@ -99,6 +99,49 @@ public class LedgerEntry extends BaseEntity {
                 amountCents, currency);
     }
 
+    /**
+     * A1 (owner-gate batch 6a — the ADR-0013 D4 execution): the
+     * platform-delivery fee debit — the checkout-frozen fee the ONE order
+     * intent collected, charged to the seller's balance at settlement so
+     * the platform keeps it to fund the carrier. The disclosure shape is
+     * the commission debit's own (the seller's statement reads it).
+     */
+    public static LedgerEntry deliveryFeeDebit(UUID providerId, UUID sourceId, long amountCents, String currency) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.DELIVERY_FEE_DEBIT,
+                amountCents, currency);
+    }
+
+    /**
+     * F-832-1 (the 2026-11-14 adversarial behavioral review, P1): the
+     * full refund's delivery-fee reversal credit — the mirror image of
+     * the settlement's DELIVERY_FEE_DEBIT, in the original currency.
+     * The disclosure shape is the commission reversal's own (the
+     * seller's statement reads the pair it reverses).
+     */
+    public static LedgerEntry deliveryFeeReversalCredit(UUID providerId, UUID sourceId, long amountCents, String currency) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT,
+                amountCents, currency);
+    }
+
+    /**
+     * Major-2 (CodeRabbit round 8 on the D4 modeling branch — the
+     * 2026-11-20T17:53Z review, Data Integrity): the ORDER settlement's
+     * own ZERO-commission decision of record — a NON-money marker row
+     * (amount ALWAYS zero, no balance movement) written by the
+     * settlement transaction in the SAME write that creates the
+     * PAYMENT_CREDIT row. It is the only admissible evidence for the
+     * refund gate's legacy null-rate path: a decision inferred from the
+     * live configuration rate is never a settlement's own decision. The
+     * source id is the DETERMINISTIC key the service derives
+     * ({@code UUID.nameUUIDFromBytes("settlement-zero-commission-<intentId>")})
+     * — the commission/refund siblings' own V82 discipline — so the V19
+     * {@code source_id UNIQUE} index makes replays structural no-ops.
+     */
+    public static LedgerEntry settlementZeroCommission(UUID providerId, UUID sourceId, String currency) {
+        return new LedgerEntry(UUID.randomUUID(), providerId, sourceId, LedgerEntryType.SETTLEMENT_ZERO_COMMISSION,
+                0L, currency);
+    }
+
     @Override public UUID getId(){return id;}
     public UUID getProviderId(){return providerId;}
     public UUID getSourceId(){return sourceId;}

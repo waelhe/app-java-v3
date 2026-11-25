@@ -12,10 +12,12 @@ import java.util.UUID;
  * {@link #from} keeps it consistent with the amounts it displays:
  * <b>credits render positive</b> — {@code PAYMENT_CREDIT} and the full
  * refund's {@code COMMISSION_REVERSAL_CREDIT} (CodeRabbit round 3 — both
- * book through {@code balance.credit}) — while <b>debits render
- * negative</b> — {@code COMMISSION_DEBIT}, {@code REFUND_DEBIT} and
- * {@code AD_DEBIT} — so a client summing the page reproduces the balance
- * exactly (the L20 statement contract).
+ * book through {@code balance.credit}) and {@code DELIVERY_FEE_REVERSAL_CREDIT}
+ * (F-832-1 — the refund's fee mirror, the same {@code balance.credit} leg) —
+ * while <b>debits render negative</b> — {@code COMMISSION_DEBIT},
+ * {@code DELIVERY_FEE_DEBIT}, {@code REFUND_DEBIT} and {@code AD_DEBIT} —
+ * so a client summing the page reproduces the balance exactly (the L20
+ * statement contract).
  *
  * <p><b>R9 (comprehensive-review-ar-fix plan §4/R9):</b> each movement
  * carries its ISO 4217 currency — a client summing the page reproduces the
@@ -36,6 +38,7 @@ public record LedgerEntryResponse(
                 entry.getEntryType().name(),
                 entry.getEntryType() == LedgerEntryType.PAYMENT_CREDIT
                         || entry.getEntryType() == LedgerEntryType.COMMISSION_REVERSAL_CREDIT
+                        || entry.getEntryType() == LedgerEntryType.DELIVERY_FEE_REVERSAL_CREDIT
                         ? entry.getAmountCents()
                         : -entry.getAmountCents(),
                 entry.getCurrency(),

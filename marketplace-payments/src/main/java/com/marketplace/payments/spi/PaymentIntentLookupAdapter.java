@@ -58,6 +58,19 @@ public class PaymentIntentLookupAdapter implements PaymentIntentLookupPort {
                 .orElse(false);
     }
 
+    /**
+     * A1 (owner-gate batch 6a — the event binding): the order's OFFICIAL
+     * intent — the one {@code OrderPaymentPort} created for the frozen
+     * payable. The {@code findByOrderId} read the settled-proof already
+     * walks (the machine's one-intent-per-order design — the port's own
+     * idempotent creation contract); the miss answers empty (the honest
+     * negative the caller fails closed on).
+     */
+    @Override
+    public Optional<PaymentIntentDetails> findCurrentByOrderId(UUID orderId) {
+        return paymentIntentRepository.findByOrderId(orderId).map(PaymentIntentLookupAdapter::toDetails);
+    }
+
     private static PaymentIntentDetails toDetails(PaymentIntent i) {
         return new PaymentIntentDetails(i.getId(), i.getBookingId(), i.getConsumerId(), i.getAdCampaignId(),
                 i.getStatus().name(), i.getOrigin(), i.getAmountCents(), i.getCurrency(), i.getOrderId(),
