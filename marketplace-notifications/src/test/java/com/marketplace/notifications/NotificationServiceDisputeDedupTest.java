@@ -142,6 +142,7 @@ class NotificationServiceDisputeDedupTest {
         verify(deliveryLedger).recordDelivery(DISPUTE_ID, OPENER_ID,
                 com.marketplace.notifications.routing.NotificationDeliveryChannel.WS);
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
+        verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -213,6 +214,7 @@ class NotificationServiceDisputeDedupTest {
         verify(deliveryLedger).recordDelivery(deterministicKey(), OPENER_ID,
                 com.marketplace.notifications.routing.NotificationDeliveryChannel.WS);
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
+        verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any(), any());
     }
 
     private UUID deterministicKey() {
