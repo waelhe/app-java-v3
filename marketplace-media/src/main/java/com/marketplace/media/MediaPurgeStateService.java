@@ -106,23 +106,42 @@ public class MediaPurgeStateService {
      * pending. A concurrent purge's newly captured rows stay retryable.
      *
      * <p>The Envers mirrors leave with the terminal state, in the same
-     * transaction (rulebook B5 "base tables + mirrors" — the reviews
-     * adapter's {@code reviews_aud} scrub and b-4's {@code users_aud}
-     * deletion are the family precedent): {@code media_assets_aud} /
-     * {@code review_media_aud} rows are pure metadata mirrors (object keys,
-     * owner id — no authored text), and this purge's own
-     * {@code markPending}/{@code markPurged} updates run through
-     * {@code JdbcTemplate}, so no new revisions are written to supersede
-     * them; the last revisions of the erased subject's rows are deleted
-     * wholesale, exactly as b-4 deletes {@code users_aud}.</p>
+     * transaction and with the same batch scoping (rulebook B5 "base tables
+     * + mirrors" — the reviews adapter's {@code reviews_aud} scrub and b-4's
+     * {@code users_aud} deletion are the family precedent): the captured
+     * ids' revisions in {@code media_assets_aud} / {@code review_media_aud}
+     * are deleted with the rows they mirror — a subject-broad delete would
+     * instead touch an overlapping purge's not-yet-finalized rows, the exact
+     * discipline this service's own tests pin. An empty batch issues no
+     * statement at all. The mirrors are pure metadata (object keys, owner
+     * id — no authored text) and this purge's updates run through
+     * {@code JdbcTemplate}, so no new revisions supersede them.</p>
      */
     @Transactional
     public int markPurged(UUID userId, PurgeBatch batch) {
         int assets = markPurged("media_assets", "provider_id", userId, batch.mediaAssetIds());
         int reviewMedia = markPurged("review_media", "uploader_id", userId, batch.reviewMediaIds());
-        jdbcTemplate.update("DELETE FROM media_assets_aud WHERE provider_id = ?", userId);
-        jdbcTemplate.update("DELETE FROM review_media_aud WHERE uploader_id = ?", userId);
+        deleteMirrors("media_assets_aud", "provider_id", userId, batch.mediaAssetIds());
+        deleteMirrors("review_media_aud", "uploader_id", userId, batch.reviewMediaIds());
         return assets + reviewMedia;
+    }
+
+    /** Deletes the captured ids' Envers revisions, in the same 1,000-id batches. */
+    private void deleteMirrors(String table, String ownerColumn, UUID userId, List<UUID> ids) {
+        if (ids.isEmpty()) {
+            return;
+        }
+        for (int start = 0; start < ids.size(); start += UPDATE_BATCH_SIZE) {
+            List<UUID> chunk = ids.subList(start, Math.min(start + UPDATE_BATCH_SIZE, ids.size()));
+            String placeholders = String.join(",", java.util.Collections.nCopies(chunk.size(), "?"));
+            String sql = "DELETE FROM " + table + " WHERE " + ownerColumn + " = ? AND id IN (" + placeholders + ")";
+            Object[] args = new Object[chunk.size() + 1];
+            args[0] = userId;
+            for (int i = 0; i < chunk.size(); i++) {
+                args[i + 1] = chunk.get(i);
+            }
+            jdbcTemplate.update(sql, args);
+        }
     }
 
     private void markPending(String table, String ownerColumn, UUID userId, List<UUID> ids) {

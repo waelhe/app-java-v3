@@ -147,12 +147,21 @@ class MediaPurgeStateServiceTest {
         assertThat(result).isEqualTo(1_001);
         org.mockito.ArgumentCaptor<Object[]> arguments =
                 org.mockito.ArgumentCaptor.forClass(Object[].class);
-        verify(jdbcTemplate, org.mockito.Mockito.times(2)).update(anyString(), arguments.capture());
-        assertThat(arguments.getAllValues()).hasSize(2);
+        // B5 (base tables + mirrors): the 1,001-row finalize now issues FOUR
+        // bounded statements — the base UPDATEs (1,000-id chunk + 1-id chunk)
+        // and the Envers-mirror DELETEs for the SAME captured ids, chunked
+        // by the same 1,000 ceiling (never a broad subject-scoped delete —
+        // an overlapping purge's rows stay untouched).
+        verify(jdbcTemplate, org.mockito.Mockito.times(4)).update(anyString(), arguments.capture());
+        assertThat(arguments.getAllValues()).hasSize(4);
         assertThat(arguments.getAllValues().get(0)).hasSize(1_001);
         assertThat(arguments.getAllValues().get(1)).hasSize(2);
+        assertThat(arguments.getAllValues().get(2)).hasSize(1_001);
+        assertThat(arguments.getAllValues().get(3)).hasSize(2);
         assertThat(arguments.getAllValues().get(0)[0]).isEqualTo(userId);
         assertThat(arguments.getAllValues().get(1)[0]).isEqualTo(userId);
+        assertThat(arguments.getAllValues().get(2)[0]).isEqualTo(userId);
+        assertThat(arguments.getAllValues().get(3)[0]).isEqualTo(userId);
     }
 
     @Test
