@@ -151,8 +151,9 @@ class MediaPurgeEnversMirrorsIntegrationTest {
                 .isEqualTo("PURGED");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT version FROM media_assets WHERE id = ?", Long.class, asset.getId()))
-                .as("rulebook B5: the purge statement advances the row version")
-                .isEqualTo(assetVersionBefore + 1);
+                .as("rulebook B5: the purge statements advance the row version — PURGE_PENDING "
+                        + "then PURGED are two transitions, so the row advanced twice")
+                .isEqualTo(assetVersionBefore + 2);
 
         // The 833-05 law itself: the mirrors left with the terminal state.
         assertThat(jdbcTemplate.queryForObject(
