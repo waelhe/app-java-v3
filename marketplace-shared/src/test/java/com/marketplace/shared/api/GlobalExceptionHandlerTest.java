@@ -6,6 +6,8 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.List;
 
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.RateLimiter;
@@ -232,6 +234,29 @@ class GlobalExceptionHandlerTest {
         var ex = CallNotPermittedException.createCallNotPermittedException(CircuitBreaker.ofDefaults("test"));
         var request = new StubHttpServletRequest("/api/bookings");
         var response = handler.handleCircuitBreakerOpen(ex, request);
+
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
+        assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/service-unavailable"));
+        assertThat(response.getProperties().get("errorCode")).isEqualTo("SU-001");
+        assertThat(response.getProperties().get("category")).isEqualTo("availability");
+    }
+
+    /**
+     * CodeRabbit round 7 on #828, pinned by the 2026-11-28 adversarial
+     * verification leg: a saturated shared bulkhead (BulkheadFullException
+     * from the refundCarriers gate's max-wait expiry) maps to the SAME 503
+     * SERVICE_UNAVAILABLE masked answer as the open circuit — a capacity
+     * state, never a client fault, with the same retry-later posture and
+     * no internal state leak. The exception is built through resilience4j's
+     * own documented factory (createBulkheadFullException) so the handler
+     * is exercised on the real type the aspect throws.
+     */
+    @Test
+    void handleBulkheadSaturation_returnsServiceUnavailable() {
+        var ex = BulkheadFullException.createBulkheadFullException(
+                Bulkhead.ofDefaults("refundCarriers"));
+        var request = new StubHttpServletRequest("/api/v1/returns");
+        var response = handler.handleBulkheadSaturation(ex, request);
 
         assertThat(response.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
         assertThat(response.getType()).isEqualTo(URI.create("https://marketplace.com/errors/service-unavailable"));
