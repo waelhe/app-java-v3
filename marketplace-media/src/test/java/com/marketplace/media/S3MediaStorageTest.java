@@ -605,8 +605,20 @@ class S3MediaStorageTest {
 
             storage.deleteObjects(java.util.List.of(key));
 
+            // Nitpick (the full review 2026-11-28): the pagination mock answers
+            // the second page regardless of the request's markers, so the
+            // truncation-continuation contract needs the markers asserted, not
+            // just the call count — a regression that re-reads page one instead
+            // of following the markers would otherwise stay green.
+            var listingCaptor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class);
             verify(client, org.mockito.Mockito.times(2))
-                    .listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class));
+                    .listObjectVersions(listingCaptor.capture());
+            org.assertj.core.api.Assertions.assertThat(listingCaptor.getAllValues().get(0).keyMarker()).isNull();
+            org.assertj.core.api.Assertions.assertThat(listingCaptor.getAllValues().get(0).versionIdMarker()).isNull();
+            org.assertj.core.api.Assertions.assertThat(listingCaptor.getAllValues().get(1).keyMarker()).isEqualTo(key);
+            org.assertj.core.api.Assertions.assertThat(listingCaptor.getAllValues().get(1).versionIdMarker())
+                    .isEqualTo("v1");
             var captor = org.mockito.ArgumentCaptor.forClass(
                     software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
             verify(client).deleteObjects(captor.capture());

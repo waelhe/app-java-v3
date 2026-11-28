@@ -293,6 +293,16 @@ public class MediaService {
                 .orElseThrow(() -> new ResourceNotFoundException("Media not found: " + mediaId));
         verifyAssetOwnership(asset, authentication);
         if (asset.getStatus() != MediaAssetStatus.PENDING_UPLOAD) {
+            if (asset.getStatus() == MediaAssetStatus.UPLOADED) {
+                // F5 (CodeRabbit full review 2026-11-28): an already-confirmed
+                // upload re-answers the SAME successful confirmation result —
+                // the client's retry gets its view (origin + read link), never
+                // a 409 for a state it already achieved. The decision rides
+                // the state read under the row lock this method already holds;
+                // PURGE_PENDING, PURGED and every other state keep the honest
+                // 409 (an erased subject's asset must never re-answer a link).
+                return toView(asset, s3.presignDownload(asset.getObjectKey()));
+            }
             throw new ConflictException("Media upload is not pending confirmation: " + mediaId);
         }
         if (asset.getPostId() != null && !currentUserProvider.isAdmin(authentication)) {
@@ -307,17 +317,30 @@ public class MediaService {
         // or the purge commits first and this confirmation is rejected.
         String uploadObjectKey = asset.getUploadObjectKey() == null
                 ? asset.getObjectKey() : asset.getUploadObjectKey();
-        boolean verified = s3.verifyUploaded(uploadObjectKey, asset.getContentType(), asset.getSizeBytes());
-        if (!verified) {
-            throw new BadRequestException(
-                    "Object not found in storage (or type/size mismatch) for media: " + mediaId);
-        }
         boolean promotedFromStaging = !uploadObjectKey.equals(asset.getObjectKey());
         if (promotedFromStaging) {
-            // This copy is idempotent: if the DB transaction rolls back, the
-            // staging object remains and a retry safely overwrites the final key.
+            // F3 (CodeRabbit full review 2026-11-28): the staging path's atomic
+            // conditional copy IS the verification — copyVerifiedObject heads
+            // the staged object, checks size/type/etag, and copies under
+            // copySourceIfMatch with a precise taxonomy (404 → "no longer
+            // available", drift → "changed before it could be published",
+            // concurrent replace → 412 → 409 "changed during confirmation").
+            // The pre-fix outer verifyUploaded HEAD was a redundant round trip
+            // whose generic 400 could also mask the copy's own more precise
+            // answers. This copy is idempotent: if the DB transaction rolls
+            // back, the staging object remains and a retry safely overwrites
+            // the final key.
             s3.copyVerifiedObject(uploadObjectKey, asset.getObjectKey(),
                     asset.getContentType(), asset.getSizeBytes());
+        } else {
+            // F3's kept half: the direct path (the legacy rows whose upload
+            // key IS the final key) has nothing to promote — the standalone
+            // verifyUploaded HEAD remains its anti-forgery gate.
+            boolean verified = s3.verifyUploaded(uploadObjectKey, asset.getContentType(), asset.getSizeBytes());
+            if (!verified) {
+                throw new BadRequestException(
+                        "Object not found in storage (or type/size mismatch) for media: " + mediaId);
+            }
         }
         asset.markUploaded();
         if (promotedFromStaging) {

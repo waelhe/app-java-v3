@@ -349,7 +349,14 @@ class MediaUploadFlowIntegrationTest {
         UUID listingId = UUID.randomUUID();
         mockOwner(userId, providerId, listingId);
         when(storage.presignUpload(anyString(), anyString())).thenReturn("https://u");
-        when(storage.verifyUploaded(anyString(), anyString(), any(Long.class))).thenReturn(false);
+        // F3 (the full review 2026-11-28): the staging path's anti-forgery gate
+        // is now the atomic conditional copy itself — copyVerifiedObject's
+        // precise 404-shaped BadRequest ("Staged upload is no longer available
+        // for confirmation") replaces the old outer verifyUploaded HEAD's
+        // generic false on this journey's staging key.
+        org.mockito.Mockito.doThrow(new com.marketplace.shared.api.BadRequestException(
+                        "Staged upload is no longer available for confirmation"))
+                .when(storage).copyVerifiedObject(anyString(), anyString(), anyString(), any(Long.class));
 
         var view = mediaService.requestUpload(listingId, "image/webp", 512L, null);
 

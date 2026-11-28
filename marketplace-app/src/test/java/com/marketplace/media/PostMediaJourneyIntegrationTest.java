@@ -84,8 +84,14 @@ class PostMediaJourneyIntegrationTest {
         when(currentUserProvider.isAdmin(any(Authentication.class))).thenReturn(false);
         when(storage.presignUpload(anyString(), anyString())).thenReturn("https://signed-put");
         when(storage.presignDownload(anyString())).thenReturn("https://signed-get");
-        when(storage.verifyUploaded(anyString(), anyString(), eq(2048L))).thenReturn(true);
-        when(storage.verifyUploaded(anyString(), anyString(), eq(4096L))).thenReturn(false);
+        // F3 (the full review 2026-11-28): the staging confirm's anti-forgery
+        // gate is the atomic conditional copy itself — the journey's failed
+        // branch (the 4096-byte object that "never landed") now stubs the
+        // copy's own precise 404-shaped BadRequest for that size. The old
+        // verifyUploaded true/false pair no longer sits on the confirm path.
+        org.mockito.Mockito.doThrow(new com.marketplace.shared.api.BadRequestException(
+                        "Staged upload is no longer available for confirmation"))
+                .when(storage).copyVerifiedObject(anyString(), anyString(), anyString(), eq(4096L));
     }
 
     /**

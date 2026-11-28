@@ -163,20 +163,36 @@ public class ReviewMediaService {
                 .orElseThrow(() -> new ResourceNotFoundException("Review media not found: " + mediaId));
         verifyAssetOwnership(asset, authentication);
         if (asset.getStatus() != MediaAssetStatus.PENDING_UPLOAD) {
+            if (asset.getStatus() == MediaAssetStatus.UPLOADED) {
+                // F5 (CodeRabbit full review 2026-11-28): the review-media twin
+                // of MediaService's idempotent confirm — an already-confirmed
+                // upload re-answers the same view, never a 409 for a state it
+                // already achieved; PURGE_PENDING/PURGED keep the honest 409.
+                return toView(asset, s3.presignDownload(asset.getObjectKey()));
+            }
             throw new ConflictException("Review media upload is not pending confirmation: " + mediaId);
         }
 
         String uploadObjectKey = asset.getUploadObjectKey() == null
                 ? asset.getObjectKey() : asset.getUploadObjectKey();
-        boolean verified = s3.verifyUploaded(uploadObjectKey, asset.getContentType(), asset.getSizeBytes());
-        if (!verified) {
-            throw new BadRequestException(
-                    "Object not found in storage (or type/size mismatch) for media: " + mediaId);
-        }
         boolean promotedFromStaging = !uploadObjectKey.equals(asset.getObjectKey());
         if (promotedFromStaging) {
+            // F3 (CodeRabbit full review 2026-11-28): the staging path's atomic
+            // conditional copy (copyVerifiedObject's HEAD + size/type/etag checks
+            // + copySourceIfMatch) IS the verification — the pre-fix outer
+            // verifyUploaded HEAD was a redundant round trip whose generic 400
+            // could mask the copy's own more precise answers.
             s3.copyVerifiedObject(uploadObjectKey, asset.getObjectKey(),
                     asset.getContentType(), asset.getSizeBytes());
+        } else {
+            // F3's kept half: the direct path (legacy rows whose upload key IS
+            // the final key) has nothing to promote — verifyUploaded remains
+            // its anti-forgery gate.
+            boolean verified = s3.verifyUploaded(uploadObjectKey, asset.getContentType(), asset.getSizeBytes());
+            if (!verified) {
+                throw new BadRequestException(
+                        "Object not found in storage (or type/size mismatch) for media: " + mediaId);
+            }
         }
         asset.markUploaded();
         if (promotedFromStaging) {

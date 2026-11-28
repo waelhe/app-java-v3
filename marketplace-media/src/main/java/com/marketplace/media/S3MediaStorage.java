@@ -297,6 +297,19 @@ final class S3MediaStorage implements AutoCloseable {
     /**
      * G3: permanently removes known media objects.
      *
+     * <p><b>Required IAM permissions (F6, the full review 2026-11-28):</b> the
+     * storage identity this class documents must carry, alongside the read/write
+     * pair the upload paths need, the erasure path's own set —
+     * {@code s3:GetBucketVersioning} on the bucket (the versioned/unversioned
+     * dispatch below), and for ENABLED/SUSPENDED buckets
+     * {@code s3:ListBucketVersions} (the exact-key version enumeration) plus
+     * {@code s3:DeleteObjectVersion} (each version and delete marker deleted by
+     * its explicit versionId). The plain unversioned path (R2, or a bucket with
+     * no versioning status) needs only {@code s3:DeleteObject}. A principal
+     * missing any of these turns the corresponding leg into the fail-closed
+     * error this method documents — the tombstone stays PURGE_PENDING and the
+     * resubmission sweep retries.</p>
+     *
      * <p>Cloudflare R2's current S3 compatibility matrix does not implement
      * GetBucketVersioning or ListObjectVersions and does not support object
      * versioning/Object Lock. Its documented bucket model is therefore handled
