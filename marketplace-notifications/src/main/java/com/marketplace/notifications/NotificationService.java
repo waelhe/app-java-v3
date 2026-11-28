@@ -314,7 +314,7 @@ public class NotificationService {
      * unconditionally, so the delivery contract stays one shape for
      * every caller.
      */
-    public void onPostCommented(UUID postId, UUID postAuthorId) {
+    public void onPostCommented(UUID postId, UUID commentId, UUID postAuthorId) {
         // B-11: the composed text rides the module's MessageSource channel
         // at the platform locale.
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
@@ -327,7 +327,14 @@ public class NotificationService {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_COMMENTED.subject", platform),
                     "email/notification", Map.of("message", message),
-                    deliveryKey("POST_COMMENTED", postAuthorId, postId));
+                    // R7 (the CodeRabbit round on dc984abf): the COMMENT's
+                    // own id is the occurrence identity — two members
+                    // commenting on the same post share the body's shape but
+                    // are two independent occurrences (a same-key/different-
+                    // body replay within 24h would 409 at Resend and swallow
+                    // the second author's email); the same comment redelivered
+                    // keeps its key.
+                    deliveryKey("POST_COMMENTED", postAuthorId, commentId));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_COMMENTED, message);
         sendPush(postAuthorId, NotificationType.POST_COMMENTED, message);
@@ -417,7 +424,7 @@ public class NotificationService {
      * delivers unconditionally, so the delivery contract stays one shape
      * for every caller.
      */
-    public void onPostReacted(UUID postId, UUID postAuthorId) {
+    public void onPostReacted(UUID postId, UUID reactionId, UUID postAuthorId) {
         // B-11: the composed text rides the module's MessageSource channel
         // at the platform locale.
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
@@ -430,7 +437,10 @@ public class NotificationService {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_REACTED.subject", platform),
                     "email/notification", Map.of("message", message),
-                    deliveryKey("POST_REACTED", postAuthorId, postId));
+                    // R8 (the CodeRabbit round on dc984abf): the REACTION
+                    // row's own id is the occurrence identity — same law as
+                    // the comment leg above.
+                    deliveryKey("POST_REACTED", postAuthorId, reactionId));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
         sendPush(postAuthorId, NotificationType.POST_REACTED, message);

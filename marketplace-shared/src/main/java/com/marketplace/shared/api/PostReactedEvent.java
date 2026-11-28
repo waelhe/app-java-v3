@@ -27,6 +27,7 @@ import java.util.UUID;
  */
 public record PostReactedEvent(
         UUID postId,
+        UUID reactionId,
         UUID reactorId,
         UUID postAuthorId
 ) {

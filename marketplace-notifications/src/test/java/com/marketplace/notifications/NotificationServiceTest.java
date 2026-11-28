@@ -787,6 +787,49 @@ class NotificationServiceTest {
     }
 
     @Test
+    void commentAndReactionKeysDistinguishIndependentOccurrences() {
+        // R7/R8 (the CodeRabbit round on dc984abf): two members commenting
+        // on — or thanking — the same post share the MESSAGE's shape but are
+        // two independent occurrences; a key riding only postId would have
+        // Resend return the first mail's result for the second within 24h.
+        // The comment/reaction row's OWN id is the occurrence identity; the
+        // same occurrence redelivered keeps its key.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID postId = create(UUID.class);
+        UUID postAuthorId = PROVIDER_ID;
+        UUID firstCommentId = create(UUID.class);
+        UUID secondCommentId = create(UUID.class);
+        UUID firstReactionId = create(UUID.class);
+        UUID secondReactionId = create(UUID.class);
+
+        service.onPostCommented(postId, firstCommentId, postAuthorId);
+        service.onPostCommented(postId, secondCommentId, postAuthorId);
+        service.onPostCommented(postId, secondCommentId, postAuthorId);
+        service.onPostReacted(postId, firstReactionId, postAuthorId);
+        service.onPostReacted(postId, secondReactionId, postAuthorId);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(5)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-POST_COMMENTED-" + postAuthorId + "-" + firstCommentId,
+                "marketplace-email-POST_COMMENTED-" + postAuthorId + "-" + secondCommentId,
+                // the SAME comment redelivered: the SAME key (retry dedup)
+                "marketplace-email-POST_COMMENTED-" + postAuthorId + "-" + secondCommentId,
+                "marketplace-email-POST_REACTED-" + postAuthorId + "-" + firstReactionId,
+                "marketplace-email-POST_REACTED-" + postAuthorId + "-" + secondReactionId);
+    }
+
+    @Test
     void onPostCommentedAlertsThePostAuthorOnEveryDefaultChannel() {
         // L42 (neighborhood community plan §5): the recipient is the post's
         // author id — the users.id space, the same seam onLeadReceived uses.
@@ -805,7 +848,7 @@ class NotificationServiceTest {
 
         UUID postId = create(UUID.class);
 
-        service.onPostCommented(postId, PROVIDER_ID);
+        service.onPostCommented(postId, create(UUID.class), PROVIDER_ID);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
@@ -904,7 +947,7 @@ class NotificationServiceTest {
 
         UUID postId = create(UUID.class);
 
-        service.onPostReacted(postId, PROVIDER_ID);
+        service.onPostReacted(postId, create(UUID.class), PROVIDER_ID);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);

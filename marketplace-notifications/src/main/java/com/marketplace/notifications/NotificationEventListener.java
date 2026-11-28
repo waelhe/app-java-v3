@@ -189,9 +189,9 @@ public class NotificationEventListener {
                     event.postId());
             return;
         }
-        notificationService.onPostCommented(event.postId(), event.postAuthorId());
-        log.info("Notification sent for post comment: postId={}, author={}",
-                event.postId(), event.postAuthorId());
+        notificationService.onPostCommented(event.postId(), event.commentId(), event.postAuthorId());
+        log.info("Notification sent for post comment: postId={}, commentId={}, author={}",
+                event.postId(), event.commentId(), event.postAuthorId());
     }
 
     /**
@@ -265,9 +265,9 @@ public class NotificationEventListener {
                     event.postId());
             return;
         }
-        notificationService.onPostReacted(event.postId(), event.postAuthorId());
-        log.info("Notification sent for post reaction: postId={}, author={}",
-                event.postId(), event.postAuthorId());
+        notificationService.onPostReacted(event.postId(), event.reactionId(), event.postAuthorId());
+        log.info("Notification sent for post reaction: postId={}, reactionId={}, author={}",
+                event.postId(), event.reactionId(), event.postAuthorId());
     }
 
     /**
