@@ -153,7 +153,16 @@ public class GlobalExceptionHandler {
         return problem(ApiErrorTaxonomy.AUTHN, "Authentication required", request, null, "detail");
     }
 
-    @ExceptionHandler({ResourceNotFoundException.class, BadRequestException.class, ConflictException.class, ServiceUnavailableException.class, TooManyRequestsException.class})
+    // 819-2 (the independent review's round 2): the family door matches the
+    // BASE class — the GraphQL twin's own branch (GraphQlExceptionResolver
+    // matches `instanceof ApiProblemDetailException`) — so a future family
+    // member (a new ApiProblemDetailException subclass) is classified on BOTH
+    // transports, never 500-on-REST-while-GraphQL-classifies. The handler body
+    // is member-agnostic (taxonomy() + the problem-detail body), and Spring's
+    // documented @ExceptionHandler semantics match subclasses of the declared
+    // exception type. The five previously enumerated members remain covered
+    // identically (verified by the existing handler tests).
+    @ExceptionHandler(ApiProblemDetailException.class)
     public ProblemDetail handleApiProblemDetail(ApiProblemDetailException ex, HttpServletRequest request) {
         ProblemDetail pd = ex.getBody();
         pd.setInstance(URI.create(request.getRequestURI()));
