@@ -349,6 +349,27 @@ class GlobalExceptionHandlerTest {
     // ------------------------------------------------------------------
 
     /**
+     * 819-2 (the independent review's round 2): the REST family door matches
+     * the BASE class, mirroring the GraphQL resolver's own family branch — a
+     * narrowing back to an explicit member enumeration would reopen the
+     * divergence where a future {@code ApiProblemDetailException} subclass is
+     * classified on GraphQL but falls to the fallback 500 on REST. The pin is
+     * reflective: the annotation's declared value must be exactly the base
+     * class.
+     */
+    @Test
+    void theApiProblemDetailDoorMatchesTheFamilyBase_819_2() throws NoSuchMethodException {
+        Method door = GlobalExceptionHandler.class.getMethod("handleApiProblemDetail",
+                ApiProblemDetailException.class, HttpServletRequest.class);
+        org.springframework.web.bind.annotation.ExceptionHandler mapping =
+                door.getAnnotation(org.springframework.web.bind.annotation.ExceptionHandler.class);
+        assertThat(mapping).isNotNull();
+        assertThat(mapping.value())
+                .as("the REST family door must declare the base class (the GraphQL twin's own branch)")
+                .containsExactly(ApiProblemDetailException.class);
+    }
+
+    /**
      * The official doc's prescription, verbatim (mvc-ann-rest-exceptions):
      * "you'll need to ensure your handler is ordered ahead of the one
      * configured by Spring Boot whose order is 0" — the house advice carries

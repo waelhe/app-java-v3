@@ -140,14 +140,18 @@ For domain/runtime failures resolved by the central GraphQL exception resolver, 
 |---|---|---|---|
 | Not found (`ResourceNotFoundException`) | `NF-001` | `not-found` | `NOT_FOUND` |
 | Validation (`IllegalArgumentException`, `ConstraintViolationException`) | `VAL-001` | `validation` | `BAD_REQUEST` |
+| Validation family (`BadRequestException` — the problem-detail family branch, D1) | `VAL-001` | `validation` | `BAD_REQUEST` |
 | Domain conflict (`IllegalStateException`) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
+| Domain conflict family (`ConflictException` — the problem-detail family branch, D1) | `CONFLICT-001` | `conflict` | `BAD_REQUEST` |
 | Authorization (`AccessDeniedException`) | `AUTHZ-001` | `authz` | `FORBIDDEN` |
 | Rate limit (`RequestNotPermitted`, resilience4j instances) | `RL-001` | `rate-limit` | `BAD_REQUEST` |
+| Rate limit family (`TooManyRequestsException` — the problem-detail family branch, D1) | `RL-001` | `rate-limit` | `BAD_REQUEST` |
+| Availability family (`ServiceUnavailableException` — the problem-detail family branch, D1; the five-value vocabulary has no availability value, so 5xx rides `INTERNAL_ERROR`) | `SU-001` | `availability` | `INTERNAL_ERROR` |
 | Unknown/internal (masked) | `INT-001` | `internal` | `INTERNAL_ERROR` |
 
 - The GraphQL-spec `errorType` is derived from spring-graphql's fixed five-value vocabulary (it has no rate-limit or conflict value); the authoritative machine contract is the extensions pair.
 - `traceId`: propagated correlation identifier, included only when `marketplace.graphql.errors.include-trace-id=true`.
-- Rate-limit rejections carry the same fixed sentence REST returns (`Rate limit exceeded. Please try again later.`) — never the limiter's internal instance state.
+- Rate-limit rejections carry the same fixed sentence REST returns (`Rate limit exceeded. Please try again later.`) — never the limiter's internal instance state. The problem-detail family branch (`TooManyRequestsException`, D1) carries the member's own documented domain detail sentence instead — the fixed-sentence rule belongs to the resilience4j `RequestNotPermitted` surface, the family member carries its own detail (each member's `taxonomy()` pair stays the authoritative machine contract on both surfaces).
 
 ### Request-level errors (the layer the resolver never sees)
 
