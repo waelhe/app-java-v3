@@ -326,7 +326,10 @@ public class NotificationEventListener {
      */
     @ApplicationModuleListener
     public void onMembershipVerificationGranted(MembershipVerificationGrantedEvent event) {
-        notificationService.onVerificationGranted(event.userId(), event.locationId());
+        // The membershipId rides the delivery key (the CodeRabbit round on
+        // 376cc11d, R5): a re-granted membership is a NEW occurrence, never
+        // a 24h-dedup collision with the previous membership's email.
+        notificationService.onVerificationGranted(event.membershipId(), event.userId(), event.locationId());
         log.info("Notification sent for membership verification granted: membershipId={}, userId={}, "
                         + "locationId={}", event.membershipId(), event.userId(), event.locationId());
     }

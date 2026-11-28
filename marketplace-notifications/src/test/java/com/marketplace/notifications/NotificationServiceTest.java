@@ -655,12 +655,20 @@ class NotificationServiceTest {
         service.onLoanDisputed(firstDisputeId, loanId, CONSUMER_ID, PROVIDER_ID);
         service.onLoanDisputed(firstDisputeId, loanId, CONSUMER_ID, PROVIDER_ID);
         service.onLoanDisputed(secondDisputeId, otherLoanId, CONSUMER_ID, PROVIDER_ID);
+        // R6 (the 376cc11d round): legacy publications persisted before the
+        // disputeId widening deserialize a null disputeId — the loanId
+        // restores those events' own cycle identity; the literal "null"
+        // must never ride the key (different legacy loans for one recipient
+        // would then share one key and Resend would 409 the second mail).
+        service.onLoanDisputed(null, loanId, CONSUMER_ID, PROVIDER_ID);
+        service.onLoanDisputed(null, otherLoanId, CONSUMER_ID, PROVIDER_ID);
 
         org.mockito.ArgumentCaptor<String> deliveryKeys =
                 org.mockito.ArgumentCaptor.forClass(String.class);
-        // 2 LEAD_RECEIVED + 2 ORDER_CONFIRMED + 6 LOAN_DISPUTED (a redelivered
-        // cycle + a new cycle, each to BOTH parties) = 10 keyed sends.
-        verify(emailService, times(10)).send(anyString(), anyString(), anyString(), anyMap(),
+        // 2 LEAD_RECEIVED + 2 ORDER_CONFIRMED + 10 LOAN_DISPUTED (a
+        // redelivered cycle + a new cycle + two legacy cycles, each to BOTH
+        // parties) = 14 keyed sends.
+        verify(emailService, times(14)).send(anyString(), anyString(), anyString(), anyMap(),
                 deliveryKeys.capture());
         assertThat(deliveryKeys.getAllValues()).containsExactly(
                 "marketplace-email-LEAD_RECEIVED-" + PROVIDER_ID + "-" + firstLeadId,
@@ -675,12 +683,107 @@ class NotificationServiceTest {
                 "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + firstDisputeId,
                 // a NEW dispute cycle: its own keys
                 "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + secondDisputeId,
-                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + secondDisputeId);
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + secondDisputeId,
+                // R6 legacy: null disputeId falls back to the loanId — the
+                // two legacy loans keep DISTINCT keys, never "null"
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + loanId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + loanId,
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + otherLoanId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + otherLoanId);
         // None of these doors may fall back to the transport's content
         // fingerprint (a null key): every captured key is non-null and
         // prefixed with the house format.
         assertThat(deliveryKeys.getAllValues()).allSatisfy(key ->
                 assertThat(key).startsWith("marketplace-email-").doesNotContain("null"));
+    }
+
+    @Test
+    void paymentStateKeysCarryTheRawStateNeverTheLocalizedWord() {
+        // R4 (the CodeRabbit round on 376cc11d, Major): the localized
+        // stateWord (PLATFORM_LOCALE is Arabic — "مكتمل") must NEVER ride the
+        // idempotency key: Java 25's JdkClientHttpRequestFactory rejects a
+        // non-ASCII header value before the send, so the payment-state email
+        // would die before dispatch and abort the WebSocket/Push legs after
+        // it. The key carries the RAW state: two transitions on one intent
+        // are two distinct occurrences; a retry of the same transition keeps
+        // one key.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID paymentIntentId = create(UUID.class);
+        UUID adCampaignId = create(UUID.class);
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(of(com.marketplace.shared.api.PaymentIntentDetails.class)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::paymentIntentId), paymentIntentId)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::consumerId), CONSUMER_ID)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::origin),
+                                com.marketplace.shared.api.PaymentIntentDetails.ORIGIN_AD)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::adCampaignId), adCampaignId).create()));
+
+        service.onPaymentStateChanged(paymentIntentId, "PENDING");
+        service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
+        service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(3)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-PAYMENT_STATE-" + CONSUMER_ID + "-" + paymentIntentId + "-PENDING",
+                "marketplace-email-PAYMENT_STATE-" + CONSUMER_ID + "-" + paymentIntentId + "-COMPLETED",
+                // the SAME transition retried: the SAME key (retry dedup)
+                "marketplace-email-PAYMENT_STATE-" + CONSUMER_ID + "-" + paymentIntentId + "-COMPLETED");
+
+        // The R4 law itself: every key is pure ASCII (header-safe for the
+        // idempotency transport) and carries none of the localized word.
+        String localizedWord = new NotificationTextSource()
+                .paymentStateWord("COMPLETED", NotificationTextSource.PLATFORM_LOCALE);
+        assertThat(deliveryKeys.getAllValues()).allSatisfy(key -> {
+            assertThat(key.chars().allMatch(c -> c < 128))
+                    .as("the idempotency key is pure ASCII (Java 25 header law): %s", key).isTrue();
+            assertThat(key).doesNotContain(localizedWord);
+        });
+    }
+
+    @Test
+    void membershipVerificationKeysDistinguishSeparateMemberships() {
+        // R5 (the CodeRabbit round on 376cc11d): a member who leaves and
+        // rejoins is a NEW membership (a new membershipId); within 24h
+        // Resend would dedup the second verification email into the first
+        // if the key rode only userId+locationId. The membershipId rides
+        // the key; the same grant redelivered keeps one key.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID locationId = create(UUID.class);
+        UUID firstMembershipId = create(UUID.class);
+        UUID secondMembershipId = create(UUID.class);
+
+        service.onVerificationGranted(firstMembershipId, CONSUMER_ID, locationId);
+        service.onVerificationGranted(secondMembershipId, CONSUMER_ID, locationId);
+        service.onVerificationGranted(secondMembershipId, CONSUMER_ID, locationId);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(3)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-MEMBERSHIP_VERIFIED-" + CONSUMER_ID + "-" + firstMembershipId,
+                "marketplace-email-MEMBERSHIP_VERIFIED-" + CONSUMER_ID + "-" + secondMembershipId,
+                // the SAME grant redelivered: the SAME key (retry dedup)
+                "marketplace-email-MEMBERSHIP_VERIFIED-" + CONSUMER_ID + "-" + secondMembershipId);
     }
 
     @Test
@@ -1130,7 +1233,7 @@ class NotificationServiceTest {
 
         UUID locationId = create(UUID.class);
 
-        service.onVerificationGranted(CONSUMER_ID, locationId);
+        service.onVerificationGranted(create(UUID.class), CONSUMER_ID, locationId);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
@@ -1167,7 +1270,7 @@ class NotificationServiceTest {
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
                 preferences);
 
-        service.onVerificationGranted(CONSUMER_ID, create(UUID.class));
+        service.onVerificationGranted(create(UUID.class), CONSUMER_ID, create(UUID.class));
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));

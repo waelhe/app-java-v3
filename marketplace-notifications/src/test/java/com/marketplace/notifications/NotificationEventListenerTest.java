@@ -480,7 +480,9 @@ class NotificationEventListenerTest {
 
         listener.onMembershipVerificationGranted(event);
 
-        verify(notificationService).onVerificationGranted(userId, locationId);
+        // R5: the membershipId rides the delivery key's occurrence — a
+        // re-granted membership is a new occurrence, never a 24h collision.
+        verify(notificationService).onVerificationGranted(membershipId, userId, locationId);
     }
 
     @Test
@@ -494,7 +496,7 @@ class NotificationEventListenerTest {
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
 
         doThrow(new RuntimeException("Notification error"))
-                .when(notificationService).onVerificationGranted(any(), any());
+                .when(notificationService).onVerificationGranted(any(), any(), any());
 
         assertThrows(RuntimeException.class,
                 () -> listener.onMembershipVerificationGranted(event));
