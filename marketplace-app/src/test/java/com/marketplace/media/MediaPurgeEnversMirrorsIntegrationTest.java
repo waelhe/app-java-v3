@@ -2,6 +2,11 @@ package com.marketplace.media;
 
 import test.config.IntegrationContainers;
 
+import com.marketplace.shared.api.ListingPriceProvider;
+import com.marketplace.shared.api.PostLookupPort;
+import com.marketplace.shared.api.ProviderLookupPort;
+import com.marketplace.shared.api.ReviewLookupPort;
+import com.marketplace.shared.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
@@ -56,6 +61,34 @@ class MediaPurgeEnversMirrorsIntegrationTest {
     /** The storage boundary — the purge's tier-2 delete succeeds as a no-op here. */
     @MockitoBean
     S3MediaStorage storage;
+
+    // The module slice's cross-module ports — the MediaUploadFlowIntegration-
+    // Test's own @MockitoBean set: the slice boots the media module alone, so
+    // every port the module's services resolve from outside arrives mocked.
+    @MockitoBean
+    CurrentUserProvider currentUserProvider;
+
+    @MockitoBean
+    ListingPriceProvider listingPriceProvider;
+
+    @MockitoBean
+    com.marketplace.shared.api.ListingPublicStatePort listingPublicStatePort;
+
+    @MockitoBean
+    ProviderLookupPort providerLookupPort;
+
+    @MockitoBean
+    ReviewLookupPort reviewLookupPort;
+
+    @MockitoBean
+    com.marketplace.shared.api.ProductLookupPort productLookupPort;
+
+    @MockitoBean
+    PostLookupPort postLookupPort;
+
+    /** The async thumbnail listener stays a mock — no AFTER_COMMIT races with this test's rows. */
+    @MockitoBean
+    MediaThumbnailListener thumbnailListener;
 
     @Autowired
     private com.marketplace.media.spi.MediaPurgeAdapter mediaPurgeAdapter;

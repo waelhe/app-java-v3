@@ -224,9 +224,11 @@ class AccountErasurePurgeResilienceIntegrationTest {
     /** The isolation witnesses: a review row (comment to purge) + its review_media leg. */
     private UUID seedReviewAndReviewMedia(UUID userId) {
         UUID reviewId = UUID.randomUUID();
+        // V85's dual-mode CHECK (ck_review_origin_booking): an ORGANIC review
+        // carries no booking — the seeded witness needs no booking parents.
         jdbcTemplate.update(
-                "INSERT INTO reviews (id, reviewer_id, provider_id, rating, comment) "
-                        + "VALUES (?, ?, ?, 5, ?)",
+                "INSERT INTO reviews (id, reviewer_id, provider_id, rating, comment, origin) "
+                        + "VALUES (?, ?, ?, 5, ?, 'ORGANIC')",
                 reviewId, userId, userId, AUTHORED_REVIEW_COMMENT);
         jdbcTemplate.update(
                 "INSERT INTO review_media (id, review_id, uploader_id, object_key, content_type, "
