@@ -30,7 +30,7 @@ class EmailServiceTest {
         // validated part of the channel — the unit seam carries a fixed
         // one, mirroring the GreenMail proof test's binding.
         emailService = new EmailService(mailSender, templateEngine,
-                new MailChannelProperties("Marketplace <no-reply@marketplace.test>"));
+                new MailChannelProperties(null, "Marketplace <no-reply@marketplace.test>"));
     }
 
     @Test

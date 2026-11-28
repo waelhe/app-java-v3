@@ -75,6 +75,7 @@ export default defineRailway(() => {
       MAIL_PASSWORD: preserve(),
       MAIL_PORT: preserve(),
       MAIL_USERNAME: preserve(),
+      RESEND_API_KEY: preserve(),
       MANAGEMENT_SERVER_PORT: preserve(),
       MARKETPLACE_CATALOG_VIEWS_IP_HASH_KEY: preserve(),
       MARKETPLACE_MESSAGING_LEADS_IP_HASH_KEY: preserve(),

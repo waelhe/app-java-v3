@@ -12,5 +12,7 @@ import java.util.UUID;
  * <p>Published by the lending module's dispute listener; the notifications
  * module writes both parties' receipts.
  */
-public record LoanDisputeResolvedEvent(UUID loanId, UUID borrowerId, UUID ownerId) {
+// CodeRabbit round on 2d1081f8 (R2): the dispute id rides the event — the
+// resolution CYCLE's identity (see LoanDisputedEvent).
+public record LoanDisputeResolvedEvent(UUID disputeId, UUID loanId, UUID borrowerId, UUID ownerId) {
 }

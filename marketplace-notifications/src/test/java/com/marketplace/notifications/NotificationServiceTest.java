@@ -13,6 +13,7 @@ import org.springframework.security.core.Authentication;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,7 +45,7 @@ class NotificationServiceTest {
                                               CurrentUserProvider currentUserProvider,
                                               UserLookupPort userLookupPort,
                                               Optional<SimpMessagingTemplate> messagingTemplate,
-                                              Optional<com.marketplace.shared.email.EmailService> emailService) {
+                                              Optional<com.marketplace.shared.email.EmailSender> emailService) {
         return createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, messagingTemplate, emailService,
                 defaultPreferences());
@@ -56,7 +57,7 @@ class NotificationServiceTest {
                                               CurrentUserProvider currentUserProvider,
                                               UserLookupPort userLookupPort,
                                               Optional<SimpMessagingTemplate> messagingTemplate,
-                                              Optional<com.marketplace.shared.email.EmailService> emailService,
+                                              Optional<com.marketplace.shared.email.EmailSender> emailService,
                                               NotificationPreferenceService preferences) {
         EmailNotificationService emailNotificationService = new EmailNotificationService(emailService, userLookupPort);
         // B-11: the REAL text source — the production bundles resolve on
@@ -134,7 +135,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -152,9 +153,9 @@ class NotificationServiceTest {
         assertThat(saved.getAllValues().get(1).getMessage())
                 .isEqualTo("طلب حجز جديد: " + bookingId);
         verify(emailService).send(eq(CONSUMER_EMAIL), eq("تم إنشاء الحجز"),
-                eq("email/notification"), eq(java.util.Map.of("message", "تم إنشاء حجزك " + bookingId + ".")));
+                eq("email/notification"), eq(java.util.Map.of("message", "تم إنشاء حجزك " + bookingId + ".")), any());
         verify(emailService).send(eq(PROVIDER_EMAIL), eq("طلب حجز جديد"),
-                eq("email/notification"), eq(java.util.Map.of("message", "طلب حجز جديد " + bookingId + " لخدمتك.")));
+                eq("email/notification"), eq(java.util.Map.of("message", "طلب حجز جديد " + bookingId + " لخدمتك.")), any());
     }
 
     @Test
@@ -164,7 +165,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -174,7 +175,7 @@ class NotificationServiceTest {
 
         service.onBookingCreated(bookingId);
 
-        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
 
@@ -210,7 +211,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -221,8 +222,8 @@ class NotificationServiceTest {
         service.onBookingConfirmed(bookingId);
 
         // One email and one WS push, both addressed to the consumer alone.
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), eq("Booking Confirmed"), anyString(), anyMap());
-        verify(emailService, never()).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), eq("Booking Confirmed"), anyString(), anyMap(), any());
+        verify(emailService, never()).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
         verify(messagingTemplate, times(1))
                 .convertAndSend(eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
     }
@@ -240,7 +241,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
@@ -251,7 +252,7 @@ class NotificationServiceTest {
 
         service.onBookingConfirmed(bookingId);
 
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, times(1)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
@@ -313,7 +314,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
@@ -332,8 +333,8 @@ class NotificationServiceTest {
 
         service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
 
-        verify(emailService, never()).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
         verify(repository, times(2)).save(any(Notification.class));
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
@@ -351,7 +352,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
@@ -363,7 +364,7 @@ class NotificationServiceTest {
         service.onBookingCreated(bookingId);
 
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(repository, times(2)).save(any(Notification.class));
     }
 
@@ -556,7 +557,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -575,7 +576,7 @@ class NotificationServiceTest {
 
         service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
 
-        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, times(2)).send(anyString(), anyString(), anyString(), anyMap(), any());
         verify(messagingTemplate, times(2)).convertAndSend(anyString(), any(WebSocketNotification.class));
     }
 
@@ -590,7 +591,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -603,7 +604,229 @@ class NotificationServiceTest {
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
+    }
+
+    /**
+     * Finding 840-1 (CodeRabbit round 2 on #840, P2): every email door must
+     * carry an OCCURRENCE delivery key — two distinct occurrences of the same
+     * type to the same recipient render byte-identically, and without a key
+     * the transport's fallback content-fingerprint collapses them into ONE
+     * provider idempotency record (the second email silently never goes out
+     * while its event completes as delivered). This pin FAILS on the previous
+     * code: these doors called the 4-arg send (no key argument at all), so
+     * the 5-arg verify below finds zero invocations.
+     */
+    @Test
+    void unkeyedDoorsCarryOccurrenceDeliveryKeysDistinctOccurrences() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        // LEAD_RECEIVED: two leads on the same listing (the door's own event
+        // id is leadId — the fallback fingerprint rendered both identical).
+        UUID listingId = create(UUID.class);
+        UUID firstLeadId = create(UUID.class);
+        UUID secondLeadId = create(UUID.class);
+        service.onLeadReceived(firstLeadId, listingId, PROVIDER_ID);
+        service.onLeadReceived(secondLeadId, listingId, PROVIDER_ID);
+
+        // ORDER_CONFIRMED: two orders for the same consumer.
+        UUID firstOrderId = create(UUID.class);
+        UUID secondOrderId = create(UUID.class);
+        service.onOrderConfirmed(firstOrderId, CONSUMER_ID);
+        service.onOrderConfirmed(secondOrderId, CONSUMER_ID);
+
+        // LOAN_DISPUTED: both parties of one dispute, then a second dispute.
+        // The parties are the two lookup-known users (the mock's map answers
+        // only CONSUMER_ID/PROVIDER_ID — an unknown user resolves empty and
+        // the send leg stays silent by design).
+        UUID loanId = create(UUID.class);
+        UUID otherLoanId = create(UUID.class);
+        UUID firstDisputeId = create(UUID.class);
+        UUID secondDisputeId = create(UUID.class);
+        // R2: the dispute id — the cycle identity — rides the door; the same
+        // dispute redelivered keeps its key, a NEW cycle gets its own.
+        service.onLoanDisputed(firstDisputeId, loanId, CONSUMER_ID, PROVIDER_ID);
+        service.onLoanDisputed(firstDisputeId, loanId, CONSUMER_ID, PROVIDER_ID);
+        service.onLoanDisputed(secondDisputeId, otherLoanId, CONSUMER_ID, PROVIDER_ID);
+        // R6 (the 376cc11d round): legacy publications persisted before the
+        // disputeId widening deserialize a null disputeId — the loanId
+        // restores those events' own cycle identity; the literal "null"
+        // must never ride the key (different legacy loans for one recipient
+        // would then share one key and Resend would 409 the second mail).
+        service.onLoanDisputed(null, loanId, CONSUMER_ID, PROVIDER_ID);
+        service.onLoanDisputed(null, otherLoanId, CONSUMER_ID, PROVIDER_ID);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        // 2 LEAD_RECEIVED + 2 ORDER_CONFIRMED + 10 LOAN_DISPUTED (a
+        // redelivered cycle + a new cycle + two legacy cycles, each to BOTH
+        // parties) = 14 keyed sends.
+        verify(emailService, times(14)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-LEAD_RECEIVED-" + PROVIDER_ID + "-" + firstLeadId,
+                "marketplace-email-LEAD_RECEIVED-" + PROVIDER_ID + "-" + secondLeadId,
+                "marketplace-email-ORDER_CONFIRMED-" + CONSUMER_ID + "-" + firstOrderId,
+                "marketplace-email-ORDER_CONFIRMED-" + CONSUMER_ID + "-" + secondOrderId,
+                // one dispute, both parties: two distinct recipient keys
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + firstDisputeId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + firstDisputeId,
+                // the SAME dispute redelivered: the SAME keys (retry dedup)
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + firstDisputeId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + firstDisputeId,
+                // a NEW dispute cycle: its own keys
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + secondDisputeId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + secondDisputeId,
+                // R6 legacy: null disputeId falls back to the loanId — the
+                // two legacy loans keep DISTINCT keys, never "null"
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + loanId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + loanId,
+                "marketplace-email-LOAN_DISPUTED-" + CONSUMER_ID + "-" + otherLoanId,
+                "marketplace-email-LOAN_DISPUTED-" + PROVIDER_ID + "-" + otherLoanId);
+        // None of these doors may fall back to the transport's content
+        // fingerprint (a null key): every captured key is non-null and
+        // prefixed with the house format.
+        assertThat(deliveryKeys.getAllValues()).allSatisfy(key ->
+                assertThat(key).startsWith("marketplace-email-").doesNotContain("null"));
+    }
+
+    @Test
+    void paymentStateKeysCarryTheRawStateNeverTheLocalizedWord() {
+        // R4 (the CodeRabbit round on 376cc11d, Major): the localized
+        // stateWord (PLATFORM_LOCALE is Arabic — "مكتمل") must NEVER ride the
+        // idempotency key: Java 25's JdkClientHttpRequestFactory rejects a
+        // non-ASCII header value before the send, so the payment-state email
+        // would die before dispatch and abort the WebSocket/Push legs after
+        // it. The key carries the RAW state: two transitions on one intent
+        // are two distinct occurrences; a retry of the same transition keeps
+        // one key.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID paymentIntentId = create(UUID.class);
+        UUID adCampaignId = create(UUID.class);
+        when(paymentIntentLookupPort.findById(paymentIntentId))
+                .thenReturn(Optional.of(of(com.marketplace.shared.api.PaymentIntentDetails.class)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::paymentIntentId), paymentIntentId)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::consumerId), CONSUMER_ID)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::origin),
+                                com.marketplace.shared.api.PaymentIntentDetails.ORIGIN_AD)
+                        .set(field(com.marketplace.shared.api.PaymentIntentDetails::adCampaignId), adCampaignId).create()));
+
+        service.onPaymentStateChanged(paymentIntentId, "PENDING");
+        service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
+        service.onPaymentStateChanged(paymentIntentId, "COMPLETED");
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(3)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-PAYMENT_STATE-" + CONSUMER_ID + "-" + paymentIntentId + "-PENDING",
+                "marketplace-email-PAYMENT_STATE-" + CONSUMER_ID + "-" + paymentIntentId + "-COMPLETED",
+                // the SAME transition retried: the SAME key (retry dedup)
+                "marketplace-email-PAYMENT_STATE-" + CONSUMER_ID + "-" + paymentIntentId + "-COMPLETED");
+
+        // The R4 law itself: every key is pure ASCII (header-safe for the
+        // idempotency transport) and carries none of the localized word.
+        String localizedWord = new NotificationTextSource()
+                .paymentStateWord("COMPLETED", NotificationTextSource.PLATFORM_LOCALE);
+        assertThat(deliveryKeys.getAllValues()).allSatisfy(key -> {
+            assertThat(key.chars().allMatch(c -> c < 128))
+                    .as("the idempotency key is pure ASCII (Java 25 header law): %s", key).isTrue();
+            assertThat(key).doesNotContain(localizedWord);
+        });
+    }
+
+    @Test
+    void membershipVerificationKeysDistinguishSeparateMemberships() {
+        // R5 (the CodeRabbit round on 376cc11d): a member who leaves and
+        // rejoins is a NEW membership (a new membershipId); within 24h
+        // Resend would dedup the second verification email into the first
+        // if the key rode only userId+locationId. The membershipId rides
+        // the key; the same grant redelivered keeps one key.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID locationId = create(UUID.class);
+        UUID firstMembershipId = create(UUID.class);
+        UUID secondMembershipId = create(UUID.class);
+
+        service.onVerificationGranted(firstMembershipId, CONSUMER_ID, locationId);
+        service.onVerificationGranted(secondMembershipId, CONSUMER_ID, locationId);
+        service.onVerificationGranted(secondMembershipId, CONSUMER_ID, locationId);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(3)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-MEMBERSHIP_VERIFIED-" + CONSUMER_ID + "-" + firstMembershipId,
+                "marketplace-email-MEMBERSHIP_VERIFIED-" + CONSUMER_ID + "-" + secondMembershipId,
+                // the SAME grant redelivered: the SAME key (retry dedup)
+                "marketplace-email-MEMBERSHIP_VERIFIED-" + CONSUMER_ID + "-" + secondMembershipId);
+    }
+
+    @Test
+    void commentAndReactionKeysDistinguishIndependentOccurrences() {
+        // R7/R8 (the CodeRabbit round on dc984abf): two members commenting
+        // on — or thanking — the same post share the MESSAGE's shape but are
+        // two independent occurrences; a key riding only postId would have
+        // Resend return the first mail's result for the second within 24h.
+        // The comment/reaction row's OWN id is the occurrence identity; the
+        // same occurrence redelivered keeps its key.
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID postId = create(UUID.class);
+        UUID postAuthorId = PROVIDER_ID;
+        UUID firstCommentId = create(UUID.class);
+        UUID secondCommentId = create(UUID.class);
+        UUID firstReactionId = create(UUID.class);
+        UUID secondReactionId = create(UUID.class);
+
+        service.onPostCommented(postId, firstCommentId, postAuthorId);
+        service.onPostCommented(postId, secondCommentId, postAuthorId);
+        service.onPostCommented(postId, secondCommentId, postAuthorId);
+        service.onPostReacted(postId, firstReactionId, postAuthorId);
+        service.onPostReacted(postId, secondReactionId, postAuthorId);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(5)).send(anyString(), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-POST_COMMENTED-" + postAuthorId + "-" + firstCommentId,
+                "marketplace-email-POST_COMMENTED-" + postAuthorId + "-" + secondCommentId,
+                // the SAME comment redelivered: the SAME key (retry dedup)
+                "marketplace-email-POST_COMMENTED-" + postAuthorId + "-" + secondCommentId,
+                "marketplace-email-POST_REACTED-" + postAuthorId + "-" + firstReactionId,
+                "marketplace-email-POST_REACTED-" + postAuthorId + "-" + secondReactionId);
     }
 
     @Test
@@ -618,14 +841,14 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
 
         UUID postId = create(UUID.class);
 
-        service.onPostCommented(postId, PROVIDER_ID);
+        service.onPostCommented(postId, create(UUID.class), PROVIDER_ID);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
@@ -633,7 +856,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getType()).isEqualTo("POST_COMMENTED");
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -649,7 +872,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -665,7 +888,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(listingId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -681,7 +904,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -701,7 +924,7 @@ class NotificationServiceTest {
                 .isEqualTo("تمت مراجعة منشور الخاص بك: " + targetId);
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -717,14 +940,14 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
 
         UUID postId = create(UUID.class);
 
-        service.onPostReacted(postId, PROVIDER_ID);
+        service.onPostReacted(postId, create(UUID.class), PROVIDER_ID);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
@@ -733,7 +956,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(postId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + PROVIDER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(PROVIDER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -749,7 +972,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -765,7 +988,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(listingId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     @Test
@@ -780,7 +1003,7 @@ class NotificationServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
         when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
         when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.FOLLOWED_PROVIDER_NEW_LISTING),
@@ -795,7 +1018,7 @@ class NotificationServiceTest {
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -884,36 +1107,119 @@ class NotificationServiceTest {
     }
 
     /**
-     * B-08 (compliance plan 0.10 — the §3.4-8 defect): the arrival
-     * notification — the in-app row always lands (the conversation id in
-     * the message body), the push channels ride the L22 matrix with the
-     * defaults on. The handler itself is wired to the MessageReceivedEvent
-     * listener via CR-4 (the event type's cross-module placement).
+     * A-04: password-reset delivery must replay the immutable expiry
+     * instant and an opaque occurrence key. The raw reset link is a bearer
+     * credential and must never be copied into the provider header.
      */
     @Test
-    void onMessageReceivedDeliversTheArrivalNotification() {
+    void onPasswordResetRequestedReusesTheImmutableExpiryAndOpaqueDeliveryKey() {
         NotificationRepository repository = mock(NotificationRepository.class);
         BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        UUID userId = CONSUMER_ID;
+        String resetLink = "https://example.test/reset";
+        Instant expiresAt = Instant.parse("2026-11-21T12:30:00Z");
+        String expectedExpiry = "2026-11-21T12:30:00Z";
+
+        service.onPasswordResetRequested(userId, "Consumer", resetLink, expiresAt);
+        service.onPasswordResetRequested(userId, "Consumer", resetLink, expiresAt);
+
+        org.mockito.ArgumentCaptor<Map> variables =
+                org.mockito.ArgumentCaptor.forClass(Map.class);
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(2)).send(eq(CONSUMER_EMAIL), eq("Reset Your Password"),
+                eq("email/password-reset"), variables.capture(), deliveryKeys.capture());
+
+        assertThat(variables.getAllValues()).containsExactly(
+                Map.of("name", "Consumer", "resetLink", resetLink, "expiresAtUtc", expectedExpiry),
+                Map.of("name", "Consumer", "resetLink", resetLink, "expiresAtUtc", expectedExpiry));
+        assertThat(deliveryKeys.getAllValues()).hasSize(2).containsOnly(deliveryKeys.getAllValues().get(0));
+        assertThat(deliveryKeys.getValue()).doesNotContain("example.test");
+        assertThat(deliveryKeys.getValue()).contains("marketplace-email-PASSWORD_RESET-" + userId);
+    }
+
+    /**
+     * A-02: email verification retries use an opaque provider key; the
+     * bearer link belongs only in the rendered email body.
+     */
+    @Test
+    void onEmailVerificationRequestedKeepsTheBearerLinkOutOfTheProviderKey() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
+        NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
+                currentUserProvider, userLookupPort, Optional.empty(), Optional.of(emailService));
+
+        String verificationLink = "https://example.test/verify";
+        service.onEmailVerificationRequested(CONSUMER_ID, "Consumer", verificationLink);
+        service.onEmailVerificationRequested(CONSUMER_ID, "Consumer", verificationLink);
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(2)).send(eq(CONSUMER_EMAIL),
+                eq("Welcome to Marketplace — verify your email"), eq("email/welcome"),
+                anyMap(), deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).hasSize(2).containsOnly(deliveryKeys.getAllValues().get(0));
+        assertThat(deliveryKeys.getValue()).doesNotContain("example.test");
+    }
+
+    /**
+     * B-08: two messages in one conversation are distinct delivery
+     * occurrences even when their notification text is identical.
+     */
+    @Test
+    void onMessageReceivedUsesMessageIdentityForEmailDelivery() {
+        NotificationRepository repository = mock(NotificationRepository.class);
+        BookingParticipantProvider bookingProvider = mock(BookingParticipantProvider.class);
+        PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        UserLookupPort userLookupPort = mockUserLookup();
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
 
         UUID conversationId = create(UUID.class);
+        UUID firstMessageId = create(UUID.class);
+        UUID secondMessageId = create(UUID.class);
 
-        service.onMessageReceived(conversationId, CONSUMER_ID);
+        service.onMessageReceived(firstMessageId, conversationId, CONSUMER_ID);
+        // A Modulith resubmission of the same event retains its occurrence key.
+        service.onMessageReceived(firstMessageId, conversationId, CONSUMER_ID);
+        // A different message in the same conversation gets its own key.
+        service.onMessageReceived(secondMessageId, conversationId, CONSUMER_ID);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
-        verify(repository, times(1)).save(saved.capture());
-        assertThat(saved.getValue().getType()).isEqualTo("MESSAGE_RECEIVED");
-        assertThat(saved.getValue().getMessage()).contains(conversationId.toString());
-        verify(messagingTemplate, times(1)).convertAndSend(
+        verify(repository, times(3)).save(saved.capture());
+        assertThat(saved.getAllValues()).allSatisfy(notification -> {
+            assertThat(notification.getType()).isEqualTo("MESSAGE_RECEIVED");
+            assertThat(notification.getMessage()).contains(conversationId.toString());
+        });
+        verify(messagingTemplate, times(3)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+
+        org.mockito.ArgumentCaptor<String> deliveryKeys =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(emailService, times(3)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(),
+                deliveryKeys.capture());
+        assertThat(deliveryKeys.getAllValues()).containsExactly(
+                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + firstMessageId,
+                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + firstMessageId,
+                "marketplace-email-MESSAGE_RECEIVED-" + CONSUMER_ID + "-" + conversationId + "-" + secondMessageId);
+        assertThat(deliveryKeys.getAllValues().get(0))
+                .isEqualTo(deliveryKeys.getAllValues().get(1))
+                .isNotEqualTo(deliveryKeys.getAllValues().get(2));
     }
 
     /**
@@ -929,7 +1235,7 @@ class NotificationServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
         when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
         when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.MESSAGE_RECEIVED),
@@ -940,11 +1246,11 @@ class NotificationServiceTest {
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
                 preferences);
 
-        service.onMessageReceived(create(UUID.class), CONSUMER_ID);
+        service.onMessageReceived(create(UUID.class), create(UUID.class), CONSUMER_ID);
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -963,14 +1269,14 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
 
         UUID locationId = create(UUID.class);
 
-        service.onVerificationGranted(CONSUMER_ID, locationId);
+        service.onVerificationGranted(create(UUID.class), CONSUMER_ID, locationId);
 
         org.mockito.ArgumentCaptor<Notification> saved =
                 org.mockito.ArgumentCaptor.forClass(Notification.class);
@@ -980,7 +1286,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains("تم توثيق عضويتك");
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -996,7 +1302,7 @@ class NotificationServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
         when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
         when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.MEMBERSHIP_VERIFIED),
@@ -1007,11 +1313,11 @@ class NotificationServiceTest {
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService),
                 preferences);
 
-        service.onVerificationGranted(CONSUMER_ID, create(UUID.class));
+        service.onVerificationGranted(create(UUID.class), CONSUMER_ID, create(UUID.class));
 
         verify(repository, times(1)).save(any(Notification.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -1031,7 +1337,7 @@ class NotificationServiceTest {
         PaymentIntentLookupPort paymentIntentLookupPort = mock(PaymentIntentLookupPort.class);
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         NotificationService service = createService(repository, bookingProvider, paymentIntentLookupPort,
                 currentUserProvider, userLookupPort, Optional.of(messagingTemplate), Optional.of(emailService));
@@ -1049,7 +1355,7 @@ class NotificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains(targetId.toString());
         verify(messagingTemplate, times(1)).convertAndSend(
                 eq("/topic/notifications/" + CONSUMER_ID), any(WebSocketNotification.class));
-        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap());
+        verify(emailService, times(1)).send(eq(CONSUMER_EMAIL), anyString(), anyString(), anyMap(), any());
     }
 
     /**
@@ -1067,7 +1373,7 @@ class NotificationServiceTest {
         CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
         UserLookupPort userLookupPort = mockUserLookup();
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
-        com.marketplace.shared.email.EmailService emailService = mock(com.marketplace.shared.email.EmailService.class);
+        com.marketplace.shared.email.EmailSender emailService = mock(com.marketplace.shared.email.EmailSender.class);
         NotificationPreferenceService preferences = mock(NotificationPreferenceService.class);
         when(preferences.isChannelEffectivelyEnabled(any(), any(), any())).thenReturn(true);
         when(preferences.isChannelEffectivelyEnabled(eq(CONSUMER_ID), eq(NotificationType.REPORT_RESOLVED),
@@ -1085,6 +1391,6 @@ class NotificationServiceTest {
         verify(repository, times(1)).save(saved.capture());
         assertThat(saved.getValue().getMessage()).contains("تم رفض البلاغ");
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(WebSocketNotification.class));
-        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap());
+        verify(emailService, never()).send(anyString(), anyString(), anyString(), anyMap(), any());
     }
 }

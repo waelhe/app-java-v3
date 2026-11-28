@@ -76,7 +76,8 @@ class DisputeChannelDelivery {
                     text.compose("email." + type.name() + ".subject",
                             NotificationTextSource.PLATFORM_LOCALE),
                     "email/notification",
-                    java.util.Map.of("message", message));
+                    java.util.Map.of("message", message),
+                    NotificationService.deliveryKey(type.name(), recipientId, sourceEventId));
         }
         if (preferences.isChannelEffectivelyEnabled(recipientId, type, NotificationChannel.WS)
                 && deliveryLedger.recordDelivery(sourceEventId, recipientId,

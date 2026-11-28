@@ -3,6 +3,7 @@ package com.marketplace.shared.email;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.mail.autoconfigure.MailSenderAutoConfiguration;
 import org.springframework.boot.thymeleaf.autoconfigure.ThymeleafAutoConfiguration;
@@ -38,12 +39,13 @@ import org.thymeleaf.TemplateEngine;
  * declaring its own.</p>
  */
 @AutoConfiguration(after = {MailSenderAutoConfiguration.class, ThymeleafAutoConfiguration.class})
+@ConditionalOnProperty(prefix = "marketplace.mail", name = "provider", havingValue = "smtp", matchIfMissing = true)
 @ConditionalOnBean(JavaMailSender.class)
 @EnableConfigurationProperties(MailChannelProperties.class)
 public class EmailServiceAutoConfiguration {
 
     @Bean
-    @ConditionalOnMissingBean(EmailService.class)
+    @ConditionalOnMissingBean(EmailSender.class)
     EmailService emailService(JavaMailSender mailSender, TemplateEngine templateEngine,
             MailChannelProperties mailProperties) {
         return new EmailService(mailSender, templateEngine, mailProperties);

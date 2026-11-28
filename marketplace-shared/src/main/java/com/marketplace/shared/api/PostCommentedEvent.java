@@ -29,6 +29,7 @@ import java.util.UUID;
  */
 public record PostCommentedEvent(
         UUID postId,
+        UUID commentId,
         UUID commentAuthorId,
         UUID postAuthorId
 ) {

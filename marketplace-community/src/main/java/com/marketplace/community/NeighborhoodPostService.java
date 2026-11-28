@@ -319,7 +319,7 @@ public class NeighborhoodPostService {
         PostComment saved = commentRepository.save(
                 PostComment.comment(postId, commenterId, body));
         eventPublisher.publishEvent(
-                new PostCommentedEvent(postId, commenterId, post.getAuthorId()));
+                new PostCommentedEvent(postId, saved.getId(), commenterId, post.getAuthorId()));
         return PostCommentView.of(saved);
     }
 
@@ -442,7 +442,7 @@ public class NeighborhoodPostService {
         PostReaction saved = reactionRepository.save(
                 PostReaction.reaction(postId, memberId));
         eventPublisher.publishEvent(
-                new PostReactedEvent(postId, memberId, post.getAuthorId()));
+                new PostReactedEvent(postId, saved.getId(), memberId, post.getAuthorId()));
         return PostReactionView.of(saved);
     }
 

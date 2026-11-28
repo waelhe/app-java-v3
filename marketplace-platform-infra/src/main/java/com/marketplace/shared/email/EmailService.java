@@ -63,7 +63,7 @@ import java.util.Map;
  * serving. No fallback method — the house rule (the payments precedent):
  * honest degradation, never a silent one.
  */
-public class EmailService {
+public class EmailService implements EmailSender {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
@@ -86,11 +86,35 @@ public class EmailService {
      * @param template Thymeleaf template path (e.g., "email/welcome")
      * @param variables template model variables
      */
+    @Override
     @Retry(name = "mailSend")
     @CircuitBreaker(name = "mailSend")
     @ConcurrencyLimit(3)
     @Observed(name = "email.send")
     public void send(String to, String subject, String template, Map<String, Object> variables) {
+        doSend(to, subject, template, variables);
+    }
+
+    /**
+     * CodeRabbit round on 2d1081f8 (R3): the 5-arg entry the notifications
+     * module now calls carries the SAME resilience annotations — a default
+     * interface method delegating through {@code this} bypasses the proxy
+     * (documented self-invocation semantics), so without this overload the
+     * SMTP leg ran with no retry/circuit/concurrency/observation while the
+     * Resend transport wore them. SMTP has no idempotency-header mechanism,
+     * so the delivery key is accepted and unused here — the interface's
+     * documented contract for transports without replay protection.
+     */
+    @Override
+    @Retry(name = "mailSend")
+    @CircuitBreaker(name = "mailSend")
+    @ConcurrencyLimit(3)
+    @Observed(name = "email.send")
+    public void send(String to, String subject, String template, Map<String, Object> variables, String deliveryKey) {
+        doSend(to, subject, template, variables);
+    }
+
+    private void doSend(String to, String subject, String template, Map<String, Object> variables) {
         try {
             Context ctx = new Context();
             ctx.setVariables(variables);

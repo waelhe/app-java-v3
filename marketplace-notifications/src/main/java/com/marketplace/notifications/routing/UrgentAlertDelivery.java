@@ -110,7 +110,8 @@ class UrgentAlertDelivery {
                     text.compose("email.URGENT_ALERT.subject",
                             NotificationTextSource.PLATFORM_LOCALE, sourceName),
                     "email/notification",
-                    Map.of("message", message));
+                    Map.of("message", message),
+                    com.marketplace.notifications.NotificationService.deliveryKey("URGENT_ALERT", recipient, alertId));
         }
         if (decision.webSocket()
                 && deliveryLedger.recordDelivery(alertId, recipient,

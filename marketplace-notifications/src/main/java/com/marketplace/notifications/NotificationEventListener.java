@@ -189,9 +189,9 @@ public class NotificationEventListener {
                     event.postId());
             return;
         }
-        notificationService.onPostCommented(event.postId(), event.postAuthorId());
-        log.info("Notification sent for post comment: postId={}, author={}",
-                event.postId(), event.postAuthorId());
+        notificationService.onPostCommented(event.postId(), event.commentId(), event.postAuthorId());
+        log.info("Notification sent for post comment: postId={}, commentId={}, author={}",
+                event.postId(), event.commentId(), event.postAuthorId());
     }
 
     /**
@@ -265,9 +265,9 @@ public class NotificationEventListener {
                     event.postId());
             return;
         }
-        notificationService.onPostReacted(event.postId(), event.postAuthorId());
-        log.info("Notification sent for post reaction: postId={}, author={}",
-                event.postId(), event.postAuthorId());
+        notificationService.onPostReacted(event.postId(), event.reactionId(), event.postAuthorId());
+        log.info("Notification sent for post reaction: postId={}, reactionId={}, author={}",
+                event.postId(), event.reactionId(), event.postAuthorId());
     }
 
     /**
@@ -301,7 +301,7 @@ public class NotificationEventListener {
      */
     @ApplicationModuleListener
     public void onMessageReceived(MessageReceivedEvent event) {
-        notificationService.onMessageReceived(event.conversationId(), event.recipientId());
+        notificationService.onMessageReceived(event.messageId(), event.conversationId(), event.recipientId());
         log.info("Notification sent for message received: messageId={}, conversationId={}",
                 event.messageId(), event.conversationId());
     }
@@ -326,7 +326,10 @@ public class NotificationEventListener {
      */
     @ApplicationModuleListener
     public void onMembershipVerificationGranted(MembershipVerificationGrantedEvent event) {
-        notificationService.onVerificationGranted(event.userId(), event.locationId());
+        // The membershipId rides the delivery key (the CodeRabbit round on
+        // 376cc11d, R5): a re-granted membership is a NEW occurrence, never
+        // a 24h-dedup collision with the previous membership's email.
+        notificationService.onVerificationGranted(event.membershipId(), event.userId(), event.locationId());
         log.info("Notification sent for membership verification granted: membershipId={}, userId={}, "
                         + "locationId={}", event.membershipId(), event.userId(), event.locationId());
     }

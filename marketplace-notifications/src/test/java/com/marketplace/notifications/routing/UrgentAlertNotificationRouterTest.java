@@ -174,6 +174,7 @@ class UrgentAlertNotificationRouterTest {
         verify(repository, never()).insertOnce(any(), any(), anyString(), anyString(), any(), any(), any());
         verify(membersPort, never()).getActiveMemberIds(any());
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
+        verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any(), any());
     }
 
     @Test
@@ -231,6 +232,7 @@ class UrgentAlertNotificationRouterTest {
         verify(repository, times(1)).insertOnce(any(), eq(MEMBER),
                 eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID), any(), any());
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
+        verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any(), any());
         verify(webSocketPush, never()).push(any(), any(), anyString());
     }
 
@@ -256,6 +258,7 @@ class UrgentAlertNotificationRouterTest {
         verify(repository, times(1)).insertOnce(any(), eq(MEMBER),
                 eq(NotificationType.URGENT_ALERT.name()), anyString(), eq(ALERT_ID), any(), any());
         verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any());
+        verify(emailNotificationService, never()).sendEmail(any(), anyString(), anyString(), any(), any());
         verify(webSocketPush).push(eq(MEMBER), eq(NotificationType.URGENT_ALERT), anyString());
     }
 
@@ -284,7 +287,11 @@ class UrgentAlertNotificationRouterTest {
                 .as("the loser of the ledger race learns the row exists from the returned "
                         + "count itself — no exception ever surfaces")
                 .doesNotThrowAnyException();
-        verify(emailNotificationService).sendEmail(eq(MEMBER), anyString(), anyString(), any());
+        // 840-1: the door now rides the 5-arg keyed send (URGENT_ALERT +
+        // recipient + alertId — the door's own occurrence identity).
+        verify(emailNotificationService).sendEmail(eq(MEMBER), anyString(), anyString(), any(),
+                eq(com.marketplace.notifications.NotificationService.deliveryKey(
+                        "URGENT_ALERT", MEMBER, ALERT_ID)));
     }
 
     @Test

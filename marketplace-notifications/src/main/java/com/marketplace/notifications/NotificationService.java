@@ -83,13 +83,15 @@ public class NotificationService {
             emailNotificationService.sendEmail(info.consumerId(),
                     text.compose("email.BOOKING_CREATED.consumer.subject", platform),
                     "email/notification",
-                    Map.of("message", text.compose("email.BOOKING_CREATED.consumer.body", platform, bookingId)));
+                    Map.of("message", text.compose("email.BOOKING_CREATED.consumer.body", platform, bookingId)),
+                    deliveryKey("BOOKING_CREATED", info.consumerId(), bookingId));
         }
         if (preferences.isChannelEffectivelyEnabled(info.providerId(), NotificationType.BOOKING_CREATED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(info.providerId(),
                     text.compose("email.BOOKING_CREATED.provider.subject", platform),
                     "email/notification",
-                    Map.of("message", text.compose("email.BOOKING_CREATED.provider.body", platform, bookingId)));
+                    Map.of("message", text.compose("email.BOOKING_CREATED.provider.body", platform, bookingId)),
+                    deliveryKey("BOOKING_CREATED", info.providerId(), bookingId));
         }
         sendWebSocket(info.consumerId(), NotificationType.BOOKING_CREATED, consumerMessage);
         sendPush(info.consumerId(), NotificationType.BOOKING_CREATED, consumerMessage);
@@ -117,7 +119,8 @@ public class NotificationService {
                 NotificationType.BOOKING_CONFIRMED.name(), "Booking confirmed: " + bookingId));
         if (preferences.isChannelEffectivelyEnabled(info.consumerId(), NotificationType.BOOKING_CONFIRMED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(info.consumerId(), "Booking Confirmed", "email/notification",
-                    Map.of("message", "Your booking " + bookingId + " has been confirmed."));
+                    Map.of("message", "Your booking " + bookingId + " has been confirmed."),
+                    deliveryKey("BOOKING_CONFIRMED", info.consumerId(), bookingId));
         }
         sendWebSocket(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
         sendPush(info.consumerId(), NotificationType.BOOKING_CONFIRMED, "Booking confirmed: " + bookingId);
@@ -130,14 +133,25 @@ public class NotificationService {
      * party these origins do not have.
      */
     private void deliverSinglePayerState(PaymentIntentDetails intent, Locale platform,
-                                         String stateWord, String message) {
+                                         String state, String stateWord, String message) {
         repository.save(Notification.create(intent.consumerId(),
                 NotificationType.PAYMENT_STATE.name(), message));
         if (preferences.isChannelEffectivelyEnabled(intent.consumerId(),
                 NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(intent.consumerId(),
                     text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    // CodeRabbit round on 2d1081f8 (R1) + the 376cc11d round
+                    // (R4): the RAW state rides the key — PENDING then
+                    // COMPLETED on one intent are two DISTINCT occurrences
+                    // (Resend 409s a same-key/different-body replay; a retry
+                    // of the SAME transition keeps the same key and still
+                    // deduplicates). The localized stateWord NEVER rides the
+                    // key: the platform locale is Arabic (PLATFORM_LOCALE),
+                    // and a non-ASCII idempotency-key header is rejected by
+                    // Java 25's JdkClientHttpRequestFactory before the send —
+                    // the word stays presentation-only (subject and body).
+                    deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId(), state));
         }
         sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
         sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
@@ -158,7 +172,7 @@ public class NotificationService {
             // change either way (no new enum value, no preferences-CHECK
             // widening pair).
             if (intent.isAdOrigin()) {
-                deliverSinglePayerState(intent, platform, stateWord,
+                deliverSinglePayerState(intent, platform, state, stateWord,
                         text.compose("notification.PAYMENT_STATE.ad", platform, stateWord, intent.adCampaignId()));
                 return;
             }
@@ -169,7 +183,7 @@ public class NotificationService {
                 // the V200 pairing CHECK) and the participant lookup dies on
                 // findById(null) — the CI-measured 2026-10-12 crash whose
                 // event publication the registry kept re-delivering.
-                deliverSinglePayerState(intent, platform, stateWord,
+                deliverSinglePayerState(intent, platform, state, stateWord,
                         text.compose("notification.PAYMENT_STATE.loan", platform, stateWord, intent.loanId()));
                 return;
             }
@@ -177,7 +191,7 @@ public class NotificationService {
                 // Stage 6 (ADR-0002): the order-checkout origin — the payer
                 // is the buyer, the subject is the order (no booking, the
                 // same null-bookingId pairing CHECK as the loan leg).
-                deliverSinglePayerState(intent, platform, stateWord,
+                deliverSinglePayerState(intent, platform, state, stateWord,
                         text.compose("notification.PAYMENT_STATE.order", platform, stateWord, intent.orderId()));
                 return;
             }
@@ -188,7 +202,7 @@ public class NotificationService {
             // until its owning template lands (a cosmetic gap, not a money
             // defect — the publication is still acknowledged normally).
             if (intent.isDeliveryOrigin()) {
-                deliverSinglePayerState(intent, platform, stateWord,
+                deliverSinglePayerState(intent, platform, state, stateWord,
                         text.compose("notification.PAYMENT_STATE.delivery", platform, stateWord,
                                 intent.deliveryRequestId()));
                 return;
@@ -206,12 +220,14 @@ public class NotificationService {
             if (preferences.isChannelEffectivelyEnabled(intent.consumerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(intent.consumerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
-                        "email/notification", Map.of("message", message));
+                        "email/notification", Map.of("message", message),
+                        deliveryKey("PAYMENT_STATE", intent.consumerId(), intent.paymentIntentId(), state));
             }
             if (preferences.isChannelEffectivelyEnabled(bookingInfo.providerId(), NotificationType.PAYMENT_STATE, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(bookingInfo.providerId(),
                         text.compose("email.PAYMENT_STATE.subject", platform, stateWord),
-                        "email/notification", Map.of("message", message));
+                        "email/notification", Map.of("message", message),
+                        deliveryKey("PAYMENT_STATE", bookingInfo.providerId(), intent.paymentIntentId(), state));
             }
             sendWebSocket(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
             sendPush(intent.consumerId(), NotificationType.PAYMENT_STATE, message);
@@ -246,7 +262,8 @@ public class NotificationService {
                 NotificationType.LEAD_RECEIVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(providerUserId,
                     text.compose("email.LEAD_RECEIVED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("LEAD_RECEIVED", providerUserId, leadId));
         }
         sendWebSocket(providerUserId, NotificationType.LEAD_RECEIVED, message);
         sendPush(providerUserId, NotificationType.LEAD_RECEIVED, message);
@@ -276,7 +293,8 @@ public class NotificationService {
                 NotificationType.SAVED_SEARCH_MATCH, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(userId,
                     text.compose("email.SAVED_SEARCH_MATCH.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("SAVED_SEARCH_MATCH", userId, listingId));
         }
         sendWebSocket(userId, NotificationType.SAVED_SEARCH_MATCH, message);
         sendPush(userId, NotificationType.SAVED_SEARCH_MATCH, message);
@@ -296,7 +314,7 @@ public class NotificationService {
      * unconditionally, so the delivery contract stays one shape for
      * every caller.
      */
-    public void onPostCommented(UUID postId, UUID postAuthorId) {
+    public void onPostCommented(UUID postId, UUID commentId, UUID postAuthorId) {
         // B-11: the composed text rides the module's MessageSource channel
         // at the platform locale.
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
@@ -308,7 +326,15 @@ public class NotificationService {
                 NotificationType.POST_COMMENTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_COMMENTED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    // R7 (the CodeRabbit round on dc984abf): the COMMENT's
+                    // own id is the occurrence identity — two members
+                    // commenting on the same post share the body's shape but
+                    // are two independent occurrences (a same-key/different-
+                    // body replay within 24h would 409 at Resend and swallow
+                    // the second author's email); the same comment redelivered
+                    // keeps its key.
+                    deliveryKey("POST_COMMENTED", postAuthorId, commentId));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_COMMENTED, message);
         sendPush(postAuthorId, NotificationType.POST_COMMENTED, message);
@@ -340,7 +366,8 @@ public class NotificationService {
                 NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.NEW_LISTING_IN_NEIGHBORHOOD.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("NEW_LISTING_IN_NEIGHBORHOOD", recipientId, listingId));
         }
         sendWebSocket(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
         sendPush(recipientId, NotificationType.NEW_LISTING_IN_NEIGHBORHOOD, message);
@@ -376,7 +403,8 @@ public class NotificationService {
                 NotificationType.CONTENT_MODERATED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.CONTENT_MODERATED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("CONTENT_MODERATED", recipientId, targetId));
         }
         sendWebSocket(recipientId, NotificationType.CONTENT_MODERATED, message);
         sendPush(recipientId, NotificationType.CONTENT_MODERATED, message);
@@ -396,7 +424,7 @@ public class NotificationService {
      * delivers unconditionally, so the delivery contract stays one shape
      * for every caller.
      */
-    public void onPostReacted(UUID postId, UUID postAuthorId) {
+    public void onPostReacted(UUID postId, UUID reactionId, UUID postAuthorId) {
         // B-11: the composed text rides the module's MessageSource channel
         // at the platform locale.
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
@@ -408,7 +436,11 @@ public class NotificationService {
                 NotificationType.POST_REACTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(postAuthorId,
                     text.compose("email.POST_REACTED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    // R8 (the CodeRabbit round on dc984abf): the REACTION
+                    // row's own id is the occurrence identity — same law as
+                    // the comment leg above.
+                    deliveryKey("POST_REACTED", postAuthorId, reactionId));
         }
         sendWebSocket(postAuthorId, NotificationType.POST_REACTED, message);
         sendPush(postAuthorId, NotificationType.POST_REACTED, message);
@@ -442,7 +474,8 @@ public class NotificationService {
                 NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.FOLLOWED_PROVIDER_NEW_LISTING.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("FOLLOWED_PROVIDER_NEW_LISTING", recipientId, listingId));
         }
         sendWebSocket(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
         sendPush(recipientId, NotificationType.FOLLOWED_PROVIDER_NEW_LISTING, message);
@@ -452,7 +485,7 @@ public class NotificationService {
      * A-04 (official-compliance plan §6 wave A — A.1): the password-reset
      * mail leg — the DORMANT {@code email/password-reset} template's
      * activation, with exactly the model variables it was authored with
-     * ({@code name}, {@code resetLink}, {@code expirationMinutes}).
+     * ({@code name}, {@code resetLink}, {@code expiresAtUtc}).
      *
      * <p><b>Why this leg carries NO in-app row, NO WebSocket push, and NO
      * preference gate — a measured exception to every channel rule above,
@@ -470,12 +503,20 @@ public class NotificationService {
      */
     public void onPasswordResetRequested(UUID userId, String displayName,
                                          String resetLink, java.time.Instant expiresAt) {
-        long expirationMinutes = Math.max(0,
-                java.time.Duration.between(java.time.Instant.now(), expiresAt).toMinutes());
+        // The event carries the token's immutable expiry instant. Render
+        // that exact instant (UTC) rather than "minutes remaining": a
+        // Modulith resubmission must send the identical Resend payload under
+        // the same idempotency key, or Resend correctly rejects it with
+        // 409 invalid_idempotent_request.
+        String expiresAtUtc = java.time.format.DateTimeFormatter.ISO_INSTANT.format(expiresAt);
         emailNotificationService.sendEmail(userId, "Reset Your Password", "email/password-reset",
                 Map.of("name", displayName == null ? "" : displayName,
                         "resetLink", resetLink,
-                        "expirationMinutes", expirationMinutes));
+                        "expiresAtUtc", expiresAtUtc),
+                // Hash the one-time link for an opaque, stable delivery
+                // identity. Never put the raw reset credential in the
+                // Resend Idempotency-Key header.
+                deliveryKey("PASSWORD_RESET", userId, opaqueDeliveryPart(resetLink)));
     }
 
     /**
@@ -491,7 +532,11 @@ public class NotificationService {
         emailNotificationService.sendEmail(userId, "Welcome to Marketplace — verify your email",
                 "email/welcome",
                 Map.of("name", displayName == null ? "" : displayName,
-                        "verificationLink", verificationLink));
+                        "verificationLink", verificationLink),
+                // round 1: the verification REQUEST's own occurrence — the
+                // one-time link the token minted; a resubmission of the same
+                // event replays, a fresh request mints a fresh link and sends.
+                deliveryKey("EMAIL_VERIFICATION", userId, opaqueDeliveryPart(verificationLink)));
     }
 
     /**
@@ -511,7 +556,8 @@ public class NotificationService {
                 NotificationType.ORDER_CONFIRMED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_CONFIRMED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Confirmed", "email/notification",
-                    Map.of("message", "Your order " + orderId + " has been confirmed."));
+                    Map.of("message", "Your order " + orderId + " has been confirmed."),
+                    deliveryKey("ORDER_CONFIRMED", consumerId, orderId));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_CONFIRMED, message);
         sendPush(consumerId, NotificationType.ORDER_CONFIRMED, message);
@@ -527,7 +573,8 @@ public class NotificationService {
                 NotificationType.ORDER_FULFILLED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_FULFILLED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Fulfilled", "email/notification",
-                    Map.of("message", "Your order " + orderId + " has been fulfilled."));
+                    Map.of("message", "Your order " + orderId + " has been fulfilled."),
+                    deliveryKey("ORDER_FULFILLED", consumerId, orderId));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_FULFILLED, message);
         sendPush(consumerId, NotificationType.ORDER_FULFILLED, message);
@@ -545,7 +592,8 @@ public class NotificationService {
         if (preferences.isChannelEffectivelyEnabled(consumerId, NotificationType.ORDER_CANCELLED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(consumerId, "Order Cancelled", "email/notification",
                     Map.of("message", "Your order " + orderId + " was cancelled"
-                            + (reason == null || reason.isBlank() ? "." : ": " + reason)));
+                            + (reason == null || reason.isBlank() ? "." : ": " + reason)),
+                    deliveryKey("ORDER_CANCELLED", consumerId, orderId));
         }
         sendWebSocket(consumerId, NotificationType.ORDER_CANCELLED, message);
         sendPush(consumerId, NotificationType.ORDER_CANCELLED, message);
@@ -564,7 +612,8 @@ public class NotificationService {
                 NotificationType.LOAN_REQUESTED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(ownerId, NotificationType.LOAN_REQUESTED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(ownerId, "Lending Request", "email/notification",
-                    Map.of("message", "A borrowing request arrived for your item (loan " + loanId + ")."));
+                    Map.of("message", "A borrowing request arrived for your item (loan " + loanId + ")."),
+                    deliveryKey("LOAN_REQUESTED", ownerId, loanId));
         }
         sendWebSocket(ownerId, NotificationType.LOAN_REQUESTED, message);
         sendPush(ownerId, NotificationType.LOAN_REQUESTED, message);
@@ -576,7 +625,8 @@ public class NotificationService {
                 NotificationType.LOAN_APPROVED.name(), message));
         if (preferences.isChannelEffectivelyEnabled(borrowerId, NotificationType.LOAN_APPROVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(borrowerId, "Lending Approved", "email/notification",
-                    Map.of("message", "Your borrowing request " + loanId + " was approved — the fee's payment is ready."));
+                    Map.of("message", "Your borrowing request " + loanId + " was approved — the fee's payment is ready."),
+                    deliveryKey("LOAN_APPROVED", borrowerId, loanId));
         }
         sendWebSocket(borrowerId, NotificationType.LOAN_APPROVED, message);
         sendPush(borrowerId, NotificationType.LOAN_APPROVED, message);
@@ -595,28 +645,41 @@ public class NotificationService {
      * both parties' receipts (the payload carries the truth, the listeners
      * derive nothing); the channels ride the standing preference gates.
      */
-    public void onLoanDisputed(UUID loanId, UUID borrowerId, UUID ownerId) {
+    public void onLoanDisputed(UUID disputeId, UUID loanId, UUID borrowerId, UUID ownerId) {
         String message = "Loan disputed: " + loanId;
         for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
             repository.save(Notification.create(recipient,
                     NotificationType.LOAN_DISPUTED.name(), message));
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Disputed", "email/notification",
-                        Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."));
+                        Map.of("message", "A dispute was opened on loan " + loanId + " — it is frozen until resolution."),
+                        // CodeRabbit round on 2d1081f8 (R2) + the 376cc11d
+                        // round (R6): the DISPUTE id is the cycle identity —
+                        // a loan can be disputed again after a resume;
+                        // loanId alone collapsed the second cycle's email
+                        // into the first's provider record. Legacy
+                        // publications persisted BEFORE the disputeId
+                        // widening deserialize a null disputeId — never
+                        // stringified into the key (different legacy loans
+                        // for one recipient would share the literal "null");
+                        // the loanId restores those events' own cycle
+                        // identity instead.
+                        deliveryKey("LOAN_DISPUTED", recipient, disputeOccurrence(disputeId, loanId)));
             }
             sendWebSocket(recipient, NotificationType.LOAN_DISPUTED, message);
             sendPush(recipient, NotificationType.LOAN_DISPUTED, message);
         }
     }
 
-    public void onLoanDisputeResolved(UUID loanId, UUID borrowerId, UUID ownerId) {
+    public void onLoanDisputeResolved(UUID disputeId, UUID loanId, UUID borrowerId, UUID ownerId) {
         String message = "Loan dispute resolved: " + loanId;
         for (UUID recipient : java.util.List.of(borrowerId, ownerId)) {
             repository.save(Notification.create(recipient,
                     NotificationType.LOAN_DISPUTE_RESOLVED.name(), message));
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Dispute Resolved", "email/notification",
-                        Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."));
+                        Map.of("message", "The dispute on loan " + loanId + " was resolved — the loan resumed."),
+                        deliveryKey("LOAN_DISPUTE_RESOLVED", recipient, disputeOccurrence(disputeId, loanId)));
             }
             sendWebSocket(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
             sendPush(recipient, NotificationType.LOAN_DISPUTE_RESOLVED, message);
@@ -635,7 +698,8 @@ public class NotificationService {
                     NotificationType.LOAN_CLOSED.name(), message));
             if (preferences.isChannelEffectivelyEnabled(recipient, NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL)) {
                 emailNotificationService.sendEmail(recipient, "Loan Closed", "email/notification",
-                        Map.of("message", "Loan " + loanId + " is closed — the settlement record is complete."));
+                        Map.of("message", "Loan " + loanId + " is closed — the settlement record is complete."),
+                        deliveryKey("LOAN_CLOSED", recipient, loanId));
             }
             sendWebSocket(recipient, NotificationType.LOAN_CLOSED, message);
             sendPush(recipient, NotificationType.LOAN_CLOSED, message);
@@ -681,7 +745,7 @@ public class NotificationService {
      * unconditionally, so the delivery contract stays one shape for every
      * caller (the onPostCommented criterion-4 precedent).
      */
-    public void onMessageReceived(UUID conversationId, UUID recipientId) {
+    public void onMessageReceived(UUID messageId, UUID conversationId, UUID recipientId) {
         // B-11: the composed text rides the module's MessageSource channel
         // at the platform locale.
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
@@ -693,7 +757,8 @@ public class NotificationService {
                 NotificationType.MESSAGE_RECEIVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(recipientId,
                     text.compose("email.MESSAGE_RECEIVED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("MESSAGE_RECEIVED", recipientId, conversationId, messageId));
         }
         sendWebSocket(recipientId, NotificationType.MESSAGE_RECEIVED, message);
         sendPush(recipientId, NotificationType.MESSAGE_RECEIVED, message);
@@ -717,7 +782,7 @@ public class NotificationService {
      * NotificationEventListener's onMembershipVerificationGranted delivers
      * on every grant publication.
      */
-    public void onVerificationGranted(UUID userId, UUID locationId) {
+    public void onVerificationGranted(UUID membershipId, UUID userId, UUID locationId) {
         // B-11: the composed text rides the module's MessageSource channel
         // at the platform locale.
         Locale platform = NotificationTextSource.PLATFORM_LOCALE;
@@ -729,7 +794,14 @@ public class NotificationService {
                 NotificationType.MEMBERSHIP_VERIFIED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(userId,
                     text.compose("email.MEMBERSHIP_VERIFIED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    // CodeRabbit round on 376cc11d (R5): the membership row's
+                    // own id rides the key — a member who leaves and rejoins
+                    // is a NEW membership (a new membershipId, a distinct
+                    // key, the second verification email within 24h reaches
+                    // Resend as a fresh idempotency occurrence); the SAME
+                    // grant's event redelivery keeps the same key.
+                    deliveryKey("MEMBERSHIP_VERIFIED", userId, membershipId));
         }
         sendWebSocket(userId, NotificationType.MEMBERSHIP_VERIFIED, message);
         sendPush(userId, NotificationType.MEMBERSHIP_VERIFIED, message);
@@ -768,7 +840,8 @@ public class NotificationService {
                 NotificationType.REPORT_RESOLVED, NotificationChannel.EMAIL)) {
             emailNotificationService.sendEmail(reporterId,
                     text.compose("email.REPORT_RESOLVED.subject", platform),
-                    "email/notification", Map.of("message", message));
+                    "email/notification", Map.of("message", message),
+                    deliveryKey("REPORT_RESOLVED", reporterId, targetId));
         }
         sendWebSocket(reporterId, NotificationType.REPORT_RESOLVED, message);
         sendPush(reporterId, NotificationType.REPORT_RESOLVED, message);
@@ -959,5 +1032,52 @@ public class NotificationService {
     public int markAllAsRead(Authentication authentication) {
         UUID userId = currentUserProvider.getCurrentUserId(authentication);
         return repository.markAllAsReadByRecipientId(userId);
+    }
+
+    /**
+     * CodeRabbit round 1 on #840 (the delivery identity): the notification's
+     * OCCURRENCE key for the email transport's idempotency — the type plus
+     * the occurrence-bearing identifiers the event already carries. Two
+     * distinct occurrences that render identically (two messages of one
+     * conversation) stay distinct by construction; a registry resubmission of
+     * the SAME event re-derives the SAME key (a replay, never a
+     * double-send). The recipient's id rides the key too — one event
+     * delivering to two participants (the booking pair, the payment pair)
+     * sends two emails, one per recipient, each with its own record.
+     */
+    /** Return a non-reversible identity part for one-time credentials. */
+    private static String opaqueDeliveryPart(String value) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    /**
+     * The email occurrence key (CodeRabbit round 2 on #840 — finding 840-1):
+     * PUBLIC static so every email door in the module (the routing and
+     * dispute deliveries included) composes the ONE house format —
+     * "marketplace-email-<TYPE>-<recipient>-<occurrence ids>" — instead of
+     * each class re-deriving its own.
+     */
+    public static String deliveryKey(String type, UUID recipientId, Object... occurrenceIds) {
+        StringBuilder key = new StringBuilder("marketplace-email-").append(type).append('-').append(recipientId);
+        for (Object id : occurrenceIds) {
+            key.append('-').append(id);
+        }
+        return key.toString();
+    }
+
+    /**
+     * The dispute cycle's key occurrence: the disputeId when the event
+     * carries one (every publication since the R2 widening), the loanId
+     * for legacy publications persisted before it — never a null
+     * stringified into the key (CodeRabbit round on 376cc11d, R6).
+     */
+    private static Object disputeOccurrence(UUID disputeId, UUID loanId) {
+        return disputeId != null ? disputeId : loanId;
     }
 }

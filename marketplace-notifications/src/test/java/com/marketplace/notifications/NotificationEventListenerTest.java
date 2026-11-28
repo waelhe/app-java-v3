@@ -222,11 +222,13 @@ class NotificationEventListenerTest {
         UUID postId = UUID.randomUUID();
         UUID commentAuthorId = UUID.randomUUID();
         UUID postAuthorId = UUID.randomUUID();
-        PostCommentedEvent event = new PostCommentedEvent(postId, commentAuthorId, postAuthorId);
+        UUID commentId = UUID.randomUUID();
+        PostCommentedEvent event = new PostCommentedEvent(postId, commentId, commentAuthorId, postAuthorId);
 
         listener.onPostCommented(event);
 
-        verify(notificationService).onPostCommented(postId, postAuthorId);
+        // R7: the comment's own id rides the delivery key's occurrence.
+        verify(notificationService).onPostCommented(postId, commentId, postAuthorId);
     }
 
     @Test
@@ -237,20 +239,20 @@ class NotificationEventListenerTest {
         // the honest fact), the notification does not.
         UUID postId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
-        PostCommentedEvent event = new PostCommentedEvent(postId, authorId, authorId);
+        PostCommentedEvent event = new PostCommentedEvent(postId, UUID.randomUUID(), authorId, authorId);
 
         listener.onPostCommented(event);
 
-        verify(notificationService, never()).onPostCommented(any(), any());
+        verify(notificationService, never()).onPostCommented(any(), any(), any());
     }
 
     @Test
     void onPostCommented_propagatesException() {
         PostCommentedEvent event = new PostCommentedEvent(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
 
         doThrow(new RuntimeException("Notification error"))
-                .when(notificationService).onPostCommented(any(), any());
+                .when(notificationService).onPostCommented(any(), any(), any());
 
         assertThrows(RuntimeException.class,
                 () -> listener.onPostCommented(event));
@@ -344,11 +346,13 @@ class NotificationEventListenerTest {
         UUID postId = UUID.randomUUID();
         UUID reactorId = UUID.randomUUID();
         UUID postAuthorId = UUID.randomUUID();
-        PostReactedEvent event = new PostReactedEvent(postId, reactorId, postAuthorId);
+        UUID reactionId = UUID.randomUUID();
+        PostReactedEvent event = new PostReactedEvent(postId, reactionId, reactorId, postAuthorId);
 
         listener.onPostReacted(event);
 
-        verify(notificationService).onPostReacted(postId, postAuthorId);
+        // R8: the reaction row's own id rides the delivery key's occurrence.
+        verify(notificationService).onPostReacted(postId, reactionId, postAuthorId);
     }
 
     @Test
@@ -359,11 +363,11 @@ class NotificationEventListenerTest {
         // registry keeps the honest fact), the notification does not.
         UUID postId = UUID.randomUUID();
         UUID authorId = UUID.randomUUID();
-        PostReactedEvent event = new PostReactedEvent(postId, authorId, authorId);
+        PostReactedEvent event = new PostReactedEvent(postId, UUID.randomUUID(), authorId, authorId);
 
         listener.onPostReacted(event);
 
-        verify(notificationService, never()).onPostReacted(any(), any());
+        verify(notificationService, never()).onPostReacted(any(), any(), any());
     }
 
     @Test
@@ -374,10 +378,10 @@ class NotificationEventListenerTest {
         // silently lose the author's thank alert while the reaction itself
         // already committed.
         PostReactedEvent event = new PostReactedEvent(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
 
         doThrow(new RuntimeException("Notification error"))
-                .when(notificationService).onPostReacted(any(), any());
+                .when(notificationService).onPostReacted(any(), any(), any());
 
         assertThrows(RuntimeException.class,
                 () -> listener.onPostReacted(event));
@@ -444,7 +448,7 @@ class NotificationEventListenerTest {
 
         listener.onMessageReceived(event);
 
-        verify(notificationService).onMessageReceived(conversationId, recipientId);
+        verify(notificationService).onMessageReceived(messageId, conversationId, recipientId);
     }
 
     @Test
@@ -453,7 +457,7 @@ class NotificationEventListenerTest {
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
 
         doThrow(new RuntimeException("Notification error"))
-                .when(notificationService).onMessageReceived(any(), any());
+                .when(notificationService).onMessageReceived(any(), any(), any());
 
         assertThrows(RuntimeException.class,
                 () -> listener.onMessageReceived(event));
@@ -480,7 +484,9 @@ class NotificationEventListenerTest {
 
         listener.onMembershipVerificationGranted(event);
 
-        verify(notificationService).onVerificationGranted(userId, locationId);
+        // R5: the membershipId rides the delivery key's occurrence — a
+        // re-granted membership is a new occurrence, never a 24h collision.
+        verify(notificationService).onVerificationGranted(membershipId, userId, locationId);
     }
 
     @Test
@@ -494,7 +500,7 @@ class NotificationEventListenerTest {
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
 
         doThrow(new RuntimeException("Notification error"))
-                .when(notificationService).onVerificationGranted(any(), any());
+                .when(notificationService).onVerificationGranted(any(), any(), any());
 
         assertThrows(RuntimeException.class,
                 () -> listener.onMembershipVerificationGranted(event));
