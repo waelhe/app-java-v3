@@ -45,6 +45,10 @@ public class ReviewMedia extends BaseEntity {
     @Column(name = "object_key", nullable = false, length = 500)
     private String objectKey;
 
+    /** Original PUT destination retained for account-erasure cleanup/retry (legacy rows may equal objectKey). */
+    @Column(name = "upload_object_key", length = 500)
+    private String uploadObjectKey;
+
     @Column(name = "content_type", nullable = false, length = 100)
     private String contentType;
 
@@ -62,12 +66,13 @@ public class ReviewMedia extends BaseEntity {
     protected ReviewMedia() {
     }
 
-    private ReviewMedia(UUID id, UUID reviewId, UUID uploaderId, String objectKey,
+    private ReviewMedia(UUID id, UUID reviewId, UUID uploaderId, String objectKey, String uploadObjectKey,
                         String contentType, Long sizeBytes, Integer position) {
         this.id = id;
         this.reviewId = reviewId;
         this.uploaderId = uploaderId;
         this.objectKey = objectKey;
+        this.uploadObjectKey = uploadObjectKey;
         this.contentType = contentType;
         this.sizeBytes = sizeBytes;
         this.position = position;
@@ -76,7 +81,12 @@ public class ReviewMedia extends BaseEntity {
 
     public static ReviewMedia create(UUID reviewId, UUID uploaderId, String objectKey,
                                      String contentType, Long sizeBytes, Integer position) {
-        return new ReviewMedia(UUID.randomUUID(), reviewId, uploaderId, objectKey,
+        return create(reviewId, uploaderId, objectKey, objectKey, contentType, sizeBytes, position);
+    }
+
+    public static ReviewMedia create(UUID reviewId, UUID uploaderId, String objectKey, String uploadObjectKey,
+                                     String contentType, Long sizeBytes, Integer position) {
+        return new ReviewMedia(UUID.randomUUID(), reviewId, uploaderId, objectKey, uploadObjectKey,
                 contentType, sizeBytes, position);
     }
 
@@ -84,6 +94,7 @@ public class ReviewMedia extends BaseEntity {
     public void markUploaded() {
         this.status.validateTransitionTo(MediaAssetStatus.UPLOADED);
         this.status = MediaAssetStatus.UPLOADED;
+        // Keep the original staging key as erasure evidence for failed cleanup retries.
     }
 
     @Override
@@ -91,6 +102,7 @@ public class ReviewMedia extends BaseEntity {
     public UUID getReviewId() { return reviewId; }
     public UUID getUploaderId() { return uploaderId; }
     public String getObjectKey() { return objectKey; }
+    public String getUploadObjectKey() { return uploadObjectKey; }
     public String getContentType() { return contentType; }
     public Long getSizeBytes() { return sizeBytes; }
     public MediaAssetStatus getStatus() { return status; }

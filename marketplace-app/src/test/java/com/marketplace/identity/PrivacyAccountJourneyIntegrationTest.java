@@ -168,6 +168,11 @@ class PrivacyAccountJourneyIntegrationTest {
                 "/api/v1/admin/users/" + userId + "/pseudonymize", admin.accessToken(),
                 "{\"reason\":\"the member's erasure request\"}");
         assertThat(pseudonymize.statusCode()).as("pseudonymize: %s", body(pseudonymize)).isEqualTo(200);
+        // The erasure purge is a durable, asynchronous publication now
+        // (@ApplicationModuleListener): its completion is witnessed by the
+        // registry's archive row before the journey asserts the purge's
+        // effects (the LedgerRefundReplayIntegrationTest awaitArchived shape).
+        awaitAutomaticErasurePurgeCompletion();
 
         // The measured effect, leg one — the login identity is dead: the
         // form login no longer authenticates the removed row and the
@@ -187,16 +192,36 @@ class PrivacyAccountJourneyIntegrationTest {
         assertThat(row.get("pseudonymized_at")).isNotNull();
 
         // (5) The erasure chain, step two — the free-text purge across the
-        // owning modules (the authored post's text is purged in place).
+        // owning modules. The branch's two-stage orchestration: the
+        // ORDINARY path purges through the durable AccountIdentityErased
+        // AFTER_COMMIT consumer (post-commit, asynchronous), and the
+        // administrative purge-content endpoint remains the explicit
+        // repair/retry surface. The journey therefore waits for the
+        // ordinary path's own effect first (the authored post's text is
+        // purged in place — a bounded poll, the LedgerModuleIntegrationTest
+        // awaitBalance pattern: 30s / 200ms), then proves the admin
+        // surface's idempotent answer: nothing left to purge.
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        String purgedTitle = "J34 authored title";
+        while (System.nanoTime() < deadline) {
+            purgedTitle = jdbcTemplate.queryForObject(
+                    "SELECT title FROM neighborhood_posts WHERE author_id = ?", String.class, userId);
+            if (!"J34 authored title".equals(purgedTitle)) {
+                break;
+            }
+            Thread.sleep(200);
+        }
+        assertThat(purgedTitle)
+                .as("the ordinary AFTER_COMMIT purge consumer cleared the authored title")
+                .isNotEqualTo("J34 authored title");
         HttpResponse<String> purgeContent = postJsonWithBearer(
                 "/api/v1/admin/users/" + userId + "/purge-content", admin.accessToken(),
                 "{\"reason\":\"the member's erasure request\"}");
         assertThat(purgeContent.statusCode()).as("purge-content: %s", body(purgeContent)).isEqualTo(200);
         int purgedRows = objectMapper.readTree(purgeContent.body()).path("purgedRows").asInt();
-        assertThat(purgedRows).as("the authored free text was purged (>= the post's two text columns)").isPositive();
-        String purgedTitle = jdbcTemplate.queryForObject(
-                "SELECT title FROM neighborhood_posts WHERE author_id = ?", String.class, userId);
-        assertThat(purgedTitle).as("the authored title is no longer the member's words").isNotEqualTo("J34 authored title");
+        assertThat(purgedRows)
+                .as("the admin surface is the idempotent repair — the ordinary path already purged")
+                .isZero();
 
         // Idempotence — a re-run purges zero.
         HttpResponse<String> purgeAgain = postJsonWithBearer(
@@ -205,17 +230,48 @@ class PrivacyAccountJourneyIntegrationTest {
         assertThat(purgeAgain.statusCode()).isEqualTo(200);
         assertThat(objectMapper.readTree(purgeAgain.body()).path("purgedRows").asInt()).isZero();
 
-        // (6) The erasure chain, step three — the audit identity purge.
+        // (6) b-4 is part of the same durable AFTER_COMMIT erasure consumer:
+        // the audit mirror is already gone after the ordinary identity request.
+        Integer remainingAudRows = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, userId);
+        assertThat(remainingAudRows)
+                .as("the automatic b-4 stage deleted the user's audit mirror").isZero();
+
+        // The administrative endpoint remains an idempotent repair surface.
         HttpResponse<String> purgeAudit = postJsonWithBearer(
                 "/api/v1/admin/users/" + userId + "/purge-audit-history", admin.accessToken(),
-                "{\"reason\":\"the member's erasure request\"}");
+                "{\"reason\":\"replay after automatic erasure\"}");
         assertThat(purgeAudit.statusCode()).as("purge-audit-history: %s", body(purgeAudit)).isEqualTo(200);
         JsonNode auditResult = objectMapper.readTree(purgeAudit.body());
         assertThat(auditResult.path("usersAudRowsDeleted").asInt())
-                .as("the user's audit rows are deleted").isPositive();
-        Integer remainingAudRows = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, userId);
-        assertThat(remainingAudRows).isZero();
+                .as("the b-4 replay must be a no-op").isZero();
+        assertThat(auditResult.path("scrubbedRows").asInt())
+                .as("the audit columns were already scrubbed by b-4").isZero();
+    }
+
+    /**
+     * The durable erasure purge is a publication completed asynchronously:
+     * the registry archives the publication the moment its listener
+     * finishes (completion-mode: archive — the house-measured "a COMPLETED
+     * publication moves into the archive IMMEDIATELY" semantics). The
+     * bounded poll (30s / 200ms) makes every post-erasure assertion below
+     * deterministic.
+     */
+    private void awaitAutomaticErasurePurgeCompletion() throws InterruptedException {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer open = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            Integer archived = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication_archive WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            if ((open == null || open == 0) && archived != null && archived > 0) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("the automatic erasure purge never completed");
     }
 
     /**

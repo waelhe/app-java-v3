@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=.ci/prepare-baseline-maven-wrapper.sh
+source "$ROOT_DIR/.ci/prepare-baseline-maven-wrapper.sh"
 WORK_DIR="$ROOT_DIR/.ci/openapi-compat"
 mkdir -p "$WORK_DIR"
 
@@ -75,8 +77,20 @@ generate_spec() {
 # the tag-era R__seed_oauth2_client checksum difference is a pending
 # repeatable, not a validation error — it re-applies as the retired no-op.
 BASELINE_BRANCH="openapi-baseline-$LATEST_TAG"
+# F1 (CodeRabbit full review 2026-11-28): the wrapper repoint below rewrites a
+# TRACKED file in-place. If the baseline phase fails anywhere between the
+# repoint and the explicit restore (generate_spec exits 1 on a failed boot or
+# a missed /v3/api-docs), set -e leaves the worktree on the tag with the
+# archive-URL override still applied. An EXIT trap restores the file on ANY
+# early exit from that window; it is cleared right after the explicit
+# successful restore below so the normal path never runs it twice.
+trap 'git -C "$ROOT_DIR" checkout -q -- .mvn/wrapper/maven-wrapper.properties 2>/dev/null || true' EXIT
 git checkout -q "$LATEST_TAG"
+prepare_baseline_maven_wrapper "$ROOT_DIR/.mvn/wrapper/maven-wrapper.properties"
 generate_spec "baseline" "$WORK_DIR/baseline-openapi.json"
+# The archive URL override is scoped to the historical baseline only.
+git checkout -q -- .mvn/wrapper/maven-wrapper.properties
+trap - EXIT
 
 cd "$ROOT_DIR"
 git checkout -q "$CURRENT_SHA"

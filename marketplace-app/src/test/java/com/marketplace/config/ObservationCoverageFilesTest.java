@@ -306,7 +306,7 @@ class ObservationCoverageFilesTest {
                     "lending.loan.approve", "lending.loan.cancel",
                     "lending.loan.request", "lending.offer.publish")),
             Map.entry("marketplace-media", List.of(
-                    "media.asset.delete", "media.review.asset.delete",
+                    "media.asset.delete", "media.erasure.destroyObjects", "media.review.asset.delete",
                     "media.review.upload.confirm", "media.review.upload.request",
                     "media.thumbnail.process", "media.upload.confirm",
                     "media.upload.request", "media.upload.request.post")),            Map.entry("marketplace-messaging", List.of("messaging.send")),

@@ -96,10 +96,21 @@ class ProductMediaTargetTest {
         MediaService.MediaUploadView view =
                 service.requestProductUpload(productId, "image/jpeg", 1024L, authentication);
 
-        assertThat(view.objectKey()).startsWith("products/" + productId + "/");
+        // the staging-upload contract (the promotion series): the client
+        // uploads to the STAGING key — the returned objectKey IS it — and
+        // the products namespace is the asset's FINAL destination, assigned
+        // at confirmation's CopyObject (MediaServiceTest pins the promote
+        // flow itself: verifyUploaded → copyVerifiedObject(staging, final, contentType, sizeBytes) →
+        // deleteObjects(staging))
+        assertThat(view.objectKey()).startsWith("media-upload-staging/");
         assertThat(view.uploadUrl()).isEqualTo("https://signed-put");
+        // the final key keeps the products namespace — the promotion target
+        org.mockito.ArgumentCaptor<MediaAsset> saved =
+                org.mockito.ArgumentCaptor.forClass(MediaAsset.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getObjectKey()).startsWith("products/" + productId + "/");
+        assertThat(saved.getValue().getUploadObjectKey()).isEqualTo(view.objectKey());
         verify(repository).lockProductPositionAllocation(productId.toString());
-        verify(repository).save(any(MediaAsset.class));
     }
 
     @Test

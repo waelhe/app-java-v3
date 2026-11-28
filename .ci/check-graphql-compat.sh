@@ -40,6 +40,8 @@ set -euo pipefail
 #   GRAPHQL_BASELINE_TAG — optional tag override (default: newest tag).
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=.ci/prepare-baseline-maven-wrapper.sh
+source "$ROOT_DIR/.ci/prepare-baseline-maven-wrapper.sh"
 WORK_DIR="$ROOT_DIR/.ci/graphql-compat"
 DUMP_FILE="marketplace-app/target/graphql-schema.graphqls"
 DUMP_CLASS_DIR="marketplace-app/src/test/java/com/marketplace/app/graphql"
@@ -130,6 +132,7 @@ remove_dump_test() {
 # ------------------------------------------------------------- baseline phase
 if [[ "$BOOTSTRAP" -eq 0 ]]; then
   git checkout -q "$LATEST_TAG"
+  prepare_baseline_maven_wrapper "$ROOT_DIR/.mvn/wrapper/maven-wrapper.properties"
   write_dump_test
   # `clean` is load-bearing (the OpenAPI gate's measured lesson): the two
   # phases build different trees through the same target/ — a stale
@@ -137,11 +140,19 @@ if [[ "$BOOTSTRAP" -eq 0 ]]; then
   if ! ./mvnw -U -q -pl marketplace-app -am clean test -Dtest=GraphQlSchemaDumpGate \
         -Dsurefire.failIfNoSpecifiedTests=false -DskipITs \
         > "$WORK_DIR/baseline-maven.log" 2>&1; then
+    git checkout -q -- .mvn/wrapper/maven-wrapper.properties
     remove_dump_test
     git checkout -q "$CURRENT_SHA"
-    echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent. See .ci/graphql-compat/baseline-maven.log (uploaded as a workflow artifact on failure)."
+    echo "FAIL: baseline tag $LATEST_TAG carries a GraphQL schema but its dump run failed — the baseline is broken, not absent."
+    echo "=== baseline Maven failure (last 120 lines) ==="
+    tail -n 120 "$WORK_DIR/baseline-maven.log" || true
+    echo "=== end baseline Maven failure ==="
+    echo "Full log is also uploaded as a workflow artifact."
     exit 1
   fi
+  # The temporary archive URL rewrite belongs only to the historical tag.
+  # Restore its tracked wrapper file before returning to the current tree.
+  git checkout -q -- .mvn/wrapper/maven-wrapper.properties
   if [[ ! -f "$DUMP_FILE" ]]; then
     remove_dump_test
     git checkout -q "$CURRENT_SHA"

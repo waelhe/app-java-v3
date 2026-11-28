@@ -174,17 +174,9 @@ class AuthoredContentPurgeIntegrationTest {
 
         GateResult admin = adminGate();
 
-        // The purge's own guard: it completes an erasure flow — Phase 1's
-        // surface must run first (the plan's §5-أ, the real HTTP path).
-        HttpResponse<String> pseudonymize = postJsonWithBearer(
-                "/api/v1/admin/users/" + subjectId + "/pseudonymize", admin.accessToken(),
-                "{\"reason\":\"data-subject erasure request\"}");
-        assertThat(pseudonymize.statusCode())
-                .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
-
-        // The cache guard's warm-up (CodeRabbit #318 round 1, adopted):
-        // the un-purged persona enters the real "providers" cache through
-        // the real read path BEFORE the purge runs.
+        // Warm the real provider cache BEFORE identity erasure. The
+        // AFTER_COMMIT consumer must evict this stale entry after its JDBC
+        // adapter clears the authored persona fields.
         com.marketplace.provider.ProviderProfile prePurge =
                 providerService.getById(f.subjectProfileId());
         assertThat(prePurge.getDisplayName()).isEqualTo("Subject The Provider");
@@ -192,26 +184,35 @@ class AuthoredContentPurgeIntegrationTest {
         assertThat(prePurge.getAgencyName()).isEqualTo("Subject Agency LLC");
         assertThat(prePurge.getLicenseNumber()).isEqualTo("BR-2026-0001");
 
-        // The action — real HTTP through the administrative surface.
-        HttpResponse<String> purge = postJsonWithBearer(
-                "/api/v1/admin/users/" + subjectId + "/purge-content", admin.accessToken(),
+        // The real pseudonymization command publishes AccountIdentityErased
+        // in its database transaction. AccountIdentityContentPurger consumes
+        // it synchronously AFTER_COMMIT and runs all module adapters through
+        // the existing idempotent orchestrator; no second admin request is
+        // needed to complete the authored-content erasure.
+        HttpResponse<String> pseudonymize = postJsonWithBearer(
+                "/api/v1/admin/users/" + subjectId + "/pseudonymize", admin.accessToken(),
                 "{\"reason\":\"data-subject erasure request\"}");
-        assertThat(purge.statusCode())
-                .as("purge call: %s", body(purge)).isEqualTo(200);
-        JsonNode purgeBody = objectMapper.readTree(purge.body());
-        assertThat(purgeBody.path("purgedRows").asInt())
-                .as("the exact fan-out count, measured against the seeded "
-                        + "fixture (CodeRabbit's round-1 arithmetic, adopted; "
-                        + "extended by the §9 listings row's eighth converter "
-                        + "and the L36 persona fields): "
-                        + "2 bookings (1+1) + 3 messaging (2 base + 1 mirror — "
-                        + "the seed plants ONE subject message mirror) + 4 review "
-                        + "comments + 4 review replies (2 base + 2 mirror each) "
-                        + "6 profile fields (name+bio+agency+license, base+mirror) "
-                        + "+ 4 listing "
-                        + "fields (title+description, base+mirror — the catalog "
-                        + "adapter) + 2 disputes + 2 notifications")
-                .isEqualTo(27);
+        assertThat(pseudonymize.statusCode())
+                .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
+
+        // The erasure purge is a durable, asynchronous publication now
+        // (@ApplicationModuleListener): the registry's archive row
+        // witnesses that EVERY adapter (and b-4) completed before this
+        // journey's immediate assertion cascade over all twelve modules'
+        // tables and mirrors (the LedgerRefundReplayIntegrationTest
+        // awaitArchived shape, 30s / 200ms).
+        awaitAutomaticErasurePurgeCompletion();
+
+        // The provider read must now return the erased profile, not the
+        // pre-erasure Redis value warmed above. This verifies the adapter's
+        // existing targeted AFTER_COMMIT cache invalidation as part of the
+        // complete account-erasure event path.
+        com.marketplace.provider.ProviderProfile postPurge =
+                providerService.getById(f.subjectProfileId());
+        assertThat(postPurge.getDisplayName()).isEqualTo(PURGED_MARKER);
+        assertThat(postPurge.getBio()).isNull();
+        assertThat(postPurge.getAgencyName()).isNull();
+        assertThat(postPurge.getLicenseNumber()).isNull();
 
         // -- bookings (V3: notes is nullable -> NULL) ---------------------
         assertThat(jdbcTemplate.queryForObject(
@@ -314,16 +315,6 @@ class AuthoredContentPurgeIntegrationTest {
                 .containsEntry("license_number", null)
                 .containsEntry("status", "VERIFIED");
 
-        // The cache guard's read-back (CodeRabbit #318 round 1, adopted):
-        // the SAME cached read path must serve the PURGED persona — the
-        // adapter's targeted AFTER_COMMIT invalidation evicted the warm
-        // entry, so this read misses the cache and reflects the erased row.
-        com.marketplace.provider.ProviderProfile postPurge =
-                providerService.getById(f.subjectProfileId());
-        assertThat(postPurge.getDisplayName()).isEqualTo(PURGED_MARKER);
-        assertThat(postPurge.getBio()).isNull();
-        assertThat(postPurge.getAgencyName()).isNull();
-        assertThat(postPurge.getLicenseNumber()).isNull();
         assertThat(jdbcTemplate.queryForMap(
                 "SELECT display_name, bio, agency_name, license_number FROM provider_profiles WHERE id = ?",
                 f.counterpartyProfileId()))
@@ -428,7 +419,33 @@ class AuthoredContentPurgeIntegrationTest {
     }
 
     /**
+     * The durable erasure purge is a publication completed asynchronously:
+     * the registry archives the publication the moment its listener
+     * finishes (completion-mode: archive — the house-measured "a COMPLETED
+     * publication moves into the archive IMMEDIATELY" semantics). The
+     * bounded poll (30s / 200ms) makes the post-erasure assertion cascade
+     * below deterministic.
+     */
+    private void awaitAutomaticErasurePurgeCompletion() throws InterruptedException {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer open = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            Integer archived = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication_archive WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            if ((open == null || open == 0) && archived != null && archived > 0) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("the automatic erasure purge never completed");
+    }
+
+    /**
      * The guard's negative: a LIVE account is rejected with 409 before any
+
      * statement runs (the purge completes an erasure flow — pseudonymize
      * first). Also the unknown-id mapping (404) on the same surface.
      */

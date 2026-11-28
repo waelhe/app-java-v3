@@ -48,7 +48,7 @@
 
 **Invariant protected:** external effects and idempotency records survive partial failure; identity of an operation is stable regardless of state at retry time.
 
-**Demonstrating cases:** E-04 (retryable boundary joined `REQUIRED` carrier → rollback-only poisoning, dedup-without-settlement), E-08 (refund key derived from dispute state → double-payment window after rollback+webhook), E-07 (AFTER_COMMIT deferral applied globally then reverted — the inverse lesson: the pattern is conditional, not universal), E-06-adjacent (listener transaction semantics).
+**Demonstrating cases:** E-04 (retryable boundary joined `REQUIRED` carrier → rollback-only poisoning, dedup-without-settlement), E-08 (refund key derived from dispute state → double-payment window after rollback+webhook), E-07 (AFTER_COMMIT deferral applied globally then reverted — the inverse lesson: the pattern is conditional, not universal), E-06-adjacent (listener transaction semantics), E-24 (media purge finalized an overlapping attempt's rows without preserving the object-deletion batch identity).
 
 **Same cause?** One family, three mechanisms: (a) retryable work inside carrier transactions, (b) idempotency identity derived from mutable state, (c) publication timing chosen without read-path analysis. All are *transactional-boundary design* failures.
 

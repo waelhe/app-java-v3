@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * I7 Phase 3 (account-pseudonymization-plan §2 gate b-4 — the audit
@@ -38,9 +40,12 @@ import org.springframework.stereotype.Service;
  * (table, column) and the deletion is its own statement — a partial
  * failure leaves the completed statements committed and the re-run
  * resumes: every predicate is idempotent (NULL matches nothing) and a
- * user with no mirror history left answers zero. This service carries no
- * {@code @Transactional}, and the module surface suspends any ambient
- * transaction ({@code NOT_SUPPORTED} on the delegation).</p>
+ * user with no mirror history left answers zero. The method therefore
+ * carries {@code @Transactional(NOT_SUPPORTED)} — the suspension the
+ * administrative delegation ({@code UserService.purgeAuditHistory}) has
+ * always applied — so the durable erasure listener's own ambient
+ * transaction cannot wrap these statements either; both callers leave
+ * the autocommitted gradualism untouched.</p>
  *
  * <p><b>The guard:</b> the same erasure-flow contract as the b-3 purge —
  * the target must already be pseudonymized (409 otherwise, before any
@@ -85,6 +90,7 @@ public class AuditHistoryPurgeService {
      *                                    flow (pseudonymize first)
      */
     @Observed(name = "user.audit.purge")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public com.marketplace.identity.spi.AuditHistoryPurgeResult purge(UUID userId, String reason, String actor) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));

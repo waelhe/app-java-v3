@@ -1,6 +1,7 @@
 package com.marketplace.media;
 
 import com.marketplace.shared.api.BadRequestException;
+import com.marketplace.shared.api.ConflictException;
 import com.marketplace.shared.api.ListingPriceProvider;
 import com.marketplace.shared.api.ListingPublicStatePort;
 import com.marketplace.shared.api.MediaLookupPort;
@@ -109,6 +110,11 @@ public class MediaService {
         validateSize(sizeBytes);
 
         ListingPriceProvider.ListingInfo listing = listingPriceProvider.getListingInfo(listingId);
+        // Lock before resolving the caller's current identity. If erasure wins
+        // this lock, the identity re-check below observes the pseudonymized
+        // subject and rejects this request; if upload wins, erasure waits and
+        // includes the committed row in its key snapshot.
+        mediaAssetRepository.lockAccountMediaMutation(listing.providerId().toString());
         verifyListingOwnership(listing.providerId(), authentication);
 
         // Display-position allocation must be atomic per listing (CodeRabbit
@@ -121,15 +127,16 @@ public class MediaService {
         mediaAssetRepository.lockListingPositionAllocation(listingId.toString());
 
         String objectKey = buildObjectKey(listingId, normalizedType);
+        String uploadObjectKey = buildUploadStagingKey();
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.create(
-                listingId, listing.providerId(), objectKey, normalizedType,
+                listingId, listing.providerId(), objectKey, uploadObjectKey, normalizedType,
                 // The highest allocated live position plus one — a soft deletion
                 // never re-opens a slot a remaining row still holds (greptile W1
                 // r10, adopted from the root; same root fix as the review channel).
                 sizeBytes, mediaAssetRepository.findMaxPositionByListingId(listingId) + 1));
 
-        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
-        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+        String uploadUrl = s3.presignUpload(uploadObjectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), uploadObjectKey, uploadUrl, properties.limits().presignTtl());
     }
 
     /**
@@ -163,6 +170,9 @@ public class MediaService {
         validateSize(sizeBytes);
 
         PostLookupPort.PostInfo post = postLookupPort.getPostInfo(postId);
+        // Acquire the owner fence before the identity check so a request
+        // queued behind account erasure cannot reuse a pre-erasure JWT check.
+        mediaAssetRepository.lockAccountMediaMutation(post.authorId().toString());
         verifyPostAuthorship(post.authorId(), authentication);
         verifyPostWriteRight(post);
 
@@ -173,14 +183,15 @@ public class MediaService {
         mediaAssetRepository.lockPostPositionAllocation(postId.toString());
 
         String objectKey = buildPostObjectKey(postId, normalizedType);
+        String uploadObjectKey = buildUploadStagingKey();
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForPost(
-                postId, post.authorId(), objectKey, normalizedType,
+                postId, post.authorId(), objectKey, uploadObjectKey, normalizedType,
                 // Greptile W1 r10 (adopted): max-based allocation — the post twin
                 // of the listing fix above.
                 sizeBytes, mediaAssetRepository.findMaxPositionByPostId(postId) + 1));
 
-        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
-        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+        String uploadUrl = s3.presignUpload(uploadObjectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), uploadObjectKey, uploadUrl, properties.limits().presignTtl());
     }
 
     /**
@@ -206,17 +217,19 @@ public class MediaService {
         validateSize(sizeBytes);
 
         ProductLookupPort.ProductInfo product = productLookupPort.getProductInfo(productId);
+        mediaAssetRepository.lockAccountMediaMutation(product.providerId().toString());
         verifyListingOwnership(product.providerId(), authentication);
 
         mediaAssetRepository.lockProductPositionAllocation(productId.toString());
 
         String objectKey = buildProductObjectKey(productId, normalizedType);
+        String uploadObjectKey = buildUploadStagingKey();
         MediaAsset asset = mediaAssetRepository.save(MediaAsset.createForProduct(
-                productId, product.providerId(), objectKey, normalizedType,
+                productId, product.providerId(), objectKey, uploadObjectKey, normalizedType,
                 sizeBytes, mediaAssetRepository.findMaxPositionByProductId(productId) + 1));
 
-        String uploadUrl = s3.presignUpload(objectKey, normalizedType);
-        return new MediaUploadView(asset.getId(), objectKey, uploadUrl, properties.limits().presignTtl());
+        String uploadUrl = s3.presignUpload(uploadObjectKey, normalizedType);
+        return new MediaUploadView(asset.getId(), uploadObjectKey, uploadUrl, properties.limits().presignTtl());
     }
 
     /**
@@ -276,22 +289,94 @@ public class MediaService {
     @PreAuthorize("isAuthenticated()")
     public MediaAssetView confirmUpload(UUID mediaId, Authentication authentication) {
         S3MediaStorage s3 = requireStorage();
-        MediaAsset asset = getById(mediaId);
+        MediaAsset asset = mediaAssetRepository.findByIdForUpdate(mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media not found: " + mediaId));
         verifyAssetOwnership(asset, authentication);
+        if (asset.getStatus() != MediaAssetStatus.PENDING_UPLOAD) {
+            if (asset.getStatus() == MediaAssetStatus.UPLOADED) {
+                // F5 (CodeRabbit full review 2026-11-28): an already-confirmed
+                // upload re-answers the SAME successful confirmation result —
+                // the client's retry gets its view (origin + read link), never
+                // a 409 for a state it already achieved. The decision rides
+                // the state read under the row lock this method already holds;
+                // PURGE_PENDING, PURGED and every other state keep the honest
+                // 409 (an erased subject's asset must never re-answer a link).
+                return toView(asset, s3.presignDownload(asset.getObjectKey()));
+            }
+            throw new ConflictException("Media upload is not pending confirmation: " + mediaId);
+        }
         if (asset.getPostId() != null && !currentUserProvider.isAdmin(authentication)) {
             PostLookupPort.PostInfo post = postLookupPort.getPostInfo(asset.getPostId());
             verifyPostAuthorship(post.authorId(), authentication);
             verifyPostWriteRight(post);
         }
 
-        boolean verified = s3.verifyUploaded(asset.getObjectKey(), asset.getContentType(), asset.getSizeBytes());
-        if (!verified) {
-            throw new BadRequestException(
-                    "Object not found in storage (or type/size mismatch) for media: " + mediaId);
+        // The presigned PUT targets only the temporary staging prefix. Holding
+        // the row write lock serializes promotion with the erasure tombstone:
+        // either this copy commits first and the purge deletes the final key,
+        // or the purge commits first and this confirmation is rejected.
+        String uploadObjectKey = asset.getUploadObjectKey() == null
+                ? asset.getObjectKey() : asset.getUploadObjectKey();
+        boolean promotedFromStaging = !uploadObjectKey.equals(asset.getObjectKey());
+        if (promotedFromStaging) {
+            // F3 (CodeRabbit full review 2026-11-28): the staging path's atomic
+            // conditional copy IS the verification — copyVerifiedObject heads
+            // the staged object, checks size/type/etag, and copies under
+            // copySourceIfMatch with a precise taxonomy (404 → "no longer
+            // available", drift → "changed before it could be published",
+            // concurrent replace → 412 → 409 "changed during confirmation").
+            // The pre-fix outer verifyUploaded HEAD was a redundant round trip
+            // whose generic 400 could also mask the copy's own more precise
+            // answers. This copy is idempotent: if the DB transaction rolls
+            // back, the staging object remains and a retry safely overwrites
+            // the final key.
+            s3.copyVerifiedObject(uploadObjectKey, asset.getObjectKey(),
+                    asset.getContentType(), asset.getSizeBytes());
+        } else {
+            // F3's kept half: the direct path (the legacy rows whose upload
+            // key IS the final key) has nothing to promote — the standalone
+            // verifyUploaded HEAD remains its anti-forgery gate.
+            boolean verified = s3.verifyUploaded(uploadObjectKey, asset.getContentType(), asset.getSizeBytes());
+            if (!verified) {
+                throw new BadRequestException(
+                        "Object not found in storage (or type/size mismatch) for media: " + mediaId);
+            }
         }
         asset.markUploaded();
+        if (promotedFromStaging) {
+            // Never delete the only retry source before the DB commit. A failed
+            // commit must leave the row PENDING_UPLOAD and the staging bytes
+            // available. After commit, cleanup is best-effort; the bucket's
+            // staging-prefix lifecycle is the durable orphan backstop.
+            deleteStagingObjectAfterCommit(s3, uploadObjectKey);
+        }
         eventPublisher.publishEvent(new MediaUploadedEvent(asset.getId()));
         return toView(asset, s3.presignDownload(asset.getObjectKey()));
+    }
+
+    private void deleteStagingObjectAfterCommit(S3MediaStorage s3, String stagingKey) {
+        Runnable cleanup = () -> {
+            try {
+                // deleteObjects removes all known versions where supported.
+                s3.deleteObjects(List.of(stagingKey));
+            } catch (RuntimeException ex) {
+                // The lifecycle rule on media-upload-staging/ is authoritative
+                // for late/failed cleanup; do not undo an already committed upload.
+                log.warn("Staging media cleanup failed for key {} (bucket lifecycle will own it): {}",
+                        stagingKey, ex.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+        } else {
+            // Plain unit tests/direct calls do not have a transaction boundary.
+            cleanup.run();
+        }
     }
 
     /**
@@ -437,16 +522,17 @@ public class MediaService {
         mediaAssetRepository.delete(asset);
         String objectKey = asset.getObjectKey();
         String thumbKey = asset.getThumbObjectKey();
+        String uploadKey = asset.getUploadObjectKey();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    removeStorageObjects(s3, objectKey, thumbKey);
+                    removeStorageObjects(s3, objectKey, thumbKey, uploadKey);
                 }
             });
         } else {
             // No active transaction (unit tests) — remove immediately.
-            removeStorageObjects(s3, objectKey, thumbKey);
+            removeStorageObjects(s3, objectKey, thumbKey, uploadKey);
         }
     }
 
@@ -454,10 +540,14 @@ public class MediaService {
      * L28: removes the original and — when a distinct thumbnail object
      * exists — the thumbnail. Same best-effort contract as the original.
      */
-    private void removeStorageObjects(S3MediaStorage s3, String objectKey, String thumbKey) {
+    private void removeStorageObjects(S3MediaStorage s3, String objectKey, String thumbKey, String uploadKey) {
         removeStorageObject(s3, objectKey);
         if (thumbKey != null && !thumbKey.equals(objectKey)) {
             removeStorageObject(s3, thumbKey);
+        }
+        if (uploadKey != null && !uploadKey.equals(objectKey)
+                && !uploadKey.equals(thumbKey)) {
+            removeStorageObject(s3, uploadKey);
         }
     }
 
@@ -468,6 +558,30 @@ public class MediaService {
             log.warn("Storage object removal failed for key {} (bucket lifecycle will own it): {}",
                     objectKey, ex.getMessage());
         }
+    }
+
+    /**
+     * G3: synchronously destroys every known media object for account erasure.
+     * The caller has already committed PURGE_PENDING, so a storage failure
+     * leaves the media hidden and retryable rather than announcing completion.
+     *
+     * <p>No best-effort swallowing is permitted on this path. If storage is
+     * unconfigured, the provider rejects a key, a version cannot be listed, or
+     * Object Lock prevents deletion, the exception reaches the purge
+     * orchestrator and PURGED is not written.</p>
+     */
+    @Observed(name = "media.erasure.destroyObjects")
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    public void destroyObjectsForErasure(Collection<String> objectKeys) {
+        if (objectKeys == null || objectKeys.isEmpty()) {
+            return;
+        }
+        S3MediaStorage s3 = storage.getIfAvailable();
+        if (s3 == null) {
+            throw new ServiceUnavailableException(
+                    "Media erasure cannot complete because the configured object-storage channel is unavailable");
+        }
+        s3.deleteObjects(objectKeys);
     }
 
     @Transactional(readOnly = true)
@@ -516,8 +630,15 @@ public class MediaService {
     @Observed(name = "media.thumbnail.process")
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void processThumbnail(UUID mediaId) {
+        MediaAsset asset = mediaAssetRepository.findByIdForUpdate(mediaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Media asset not found: " + mediaId));
+        // The erasure tombstone and this worker serialize on the same row.
+        // Do not require storage, read the original, or create derivatives
+        // once purge has hidden the asset.
+        if (asset.getStatus() != MediaAssetStatus.UPLOADED) {
+            return;
+        }
         S3MediaStorage s3 = requireStorage();
-        MediaAsset asset = getById(mediaId);
         if (asset.getThumbObjectKey() != null) {
             // Idempotent: a resubmission re-running the listener must not
             // re-store the object or flip the pointer.
@@ -678,6 +799,10 @@ public class MediaService {
         verifyOwnership(asset.getProviderId(), authentication, "You do not own this media asset");
     }
 
+    private String buildUploadStagingKey() {
+        return "media-upload-staging/" + UUID.randomUUID();
+    }
+
     private String buildObjectKey(UUID listingId, String contentType) {
         return MediaUploadRules.buildObjectKey("listings", listingId, contentType);
     }
@@ -738,11 +863,11 @@ public class MediaService {
             @io.swagger.v3.oas.annotations.media.Schema(description = "The persisted media asset id",
                     example = "f47ac10b-58cc-4372-a567-0e02b2c3d479")
             UUID mediaId,
-            @io.swagger.v3.oas.annotations.media.Schema(description = "Server-generated object key",
-                    example = "listings/7c9e6679-7425-40de-944b-e07fc1f90ae7/1b2c3d4e-....jpg")
+            @io.swagger.v3.oas.annotations.media.Schema(description = "Temporary server-generated staging key accepted only by the presigned PUT",
+                    example = "media-upload-staging/1b2c3d4e-....")
             String objectKey,
             @io.swagger.v3.oas.annotations.media.Schema(description = "Presigned PUT URL (the TTL is urlLifetime)",
-                    example = "https://bucket.r2.cloudflarestorage.com/listings/...?X-Amz-Signature=...")
+                    example = "https://bucket.r2.cloudflarestorage.com/media-upload-staging/...?X-Amz-Signature=...")
             String uploadUrl,
             @io.swagger.v3.oas.annotations.media.Schema(description = "How long the presigned URL stays valid",
                     example = "PT15M")

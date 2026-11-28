@@ -31,6 +31,22 @@ import java.util.UUID;
  * not the pseudonymized replacement: the invalidator must resolve the
  * sessions that still carry the erased identity, and no session will ever
  * be indexed under the replacement subject.
+ *
+ * <p><b>F2 (the full review 2026-11-28) — the archived copy's declared
+ * retention:</b> because this payload carries the original principal name,
+ * the durable publication that guarantees delivery is itself a bounded
+ * retention surface. The declared retention is the house's existing
+ * event-publication archive window: {@code spring.modulith.events.
+ * completion-mode: archive} plus {@code EventPublicationCleanup}'s daily
+ * 03:00 UTC sweep of completed publications older than 7 days. The original
+ * values stay available to consumers during processing and the resubmission
+ * sweep (a failing consumer's redelivery needs them — they are never
+ * redacted before every consumer completes, which only the registry's own
+ * completion marking can observe); after completion the archived copy is
+ * deleted by that sweep, bounding the payload's post-erasure residency to
+ * the 7-day window plus the retry duration. The value is declared here and
+ * enforced by the existing cleanup job — changing it is a settings decision
+ * (the sweep's Duration), not a payload change.</p>
  */
 public record AccountIdentityErased(
         UUID userId,
