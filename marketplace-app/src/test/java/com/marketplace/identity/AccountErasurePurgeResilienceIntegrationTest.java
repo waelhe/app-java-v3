@@ -160,28 +160,30 @@ class AccountErasurePurgeResilienceIntegrationTest {
                 .as("pseudonymize with a failing purge leg must still answer 200: %s", body(pseudonymize))
                 .isEqualTo(200);
 
-        // Isolated — the bounded poll (30s / 200ms, the house shape): the
-        // reviews adapter ran although the media adapter failed before it.
+        // Isolated — the bounded poll (30s / 200ms, the house shape) waits
+        // for b-4's own effect: the audit mirror's death is the LATEST
+        // witness of the failing delivery's catch path (the content loop
+        // runs before b-4, so by the time users_aud is empty the reviews
+        // adapter's purge below is deterministic too). On the pre-fix code
+        // the poll times out and the assertion names the defect.
         long deadline = System.nanoTime() + 30_000_000_000L;
-        String comment = AUTHORED_REVIEW_COMMENT;
+        Integer usersAudRows = 1;
         while (System.nanoTime() < deadline) {
-            comment = jdbcTemplate.queryForObject(
-                    "SELECT comment FROM reviews WHERE id = ?", String.class, reviewId);
-            if (comment == null) {
+            usersAudRows = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, userId);
+            if (usersAudRows != null && usersAudRows == 0) {
                 break;
             }
             Thread.sleep(200);
         }
-        assertThat(comment)
-                .as("the reviews adapter still purged the subject's comment although the media leg failed")
-                .isNull();
-
-        // Isolated — b-4 still ran on the same delivery.
-        Integer usersAudRows = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM users_aud WHERE id = ?", Integer.class, userId);
         assertThat(usersAudRows)
                 .as("b-4 (the audit-history purge) still ran after the incomplete b-3 stage")
                 .isZero();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT comment FROM reviews WHERE id = ?", String.class, reviewId))
+                .as("the reviews adapter still purged the subject's comment although the media leg failed")
+                .isNull();
 
         // Durable — the media tombstones are retryable, not lost.
         assertThat(jdbcTemplate.queryForObject(
