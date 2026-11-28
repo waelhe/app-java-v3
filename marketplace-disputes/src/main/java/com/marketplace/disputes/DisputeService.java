@@ -14,6 +14,7 @@ import com.marketplace.shared.api.RefundOutcome;
 import com.marketplace.shared.api.ResourceNotFoundException;
 import com.marketplace.shared.security.CurrentUserProvider;
 import io.micrometer.observation.annotation.Observed;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -118,6 +119,8 @@ public class DisputeService {
      * {@code @Observed} span — exactly the regression the security test
      * caught.
      */
+    // rides the SHARED refundCarriers bulkhead (see the 4-arg resolve below)
+    @Bulkhead(name = "refundCarriers", type = Bulkhead.Type.SEMAPHORE)
     @Observed(name = "dispute.resolve")
     @PreAuthorize("hasRole('ADMIN')")
     public Dispute resolve(UUID id, DisputeResolution resolution, Authentication authentication) {
@@ -150,6 +153,16 @@ public class DisputeService {
      * refund-for-booking path is never re-pointed at loans, and disputes
      * never reimplements a refund).
      */
+    // CodeRabbit round 2 then round 5 on #828: the gate rides HERE, before
+    // the class-level carrier transaction begins — and round 5 made it the
+    // ONE SHARED "refundCarriers" semaphore bulkhead every refund-carrying
+    // carrier entry rides (this pair + OrderReturnsService.complete): the
+    // independent gates could sum past the connection pool. The bulkhead
+    // aspect's order (LOWEST_PRECEDENCE - 1, resilience4j 2.4.0 sources)
+    // sorts OUTSIDE the transaction interceptor — a waiting caller holds no
+    // connection; max-wait 10s bounds the queue. Refund/ledger REQUIRES_NEW
+    // independence untouched.
+    @Bulkhead(name = "refundCarriers", type = Bulkhead.Type.SEMAPHORE)
     @Observed(name = "dispute.resolve")
     @PreAuthorize("hasRole('ADMIN')")
     public Dispute resolve(UUID id, DisputeResolution resolution, Long refundAmountCents,

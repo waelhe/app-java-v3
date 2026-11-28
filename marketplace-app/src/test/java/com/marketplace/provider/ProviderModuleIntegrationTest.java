@@ -43,7 +43,10 @@ class ProviderModuleIntegrationTest {
      * keep the production bean). The measured context-load failure of
      * 2026-10-18 ("No qualifying bean of type 'java.time.Clock'",
      * providerClaimService constructor parameter 3) closes here — the
-     * same root as the identity slice's 2026-10-09 lesson.
+     * same root as the identity slice's 2026-10-09 lesson. The shared
+     * {@code ModuleTestConfig} fallback attempt of 2026-11-20 is reverted:
+     * {@code @ConditionalOnMissingBean} on a plain {@code @Configuration}
+     * has no processing-order guarantee (Spring Boot reference).
      */
     @org.springframework.boot.test.context.TestConfiguration
     static class ClockBean {

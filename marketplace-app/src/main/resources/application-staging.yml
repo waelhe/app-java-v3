@@ -201,3 +201,13 @@ marketplace:
       public-client:
         client-id: ${OAUTH_PUBLIC_CLIENT_ID}
         redirect-uris: ${OAUTH_PUBLIC_CLIENT_REDIRECT_URIS}
+
+resilience4j:
+  bulkhead:
+    instances:
+      # CodeRabbit round 5 on #828: staging's pool is half the production one
+      # (DB_POOL_SIZE:10) — the shared refund-carriers gate halves with it:
+      # ~9 of 10 connections at the worst case, leaving capacity for the rest.
+      refundCarriers:
+        maxConcurrentCalls: 3
+        maxWaitDuration: 10s
