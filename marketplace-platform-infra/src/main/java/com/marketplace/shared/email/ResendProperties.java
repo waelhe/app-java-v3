@@ -31,18 +31,25 @@ public record ResendProperties(String apiKey) {
                                     + "' — the variable was NOT resolved by any source)"
                                     : "") + ".");
         }
-        // CodeRabbit round 2 (major — security): a key carrying an ISO
-        // control character (e.g. a trailing line feed from a copy-pasted
-        // secret) passes isBlank() yet the HTTP header builder rejects it
-        // when composing Authorization — and the thrown
+        // CodeRabbit round 2 (major — security): a key carrying an invalid
+        // HTTP header-value character (a control character such as a trailing
+        // line feed from a copy-pasted secret, or a non-ASCII letter that
+        // isISOControl misses) passes isBlank() yet the header builder —
+        // JdkClientHttpRequestFactory on Java 25 measured in R4's round —
+        // rejects it when composing Authorization, and the thrown
         // IllegalArgumentException's message embeds the FULL header value,
         // so the key would reach the application logs through the send
-        // path's error logging. Control characters are rejected HERE, at
-        // binding time, and this message NEVER echoes the value.
-        if (apiKey.chars().anyMatch(Character::isISOControl)) {
+        // path's error logging.
+        // Full-review round (2026-11-28, the single finding): the gate is the
+        // RFC 7230 field-value grammar itself — VCHAR (visible ASCII
+        // 0x21-0x7E) plus SP and HTAB are the ONLY octets a header value may
+        // carry — so anything outside that set is rejected HERE, at binding
+        // time, and this message NEVER echoes the value.
+        if (!apiKey.chars().allMatch(c -> c == ' ' || c == '\t' || (c >= 0x21 && c <= 0x7e))) {
             throw new IllegalArgumentException(
-                    "marketplace.mail.resend.api-key contains ISO control characters — "
-                            + "rejected at binding time (a control character in the "
+                    "marketplace.mail.resend.api-key contains characters that are not valid in an HTTP "
+                            + "header value (RFC 7230 field-value: visible ASCII, space and horizontal tab "
+                            + "only) — rejected at binding time (an invalid character in the "
                             + "Authorization header makes the HTTP client's error message "
                             + "embed the full key, leaking the secret into logs). Fix the "
                             + "RESEND_API_KEY value in the deployment secret store.");

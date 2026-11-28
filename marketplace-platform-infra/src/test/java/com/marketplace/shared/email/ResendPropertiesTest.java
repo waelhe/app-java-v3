@@ -66,11 +66,11 @@ class ResendPropertiesTest {
     }
 
     /**
-     * A key carrying a control character fails STARTUP at binding time, and
-     * the failure message NEVER contains the key itself: the value would
-     * otherwise leak into the logs exactly the way the HTTP client's header
-     * error would have embedded it. The test key carries a trailing line
-     * feed AND an embedded carriage return to pin both shapes.
+     * A key carrying an invalid HTTP header-value character fails STARTUP at
+     * binding time, and the failure message NEVER contains the key itself:
+     * the value would otherwise leak into the logs exactly the way the HTTP
+     * client's header error would have embedded it. The test key carries a
+     * trailing line feed AND an embedded carriage return to pin both shapes.
      */
     @Test
     void aControlCharacterKeyFailsStartupWithoutEchoingTheValue() {
@@ -80,8 +80,29 @@ class ResendPropertiesTest {
                     assertThat(context).hasFailed();
                     String messages = chainMessagesOf(context);
                     assertThat(messages).contains("marketplace.mail.resend.api-key")
-                            .contains("ISO control characters");
+                            .contains("not valid in an HTTP header value");
                     assertThat(messages).doesNotContain("re_live_leaky_key");
+                });
+    }
+
+    /**
+     * Full-review round (2026-11-28, the single finding): a key carrying a
+     * NON-ASCII letter — invisible to the old isISOControl gate — is an
+     * invalid RFC 7230 field-value octet that JdkClientHttpRequestFactory
+     * (Java 25) rejects at SEND time; the binding-time gate must catch it
+     * FIRST, without echoing it (the R4 family: non-ASCII dies pre-send, so
+     * it must die at startup instead).
+     */
+    @Test
+    void aNonAsciiLetterKeyFailsStartupWithoutEchoingTheValue() {
+        String nonAsciiKey = "re_live_öö_key_с_مفتاح";
+        runner.withPropertyValues("marketplace.mail.resend.api-key=" + nonAsciiKey)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    String messages = chainMessagesOf(context);
+                    assertThat(messages).contains("marketplace.mail.resend.api-key")
+                            .contains("not valid in an HTTP header value");
+                    assertThat(messages).doesNotContain("re_live_");
                 });
     }
 
