@@ -507,7 +507,10 @@ class MediaServiceTest {
                 "image/jpeg", 2048L, 1);
         when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         mockOwner();
-        when(storage.verifyUploaded(stagingKey, "image/jpeg", 2048L)).thenReturn(true);
+        // F3 (the full review 2026-11-28): the staging confirm's verification IS
+        // the atomic conditional copy — no outer verifyUploaded HEAD on this
+        // path (the mocked copy plays the verification role here; the module
+        // test pins the call shape and the promotion-before-publishing order).
         when(storage.presignDownload(finalKey)).thenReturn("https://storage.example/signed-get");
 
         var view = service.confirmUpload(asset.getId(), authentication);
@@ -515,7 +518,7 @@ class MediaServiceTest {
         assertEquals(MediaAssetStatus.UPLOADED, asset.getStatus());
         assertEquals(stagingKey, asset.getUploadObjectKey());
         assertEquals("https://storage.example/signed-get", view.downloadUrl());
-        verify(storage).verifyUploaded(stagingKey, "image/jpeg", 2048L);
+        verify(storage, never()).verifyUploaded(anyString(), anyString(), any(Long.class));
         verify(storage).copyVerifiedObject(stagingKey, finalKey, "image/jpeg", 2048L);
         verify(storage).deleteObjects(List.of(stagingKey));
     }
@@ -529,7 +532,9 @@ class MediaServiceTest {
                 "image/jpeg", 2048L, 1);
         when(repository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
         mockOwner();
-        when(storage.verifyUploaded(stagingKey, "image/jpeg", 2048L)).thenReturn(true);
+        // F3: no verifyUploaded stub on the staging path (the conditional copy
+        // is the verification — a mocked no-op here); the old stub would be
+        // an UnnecessaryStubbing under this class's strict Mockito.
         when(storage.presignDownload(finalKey)).thenReturn("https://storage.example/committed");
 
         org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();

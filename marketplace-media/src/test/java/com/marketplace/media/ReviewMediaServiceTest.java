@@ -191,7 +191,10 @@ class ReviewMediaServiceTest {
         ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
                 "image/jpeg", 1024L, 1);
         when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
-        when(s3.verifyUploaded(stagingKey, "image/jpeg", 1024L)).thenReturn(true);
+        // F3 (the full review 2026-11-28): the staging confirm's verification IS
+        // the atomic conditional copy — no outer verifyUploaded HEAD (and no stub
+        // for it: this class runs strict Mockito, the stub would be
+        // an UnnecessaryStubbing).
         when(s3.presignDownload(finalKey)).thenReturn("https://download.test");
 
         service.confirmUpload(asset.getId(), authentication);
@@ -212,7 +215,8 @@ class ReviewMediaServiceTest {
         ReviewMedia asset = ReviewMedia.create(reviewId, uploaderId, finalKey, stagingKey,
                 "image/jpeg", 2048L, 1);
         when(reviewMediaRepository.findByIdForUpdate(asset.getId())).thenReturn(Optional.of(asset));
-        when(s3.verifyUploaded(stagingKey, "image/jpeg", 2048L)).thenReturn(true);
+        // F3: the staging path's verification is the conditional copy itself —
+        // no verifyUploaded stub here (strict Mockito would flag it unused).
         when(s3.presignDownload(finalKey)).thenReturn("https://download.test/committed");
 
         org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
