@@ -168,6 +168,11 @@ class PrivacyAccountJourneyIntegrationTest {
                 "/api/v1/admin/users/" + userId + "/pseudonymize", admin.accessToken(),
                 "{\"reason\":\"the member's erasure request\"}");
         assertThat(pseudonymize.statusCode()).as("pseudonymize: %s", body(pseudonymize)).isEqualTo(200);
+        // The erasure purge is a durable, asynchronous publication now
+        // (@ApplicationModuleListener): its completion is witnessed by the
+        // registry's archive row before the journey asserts the purge's
+        // effects (the LedgerRefundReplayIntegrationTest awaitArchived shape).
+        awaitAutomaticErasurePurgeCompletion();
 
         // The measured effect, leg one — the login identity is dead: the
         // form login no longer authenticates the removed row and the
@@ -242,6 +247,31 @@ class PrivacyAccountJourneyIntegrationTest {
                 .as("the b-4 replay must be a no-op").isZero();
         assertThat(auditResult.path("scrubbedRows").asInt())
                 .as("the audit columns were already scrubbed by b-4").isZero();
+    }
+
+    /**
+     * The durable erasure purge is a publication completed asynchronously:
+     * the registry archives the publication the moment its listener
+     * finishes (completion-mode: archive — the house-measured "a COMPLETED
+     * publication moves into the archive IMMEDIATELY" semantics). The
+     * bounded poll (30s / 200ms) makes every post-erasure assertion below
+     * deterministic.
+     */
+    private void awaitAutomaticErasurePurgeCompletion() throws InterruptedException {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer open = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            Integer archived = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication_archive WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            if ((open == null || open == 0) && archived != null && archived > 0) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("the automatic erasure purge never completed");
     }
 
     /**

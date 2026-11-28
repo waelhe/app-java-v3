@@ -363,6 +363,93 @@ class S3MediaStorageTest {
         }
     }
 
+    // ---- F-833-7 (the 2026-11-28 review, P3 — the split-boundary law) ----
+
+    @Test
+    void f833_7_theSmallestSplittingCountSplitsExactlyAtTheCeiling() {
+        // 1,001 keys is the smallest count past the 1,000-per-request
+        // ceiling: exactly two requests, 1,000 + 1 — the split boundary the
+        // 1,500-key test leaves unpinned (an off-by-one in the chunk loop
+        // would split at 999 + 2 or send 1,001 in one request).
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            givenUnversionedBucket();
+            givenSuccessfulDeleteObjects();
+
+            java.util.List<String> keys = new java.util.ArrayList<>(1_001);
+            for (int i = 0; i < 1_001; i++) {
+                keys.add("listings/" + i + "/photo.jpg");
+            }
+            storage.deleteObjects(keys);
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client, org.mockito.Mockito.times(2)).deleteObjects(captor.capture());
+            var requests = captor.getAllValues();
+            org.assertj.core.api.Assertions.assertThat(requests)
+                    .as("the smallest splitting count rides exactly two requests")
+                    .hasSize(2);
+            org.assertj.core.api.Assertions.assertThat(requests.get(0).delete().objects())
+                    .as("the first request carries the ceiling exactly")
+                    .hasSize(1_000);
+            org.assertj.core.api.Assertions.assertThat(requests.get(1).delete().objects())
+                    .as("the second request carries exactly the remainder")
+                    .hasSize(1);
+            org.assertj.core.api.Assertions.assertThat(requests.get(1).delete().objects().get(0).key())
+                    .as("the remainder is the collected order's 1,001st key")
+                    .isEqualTo("listings/1000/photo.jpg");
+        }
+    }
+
+    @Test
+    void f833_7_versionedIdentifiersSplitAtTheCeilingToo() {
+        // The versioned leg accumulates identifiers ACROSS keys (one
+        // version per key here): 1,001 keys × 1 version = 1,001
+        // identifiers — flushed at exactly 1,000 with the tail riding its
+        // own request, every identifier addressed by versionId.
+        try (S3Presigner presigner = realPresigner()) {
+            S3MediaStorage storage = new S3MediaStorage(presigner, client, BUCKET, Duration.ofMinutes(15), neverOpens());
+            when(client.getBucketVersioning(any(GetBucketVersioningRequest.class)))
+                    .thenReturn(GetBucketVersioningResponse.builder()
+                            .status(BucketVersioningStatus.ENABLED).build());
+            when(client.listObjectVersions(any(software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest.class)))
+                    .thenAnswer(invocation -> {
+                        var request = (software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest)
+                                invocation.getArgument(0);
+                        return software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse.builder()
+                                .versions(java.util.List.of(
+                                        software.amazon.awssdk.services.s3.model.ObjectVersion.builder()
+                                                .key(request.prefix()).versionId("only").build()))
+                                .build();
+                    });
+            givenSuccessfulDeleteObjects();
+
+            java.util.List<String> keys = new java.util.ArrayList<>(1_001);
+            for (int i = 0; i < 1_001; i++) {
+                keys.add("listings/" + i + "/photo.jpg");
+            }
+            storage.deleteObjects(keys);
+
+            var captor = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
+            verify(client, org.mockito.Mockito.times(2)).deleteObjects(captor.capture());
+            var requests = captor.getAllValues();
+            org.assertj.core.api.Assertions.assertThat(requests)
+                    .as("1,001 identifiers across keys ride exactly two requests")
+                    .hasSize(2);
+            org.assertj.core.api.Assertions.assertThat(requests.get(0).delete().objects())
+                    .as("the first request carries the ceiling exactly")
+                    .hasSize(1_000);
+            org.assertj.core.api.Assertions.assertThat(requests.get(1).delete().objects())
+                    .as("the second request carries exactly the remainder")
+                    .hasSize(1);
+            org.assertj.core.api.Assertions.assertThat(requests.get(0).delete().objects())
+                    .as("every identifier is addressed by its versionId")
+                    .allSatisfy(item -> org.assertj.core.api.Assertions
+                            .assertThat(item.versionId()).isEqualTo("only"));
+        }
+    }
+
     @Test
     void f833_1_perKeyPartialFailuresRetryOnlyTheFailedKeys() {
         try (S3Presigner presigner = realPresigner()) {

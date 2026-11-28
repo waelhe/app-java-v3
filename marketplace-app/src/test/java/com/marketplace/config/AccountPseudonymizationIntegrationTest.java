@@ -195,6 +195,31 @@ class AccountPseudonymizationIntegrationTest {
     private static final Pattern CSRF_INPUT_REVERSED = Pattern.compile("<input[^>]*value=\"([^\"]+)\"[^>]*name=\"_csrf\"");
 
     /**
+     * The durable erasure purge is a publication completed asynchronously:
+     * the registry archives the publication the moment its listener
+     * finishes (completion-mode: archive — the house-measured "a COMPLETED
+     * publication moves into the archive IMMEDIATELY" semantics). The
+     * bounded poll (30s / 200ms) makes the post-erasure assertions below
+     * deterministic.
+     */
+    private void awaitAutomaticErasurePurgeCompletion() throws InterruptedException {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer open = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            Integer archived = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication_archive WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            if ((open == null || open == 0) && archived != null && archived > 0) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("the automatic erasure purge never completed");
+    }
+
+    /**
      * The acceptance sequence (§5-و, one test — the phases share the state the
      * plan's sequence produces): full identity death + records stay + the
      * tombstone holds + idempotence holds.
@@ -216,6 +241,13 @@ class AccountPseudonymizationIntegrationTest {
                 "{\"reason\":\"data-subject erasure request\"}");
         assertThat(pseudonymize.statusCode())
                 .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
+
+        // The erasure purge (b-3 + b-4) is a durable, asynchronous
+        // publication now (@ApplicationModuleListener): the registry's
+        // archive row witnesses its completion before the journey asserts
+        // the mirror history's death (the LedgerRefundReplayIntegrationTest
+        // awaitArchived shape, 30s / 200ms).
+        awaitAutomaticErasurePurgeCompletion();
 
         // §5-أ step 3/4 — the row's direct identifiers are gone, the status
         // column is stamped, the UUID is untouched.

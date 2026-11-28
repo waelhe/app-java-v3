@@ -195,6 +195,14 @@ class AuthoredContentPurgeIntegrationTest {
         assertThat(pseudonymize.statusCode())
                 .as("pseudonymize call: %s", body(pseudonymize)).isEqualTo(200);
 
+        // The erasure purge is a durable, asynchronous publication now
+        // (@ApplicationModuleListener): the registry's archive row
+        // witnesses that EVERY adapter (and b-4) completed before this
+        // journey's immediate assertion cascade over all twelve modules'
+        // tables and mirrors (the LedgerRefundReplayIntegrationTest
+        // awaitArchived shape, 30s / 200ms).
+        awaitAutomaticErasurePurgeCompletion();
+
         // The provider read must now return the erased profile, not the
         // pre-erasure Redis value warmed above. This verifies the adapter's
         // existing targeted AFTER_COMMIT cache invalidation as part of the
@@ -411,7 +419,33 @@ class AuthoredContentPurgeIntegrationTest {
     }
 
     /**
+     * The durable erasure purge is a publication completed asynchronously:
+     * the registry archives the publication the moment its listener
+     * finishes (completion-mode: archive — the house-measured "a COMPLETED
+     * publication moves into the archive IMMEDIATELY" semantics). The
+     * bounded poll (30s / 200ms) makes the post-erasure assertion cascade
+     * below deterministic.
+     */
+    private void awaitAutomaticErasurePurgeCompletion() throws InterruptedException {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer open = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            Integer archived = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM event_publication_archive WHERE listener_id LIKE ?",
+                    Integer.class, "%AccountIdentityContentPurger%");
+            if ((open == null || open == 0) && archived != null && archived > 0) {
+                return;
+            }
+            Thread.sleep(200);
+        }
+        throw new AssertionError("the automatic erasure purge never completed");
+    }
+
+    /**
      * The guard's negative: a LIVE account is rejected with 409 before any
+
      * statement runs (the purge completes an erasure flow — pseudonymize
      * first). Also the unknown-id mapping (404) on the same surface.
      */

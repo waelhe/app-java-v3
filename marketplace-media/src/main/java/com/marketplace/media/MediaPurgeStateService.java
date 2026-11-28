@@ -104,11 +104,24 @@ public class MediaPurgeStateService {
     /**
      * Finalizes only rows captured by this batch, and only while they remain
      * pending. A concurrent purge's newly captured rows stay retryable.
+     *
+     * <p>The Envers mirrors leave with the terminal state, in the same
+     * transaction (rulebook B5 "base tables + mirrors" — the reviews
+     * adapter's {@code reviews_aud} scrub and b-4's {@code users_aud}
+     * deletion are the family precedent): {@code media_assets_aud} /
+     * {@code review_media_aud} rows are pure metadata mirrors (object keys,
+     * owner id — no authored text), and this purge's own
+     * {@code markPending}/{@code markPurged} updates run through
+     * {@code JdbcTemplate}, so no new revisions are written to supersede
+     * them; the last revisions of the erased subject's rows are deleted
+     * wholesale, exactly as b-4 deletes {@code users_aud}.</p>
      */
     @Transactional
     public int markPurged(UUID userId, PurgeBatch batch) {
         int assets = markPurged("media_assets", "provider_id", userId, batch.mediaAssetIds());
         int reviewMedia = markPurged("review_media", "uploader_id", userId, batch.reviewMediaIds());
+        jdbcTemplate.update("DELETE FROM media_assets_aud WHERE provider_id = ?", userId);
+        jdbcTemplate.update("DELETE FROM review_media_aud WHERE uploader_id = ?", userId);
         return assets + reviewMedia;
     }
 

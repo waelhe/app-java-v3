@@ -3,11 +3,8 @@ package com.marketplace.identity;
 import com.marketplace.shared.api.AccountIdentityErased;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Completes the account-erasure flow after the identity transaction commits.
@@ -18,16 +15,29 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * that transaction. This consumer therefore cannot observe an uncommitted
  * account state, and a process failure does not silently lose the purge.</p>
  *
- * <p>The listener deliberately suspends transaction resources after commit.
- * {@link AuthoredContentPurgeService} fans out to module-owned adapters, each
- * of which commits independently. It runs before {@link AuditHistoryPurgeService}
- * because b-4 must recover the original subject closure from {@code users_aud}
- * before scrubbing audit columns and deleting that mirror. Both stages are
- * idempotent; a failed stage leaves completed statements committed and the
- * failed event publication is recovered by the existing
- * {@code EventPublicationResubmission} sweep. The administrator's
- * {@code POST /users/{id}/purge-content} surface remains available as an
- * explicit idempotent repair/retry operation.</p>
+ * <p>The listener is the reference's durable, asynchronous form
+ * ({@link ApplicationModuleListener} — {@code @Async} +
+ * {@code @TransactionalEventListener(AFTER_COMMIT)} +
+ * {@code @Transactional(REQUIRES_NEW)}, the composition verified against the
+ * shipped spring-modulith-events-api source and documented in
+ * {@code AccountStatusSessionInvalidator}'s own rationale): the purge runs in
+ * its own thread after the identity commit, so the member's erasure response
+ * is honest and never carries the purge's weight — nor a storage outage's
+ * 5xx after the commit. The deliberate contrast with the session
+ * invalidator's plain synchronous form is per-case: there the in-flight
+ * window between the response and the markers landing was the defect; here
+ * that same window is the requirement — the purge is a heavy multi-module
+ * operation the response must not block on.</p>
+ *
+ * <p>{@link AuthoredContentPurgeService} fans out to module-owned adapters,
+ * each of which commits independently. A storage outage in one adapter is
+ * isolated there: the remaining adapters — and the b-4 audit stage below —
+ * still run on this delivery, then the summary
+ * {@link AuthoredContentPurgeIncompleteException} is rethrown (never
+ * swallowed), so the event publication stays incomplete and the existing
+ * {@code EventPublicationResubmission} sweep resubmits exactly the unfinished
+ * legs. The administrator's {@code POST /users/{id}/purge-content} surface
+ * remains available as an explicit idempotent repair/retry operation.</p>
  */
 @Component
 public class AccountIdentityContentPurger {
@@ -51,11 +61,34 @@ public class AccountIdentityContentPurger {
      * audit stage can recover the original subject closure from users_aud
      * before deleting the mirror. Both services reject a live account and
      * both stages are idempotent, so a resubmitted publication safely resumes.
+     *
+     * <p>Isolation: when some b-3 adapters fail, the rest — and b-4 — still
+     * run on THIS delivery (both stages are idempotent, and b-4's closure
+     * recovery reads users_aud rows nothing in this delivery consumed);
+     * the summary exception is then rethrown so the registry keeps the
+     * publication open for the resubmission sweep.</p>
      */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @ApplicationModuleListener
     public void onAccountIdentityErased(AccountIdentityErased event) {
-        int contentRowsPurged = authoredContentPurgeService.purge(event.userId(), REASON, ACTOR);
+        int contentRowsPurged;
+        try {
+            contentRowsPurged = authoredContentPurgeService.purge(event.userId(), REASON, ACTOR);
+        } catch (AuthoredContentPurgeIncompleteException incomplete) {
+            // The failing adapters' own error lines are already logged by the
+            // orchestration; this line names the summary for the operator.
+            log.error("Account erasure content stage incomplete: userId={}, failedAdapters={} — "
+                            + "b-4 still runs on this delivery, then the publication stays open "
+                            + "for the resubmission sweep",
+                    event.userId(), incomplete.failedAdapters());
+            // b-4 is deliberately second even on the incomplete leg: its
+            // closure is recovered from users_aud before deleting that
+            // mirror, and its idempotent scrub is safe to repeat on the
+            // resubmitted delivery that finishes the failing adapters.
+            auditHistoryPurgeService.purge(event.userId(), REASON, ACTOR);
+            // Never swallowed: the rethrow is what keeps the publication
+            // incomplete (the registry's own completion marking).
+            throw incomplete;
+        }
         // b-4 is deliberately second: its closure is recovered from users_aud
         // before deleting that mirror, and its scrub must include every audit
         // column left by the b-3 authored-content adapters.
