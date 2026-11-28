@@ -443,10 +443,14 @@ class S3MediaStorageTest {
             org.assertj.core.api.Assertions.assertThat(requests.get(1).delete().objects())
                     .as("the second request carries exactly the remainder")
                     .hasSize(1);
-            org.assertj.core.api.Assertions.assertThat(requests.get(0).delete().objects())
-                    .as("every identifier is addressed by its versionId")
+            // The review round on 32a6ddd6: the versionId law holds on EVERY
+            // request, the tail included — an identifier stripped of its
+            // versionId in the second request must fail this test.
+            requests.forEach(request -> org.assertj.core.api.Assertions
+                    .assertThat(request.delete().objects())
+                    .as("every identifier in every request is addressed by its versionId")
                     .allSatisfy(item -> org.assertj.core.api.Assertions
-                            .assertThat(item.versionId()).isEqualTo("only"));
+                            .assertThat(item.versionId()).isEqualTo("only")));
         }
     }
 
@@ -684,8 +688,19 @@ class S3MediaStorageTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("AccessDenied")
                     .hasMessageContaining("locked-version");
+            // The review round on 32a6ddd6: Object Lock is never bypassed —
+            // none of the three attempts may carry
+            // bypassGovernanceRetention=true (the mock answers AccessDenied
+            // for ANY request, so only this assertion pins the flag).
+            var attempts = org.mockito.ArgumentCaptor.forClass(
+                    software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class);
             verify(client, org.mockito.Mockito.times(3))
-                    .deleteObjects(any(software.amazon.awssdk.services.s3.model.DeleteObjectsRequest.class));
+                    .deleteObjects(attempts.capture());
+            org.assertj.core.api.Assertions.assertThat(attempts.getAllValues())
+                    .as("Object Lock is never bypassed across the three attempts")
+                    .allSatisfy(request -> org.assertj.core.api.Assertions
+                            .assertThat(request.bypassGovernanceRetention())
+                            .isNotEqualTo(Boolean.TRUE));
         }
     }
 

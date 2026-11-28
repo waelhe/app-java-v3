@@ -423,6 +423,13 @@ class MediaUploadFlowIntegrationTest {
                 assertThat(batch.objectKeys()).contains(originalKey, thumbnailKey, stagingKey);
                 assertThat(mediaAssetRepository.findById(upload.mediaId()).orElseThrow().getStatus())
                         .isEqualTo(MediaAssetStatus.PURGE_PENDING);
+                // The review round on 32a6ddd6: the pointer SAVE is proven,
+                // not only the key's presence in the batch — the orphan-image
+                // candidate (a null pointer with the key collected anyway) is
+                // the next test's own leg; here the worker's write and the
+                // pointer's persistence are the same journey.
+                assertThat(mediaAssetRepository.findById(upload.mediaId()).orElseThrow()
+                        .getThumbObjectKey()).isEqualTo(thumbnailKey);
                 org.mockito.Mockito.verify(storage).putObject(
                         org.mockito.ArgumentMatchers.eq(thumbnailKey),
                         org.mockito.ArgumentMatchers.eq("image/jpeg"),
